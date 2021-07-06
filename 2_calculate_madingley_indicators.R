@@ -3,11 +3,12 @@
 
 rm(list = ls())
 
-# Directory path
+# Directory path to git repo
 
-# cd "C:\\Users\\ssteven\\Dropbox\\Deakin\\Serengeti-analysis\\marine_to_terrestrial"
-# cd "C:\\Users\\ssteven\\Desktop\\Serengeti-analysis\\marine_to_terrestrial"
-# cd "C:\\Users\\ssteven\Desktop\\git_repos\\marine_to_terrestrial
+# Simone's deakin laptop
+
+# cd "C:\\Users\\ssteven\\OneDrive - Deakin University\\Deakin\\Chapter_3_indicator_testing\\madingley_terrestrial_indicators"
+
 
 # TODO LIST ----
 
@@ -23,7 +24,7 @@ rm(list = ls())
 ## Data wrangling
 
 library(tidyverse)
-library(rlpi)
+library(tidylog)
 
 # Functions ----
 
@@ -38,6 +39,9 @@ maintain_ex_status <- function(vec) {
   if(first_ex < vec_len) replace(vec, (first_ex+1):vec_len, "EX") 
   else vec 
 }
+
+# Similar function but replaces all non 0 values that occur after the first 
+# 0 with 0
 
 maintain_0_abundance <- function(vec) { 
   vec_len = length(vec) 
@@ -196,14 +200,14 @@ calculate_red_list_index <- function(data, numboots, ci = FALSE){
     }
 }
 
-  
-
 #' Return a line plot of the RLI scores over time faceted by functional group 
 
 #' @param data a data frame (output from calculate_red_list_index) with columns:
 #' functional_group, time_step, ci_lower, ci_upper, total.weight, total.count, RLI criteria
 #' @param impact_start time_step impact began
 #' @param impact_end time_step impact ended
+#' @param ci logical, do you want to include confidence intervals? default = FALSE
+#' (note, selecting TRUE may increase processing time)
 #' @return a line plot of RLI over time for each functional group/taxa or whatever 
 
 plot_red_list_index_by_group <- function(data, impact_start, impact_end, ci = FALSE) {
@@ -269,6 +273,8 @@ plot_red_list_index_by_group <- function(data, impact_start, impact_end, ci = FA
 #' functional_group, time_step, ci_lower, ci_upper, total.weight, total.count, RLI criteria
 #' @param impact_start time_step impact began
 #' @param impact_end time_step impact ended
+#' #' @param ci logical, do you want to include confidence intervals? default = FALSE
+#' (note, selecting TRUE may increase processing time)
 #' @return a line plot of RLI over time for each functional group/taxa or whatever 
 
 plot_red_list_index <- function(data, impact_start, impact_end, ci = FALSE) {
@@ -322,9 +328,9 @@ plot_red_list_index <- function(data, impact_start, impact_end, ci = FALSE) {
 }
 
 
-data <- scenario_abundance_long[[1]][[1]]
+# data <- scenario_abundance_long[[1]][[1]]
 
-calculate_living_planet_index <- function(data, start_time_step, ci = FALSE){
+calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE){
   
   filtered_inputs <- data %>%
     # Remove timesteps if needed (if not make start_time_step = 1)
@@ -337,6 +343,7 @@ calculate_living_planet_index <- function(data, start_time_step, ci = FALSE){
     rename(abundance_original = abundance) %>%
     # Identify rows where abundance == 0, and change all subsequent years to 0 too
     mutate(abundance = maintain_0_abundance(abundance_original)) 
+  
   head(filtered_inputs)
   
   # Calculate LPI inputs and LPI
@@ -352,52 +359,60 @@ calculate_living_planet_index <- function(data, start_time_step, ci = FALSE){
                 mutate(abundance_adjusted = abundance + 
                          (mean(abundance)*0.01)) %>%
                 # Calculate the rate of change since the previous year (dt)
-                # (equation 1 in Mcrae et al 2008)
-                mutate(dt = log10(abundance_adjusted)/ #abundance at current timestep
-                            lag(log10(abundance_adjusted), 1)) %>% #abundance at previous timestep
-                # Set the initial dt as 1
-                mutate(dt = ifelse(time_step == start_time_step, 1, dt)) 
- 
+                # (equation 1 in Mcrae et al 2008) 
+                mutate(current_abundance = abundance_adjusted, #abundance at current timestep
+                       previous_abundance = lag(abundance_adjusted, 1)) %>%  #abundance at previous timestep
+                mutate(dt = log10(current_abundance/previous_abundance)) %>% # rate of change
+                ungroup(.) %>% 
+                # Calculate mean dt across all groups, per timestep
+                # (equation 4 in Mcrae et al 2008)
+                group_by(time_step) %>% 
+                summarise(mean_dt = mean(dt, na.rm = TRUE)) %>% 
+                # Add an empty LPI column to fill up in the next step
+                mutate(LPI = NA)
   
-       head(lpi_inputs)
-       group <- 11.43
-       test_data <- lpi_inputs %>% filter(group_id == group)
-       ggplot(test_data, aes(x = time_step, y = abundance_original)) +
-         geom_line() 
+  # Set the value of the LPI on the first time step to 1
+  lpi_inputs$LPI[start_time_step] <- 1 
   
-  # Take the mean rate of change across all species, in each timestep
-  # (equation 4 in Mcrae et al 2008)
+  # So annoying can't get a dplyr version of this to work, but whatever
   
-  lpi_inputs_aggregated <- lpi_inputs %>% 
-                           group_by(time_step) %>%
-                           summarise(mean_dt = mean(dt, na.rm = TRUE),
-                                     mean_abundance = mean(abundance_adjusted,
-                                                           na.rm = TRUE)) %>%
-                           ungroup(.)
-               
-  head(lpi_inputs_aggregated)
+       for (i in 1:(nrow(lpi_inputs) - 1)) {
+         
+         # T represents the current timestep we are calculating for, i represents
+         # the previous timestep
+         t <- i + 1
+         
+         # Multiple the LPI score from the previous timestep i by ten to the
+         # power of dt in the current timestep t
+         # Equation 5 in Mcrae et al 2008
+         
+         lpi_inputs$LPI[t] <- lpi_inputs$LPI[i] * (10 ^ lpi_inputs$mean_dt[t])
+       
+         }
+       
+       
+  index_scores <- lpi_inputs
   
-  # ggplot(lpi_inputs_aggregated, aes(x = time_step, y = mean_dt)) +
+  # Code for looking at output, still difficult to check if it looks right
+  
+  # ggplot(lpi_inputs, aes(x = time_step, y = LPI)) +
   #   geom_line()
   # 
-  # data <- lpi_inputs_aggregated[3:nrow(lpi_inputs_aggregated),]
-  # ggplot(data, aes(x = time_step, y = mean_abundance)) +
-  #   geom_line()
-  
-  # Converted averaged rates of change into the LPI                 
-  index_scores <- lpi_inputs_aggregated %>%
-                  # Set the first time step in LPI values to = 1
-                  mutate(LPI = ifelse(time_step == start_time_step, 1,
-                                1.5)) 
-                  # Next set the next step as LPI in the previous timestep
-                  # multiplied by ten to the power of mean_dt
-                  
-  
-  head(index_scores)
-
-  ggplot(index_scores, aes(x = time_step, y = LPI)) +
-    geom_line()
-  
+  # ave_abundance <- filtered_inputs %>% 
+  #                  group_by(time_step) %>% 
+  #                  summarise(ave_abundance = mean(abundance, na.rm = TRUE))
+  # 
+  # ggplot(filtered_inputs, aes(x = time_step, y = abundance, col = group_id)) +
+  #   geom_line() +
+  #   theme(legend.position = "none")
+  # 
+  # test <- filtered_inputs %>% mutate(abundance2 = scale(abundance))
+  # head(test)
+  # 
+  # ggplot(test, aes(x = time_step, y = abundance_original, col = group_id)) +
+  #   geom_line() +
+  #   theme(legend.position = "none")
+       
   return(index_scores)
  
 }
@@ -446,7 +461,7 @@ if (Sys.info()['nodename'] == "80VVPF0SSB53") {
 today <- Sys.Date()
 
 # Define mode (development == TRUE will only perform operations on a small subset
-# of folders not all outputs)
+# of folders, not all outputs)
 
 development_mode <- TRUE
 
@@ -534,7 +549,7 @@ if( !dir.exists( file.path(indicator_plots_folder) ) ) {
 # source( file.path( SourceToModels, "biodiversity_indicators", 
 #                    "calculate_proportion_biomass.R") )
 
-# Get file paths ---- 
+# Get file paths of processed model output data ---- 
 
 processed_outputs_path <- file.path(IndicatorsProject, location,
                                     "Outputs_from_adaptor_code/map_of_life")
@@ -1153,7 +1168,9 @@ for (i in seq_along(scenario_rli_outputs)) {
   
   scenario_mean_rli <- scenario_rli_outputs_aggregated[[i]] %>%
                        group_by(time_step) %>%
-                       summarise(RLI = mean(RLI)) %>%
+                       summarise(RLI = mean(RLI),
+                                 ci_lower = mean(ci_lower),
+                                 ci_upper = mean(ci_upper)) %>%
                        mutate(replicate = 0) # Replicate 0 will always be the mean
   
   scenario_rli_outputs_aggregated[[i]] <-  rbind(scenario_rli_outputs_aggregated[[i]],
@@ -1224,7 +1241,7 @@ data <- abundance_long[[1]]
 
 head(data)
 
-ggplot(filtered_inputs, aes(x = time_step, y = abundance,
+ggplot(data, aes(x = time_step, y = abundance,
                  col = group_id)) +
           geom_line()  + 
           geom_text(aes(label= group_id),hjust=0, vjust=0) +
