@@ -1,5 +1,5 @@
 
-## REPOSITORY: https://github.com/Simonestevo/marine_to_terrestrial
+## REPOSITORY: https://github.com/conservationscience/madingley_terrestrial_indicators
 
 rm(list = ls())
 
