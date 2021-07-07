@@ -118,7 +118,7 @@ calculate_red_list_index <- function(data, numboots, ci = FALSE){
   # Calculate confidence intervals via bootstrapping 
   # (see Rowland et al 2021 A guide to representing uncertainty)
   
-  # Split by timestep - we want CI for each functional group, for each timestep (I think)
+  # Split by timestep - we want CI for each functional group, for each timestep 
   
   weighted_data_timestep_list <- split(weighted_data, weighted_data$time_step)
   
@@ -328,9 +328,10 @@ plot_red_list_index <- function(data, impact_start, impact_end, ci = FALSE) {
 }
 
 
-# data <- scenario_abundance_long[[1]][[1]]
+data <- scenario_abundance_long[[1]][[1]]
 
-calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE){
+calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
+                                          numboots){
   
   filtered_inputs <- data %>%
     # Remove timesteps if needed (if not make start_time_step = 1)
@@ -374,7 +375,7 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE)
   # Set the value of the LPI on the first time step to 1
   lpi_inputs$LPI[start_time_step] <- 1 
   
-  # So annoying can't get a dplyr version of this to work, but whatever
+  # Annoyingly can't get a dplyr version of this to work, but whatever
   
        for (i in 1:(nrow(lpi_inputs) - 1)) {
          
@@ -389,14 +390,97 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE)
          lpi_inputs$LPI[t] <- lpi_inputs$LPI[i] * (10 ^ lpi_inputs$mean_dt[t])
        
          }
-       
-       
+  
+  if(ci == TRUE) {
+  # Now calculate the confidence intervals using bootstrapping as per 
+  # Rowland et al 2021
+  
+  # Create n replicates of the original data (same number of rows but randomly
+  # sampled, and with replacement)
+  
+  bootstrap_replicates <- list()
+  
+  for (j in 1:numboots) {
+  
+  rep <- filtered_inputs %>% 
+         group_by(time_step) %>% # so we take random samples stratified by timestep (otherwise end up with uneven sample sizes in each timestep)
+         slice_sample(prop = 1, replace = TRUE) %>%  # get random sample of rows and add to DF
+         mutate(replicate = j)
+  
+  rep_lpi_inputs <- rep %>%
+    # Calculate 1% of the mean population over time for each group
+    group_by(group_id) %>%
+    # Add 1% of the species mean abundance across all timesteps 
+    # so we can take the log in the next step
+    mutate(abundance_adjusted = abundance + 
+             (mean(abundance)*0.01)) %>%
+    # Calculate the rate of change since the previous year (dt)
+    # (equation 1 in Mcrae et al 2008) 
+    mutate(current_abundance = abundance_adjusted, #abundance at current timestep
+           previous_abundance = lag(abundance_adjusted, 1)) %>%  #abundance at previous timestep
+    mutate(dt = log10(current_abundance/previous_abundance)) %>% # rate of change
+    ungroup(.) %>% 
+    # Calculate mean dt across all groups, per timestep
+    # (equation 4 in Mcrae et al 2008)
+    group_by(time_step) %>% 
+    summarise(mean_dt = mean(dt, na.rm = TRUE)) %>% 
+    # Add an empty LPI column to fill up in the next step
+    mutate(LPI = NA,
+           replicate = j)
+  
+  # Set the value of the LPI on the first time step to 1
+  rep_lpi_inputs$LPI[start_time_step] <- 1 
+  
+  # Annoyingly can't get a dplyr version of this to work, but whatever
+  
+  for (i in 1:(nrow(rep_lpi_inputs) - 1)) {
+    
+    # T represents the current timestep we are calculating for, i represents
+    # the previous timestep
+    t <- i + 1
+    
+    # Multiple the LPI score from the previous timestep i by ten to the
+    # power of dt in the current timestep t
+    # Equation 5 in Mcrae et al 2008
+    
+    rep_lpi_inputs$LPI[t] <- rep_lpi_inputs$LPI[i] * (10 ^ rep_lpi_inputs$mean_dt[t])
+    
+  }
+  
+  bootstrap_replicates[[j]] <- rep_lpi_inputs
+  
+  }
+  
+  # Bind all the replicates into one DF
+  
+  bootstrap_replicates_df <- do.call(rbind, bootstrap_replicates)
+  
+  # Get the confidence intervals for each timestep
+  
+  ci_scores <- bootstrap_replicates_df %>% 
+               group_by(time_step) %>% # Get the LPI scores for all reps, for each timestep
+               summarise(ci_lower = quantile(LPI, 
+                                             probs = 0.05), # Get the lower quantile of all LPI rep scores
+                         ci_upper = quantile(LPI, 
+                                             probs = 0.95)) # Get the upper quantile
+  
+  # Merge the confidence intervals with the original LPI
+  
+  index_scores <- lpi_inputs %>% 
+                  merge(ci_scores, by = "time_step")
+  
+  } else {
+    
   index_scores <- lpi_inputs
+  
+  }
   
   # Code for looking at output, still difficult to check if it looks right
   
-  # ggplot(lpi_inputs, aes(x = time_step, y = LPI)) +
-  #   geom_line()
+  # ggplot(index_scores, aes(x = time_step, y = LPI)) +
+  #   geom_line() +
+  #   geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),
+  #               alpha = 0.4) 
   # 
   # ave_abundance <- filtered_inputs %>% 
   #                  group_by(time_step) %>% 
@@ -417,15 +501,25 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE)
  
 }
 
-data <- index_scores
-head(data)
 
-plot_living_planet_index <- function(data) {
+plot_living_planet_index <- function(data, ci = FALSE) {
   
+  if (ci == TRUE) {
   ggplot(data, aes(x = time_step, y = LPI)) +
-    geom_line()  
-  
+    geom_line()  +
+    geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),
+                    alpha = 0.4)
+  } else {
+    
+    ggplot(data, aes(x = time_step, y = LPI)) +
+      geom_line()
+    
+  }
 }
+
+lpi <- calculate_living_planet_index(data, start_time_step = 1, ci = TRUE,
+                                     numboots = 5)
+plot_living_planet_index(lpi, ci = TRUE)
 
 # Set up paths ----
 
@@ -1107,7 +1201,8 @@ for (i in seq_along(scenario_fg_rli_outputs)) {
   replicate_fg_rli_plots[[j]] <-  plot_red_list_index_by_group(
                                       replicate_fg_rli[[j]],
                                       impact_start,
-                                      impact_end)
+                                      impact_end,
+                                      ci = TRUE)
 
   ggsave(file.path(rli_plots_folder, paste(today, scenarios[[i]], "replicate", j,
                 "RLI_by_functional_group.png",
@@ -1137,7 +1232,8 @@ for (i in seq_along(scenario_rli_outputs)) {
 
     replicate_rli_plots[[j]] <- plot_red_list_index(replicate_rli[[j]],
                                                    impact_start, 
-                                                   impact_end)
+                                                   impact_end,
+                                                   ci = TRUE)
 
 
     ggsave(file.path(rli_plots_folder, paste(today, scenarios[[i]], 
