@@ -9,15 +9,27 @@ rm(list = ls())
 
 # cd "C:\\Users\\ssteven\\OneDrive - Deakin University\\Deakin\\Chapter_3_indicator_testing\\madingley_terrestrial_indicators"
 
+# Data structure
+
+#' Input data is structured hierarchically as follows:
+#' # Location (1)
+#' ## Scenarios (3)
+#' ### Replicates (25)
+#' 
+#' Output indicator data is calculated at the same level, so each indicator should
+#' have values for:
+#' # Location (1)
+#' ## Scenarios (3)
+#' ### Replicates (25) 
+
 
 # TODO LIST ----
 
-#' TODO: CHECK WHY MEAN ABUNDANCE OF EVERY GROUP IN YR 2 = 0 IN TEST DATA
 #' TODO: Change LPI to geometric mean as per Mcrae 2017
 #' TODO: Test sampling interval by trying different times of year
 #' TODO: Check gen length equation
-#' TODO: Create final output that combines indicator values for each replicate
-#' TODO: Check bootstrapping, looks weird (timesteps out of sync??)
+#' TODO: Check bootstrapping, looks weird for both RLI and LPI (timesteps out of sync??)
+#' TODO: Make plots pretty
 
 # Libraries ----
 
@@ -53,6 +65,20 @@ maintain_0_abundance <- function(vec) {
 # data <- rli_inputs
 # numboots <- 5
 # Function to calculate RLI
+
+#' Calculate the RLI over time, from a dataframe of species and their 
+#' IUCN Red List Categories 
+
+#' @param data a data frame (should be named red list inputs) with columns:
+#' group_id (representing functional group-massbin pseudo species), time_step
+#' abundance, generation_length_yrs, "functional_group_index", "functional_group_name"
+#' "mass_lower_g", "mass_upper_g", "massbin_g", timeframe, "diff" , "decline",
+#' "rl_status",  "extinct", "rl_status_adjusted"
+#' @param numboots an integer representing the number of bootstraps to calculate
+#' @param ci logical, do you want to include confidence intervals? default = FALSE
+#' (note, selecting TRUE may increase processing time)
+#' @return a dataframe of RLI index scores and confidence intervals over time
+
 calculate_red_list_index <- function(data, numboots, ci = FALSE){
   
   # Using equation from Butchart et al (2007) Improvements to the Red List Index
@@ -327,11 +353,17 @@ plot_red_list_index <- function(data, impact_start, impact_end, ci = FALSE) {
   
 }
 
+#' @param data a data frame with columns 'group id', 'time_step', 'abundance'
+#' @param numboots an integer representing the number of bootstraps to calculate
+#' @param ci logical, do you want to include confidence intervals? default = FALSE
+#' (note, selecting TRUE may increase processing time)
+#' @param replicate_num numeric/character identifier if calculating for more than one replicate
+#' @return a dataframe of LPI index scores and confidence intervals over time
 
-data <- scenario_abundance_long[[1]][[1]]
+#data <- scenario_abundance_long[[1]][[1]]
 
 calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
-                                          numboots){
+                                          numboots, replicate_num = NA){
   
   filtered_inputs <- data %>%
     # Remove timesteps if needed (if not make start_time_step = 1)
@@ -467,58 +499,55 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
   # Merge the confidence intervals with the original LPI
   
   index_scores <- lpi_inputs %>% 
-                  merge(ci_scores, by = "time_step")
+                  merge(ci_scores, by = "time_step") %>% 
+                  select(time_step, LPI, ci_lower, ci_upper) %>% 
+                  mutate(indicator = "LPI",
+                         replicate = replicate_num) %>% 
+                  rename(indicator_score = LPI)
   
   } else {
     
-  index_scores <- lpi_inputs
+  index_scores <- lpi_inputs %>% 
+    select(time_step, LPI) %>%
+    mutate(indicator = LPI,
+           replicate = replicate_num,
+           ci_lower = NA,
+           ci_upper = NA) %>%
+    rename(indicator_score = LPI)
   
   }
   
-  # Code for looking at output, still difficult to check if it looks right
-  
-  # ggplot(index_scores, aes(x = time_step, y = LPI)) +
-  #   geom_line() +
-  #   geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),
-  #               alpha = 0.4) 
-  # 
-  # ave_abundance <- filtered_inputs %>% 
-  #                  group_by(time_step) %>% 
-  #                  summarise(ave_abundance = mean(abundance, na.rm = TRUE))
-  # 
-  # ggplot(filtered_inputs, aes(x = time_step, y = abundance, col = group_id)) +
-  #   geom_line() +
-  #   theme(legend.position = "none")
-  # 
-  # test <- filtered_inputs %>% mutate(abundance2 = scale(abundance))
-  # head(test)
-  # 
-  # ggplot(test, aes(x = time_step, y = abundance_original, col = group_id)) +
-  #   geom_line() +
-  #   theme(legend.position = "none")
-       
   return(index_scores)
  
 }
 
+# x <- calculate_living_planet_index(data, 1, FALSE, 1, "test")
+# head(x)
 
+#' @param data a data frame with columns 'time_step', 'mean_dt', 'LPI',
+#' 'ci_lower' and 'ci_upper'
+#' @param ci logical, do you want to plot confidence intervals? default = FALSE
+#' (note, selecting TRUE may increase processing time)
+#' @return a dataframe of LPI index scores and confidence intervals over time
+#' 
 plot_living_planet_index <- function(data, ci = FALSE) {
   
   if (ci == TRUE) {
-  ggplot(data, aes(x = time_step, y = LPI)) +
+  
+    ggplot(data, aes(x = time_step, y = indicator_score)) +
     geom_line()  +
     geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),
                     alpha = 0.4)
   } else {
     
-    ggplot(data, aes(x = time_step, y = LPI)) +
+    ggplot(data, aes(x = time_step, y = indicator_score)) +
       geom_line()
     
   }
 }
 
 lpi <- calculate_living_planet_index(data, start_time_step = 1, ci = TRUE,
-                                     numboots = 5)
+                                     numboots = 1000)
 plot_living_planet_index(lpi, ci = TRUE)
 
 # Set up paths ----
@@ -579,7 +608,7 @@ if (development_mode == FALSE) {
   burnin_months <- 1*12 # in months
   n <- 1 
   numboots <- 5
-  start_time_step <- 10
+  start_time_step <- 1
   gen_timeframe <- 10
   interval <- 2
   
@@ -1345,16 +1374,137 @@ ggplot(data, aes(x = time_step, y = abundance,
 
 # * Calculate LPI ----
 
+# Retain naming convention, the LPI just takes the abundance dataframes we
+# already formatted while making the RLI inputs
+
+scenario_lpi_inputs <- scenario_abundance_long
+
+# Loop through each scenario and replicate and calculate the LPI per rep
+
 scenario_lpi_outputs <- list()
+replicate_lpi_outputs <- list()
 
-for (i in seq_along(abundance_long)){
+for (i in seq_along(scenario_lpi_inputs)) {
   
-scenario_lpi_outputs[[i]] 
+  # Get replicates for a single scenario
+  replicate_lpi_inputs <- scenario_lpi_inputs[[i]]
   
-                             
+ # Calculate the LPI for each replicate within the scenario
+  for (j in seq_along(replicate_lpi_inputs)) {
+    
+  replicate_lpi_outputs[[j]] <- calculate_living_planet_index(
+    
+    replicate_lpi_inputs[[j]], start_time_step, ci = TRUE, numboots, j
+  ) 
+    
+  # Save the output LPI data as a csv and rds
+  
+    saveRDS(replicate_lpi_outputs[[j]],
+          file.path(lpi_outputs_folder,
+                    paste(today, scenarios[[i]], "replicate", j,
+                          "LPI_output_data.rds",
+                          sep = "_")))
 
- }
+    write.csv(replicate_lpi_outputs[[j]],
+              file.path(lpi_outputs_folder,
+                        paste(today, scenarios[[i]], "replicate", j,
+                              "LPI_output_data.rds",
+                              sep = "_")))
+    
+  }
   
-
+  scenario_lpi_outputs[[i]] <- replicate_lpi_outputs
+  
 }
 
+head(scenario_lpi_outputs)[[1]][[1]]
+
+# * Aggregate all LPI scores ----
+
+## Collapse input data so LPI scores for all replicates in one scenario exist in 
+## a single data frame
+
+scenario_lpi_outputs_aggregated <- list()
+
+for (i in seq_along(scenario_lpi_outputs)) {
+  
+  scenario_lpi_outputs_aggregated[[i]] <- do.call(rbind, 
+                                                  scenario_lpi_outputs[[i]]) 
+  
+  scenario_mean_lpi <- scenario_lpi_outputs_aggregated[[i]] %>%
+    group_by(time_step) %>%
+    summarise(indicator_score = mean(indicator_score),
+              ci_lower = mean(ci_lower),
+              ci_upper = mean(ci_upper)) %>%
+    mutate(replicate = 0,
+           indicator = "LPI") # Replicate 0 will always be the mean
+  
+  scenario_lpi_outputs_aggregated[[i]] <-  rbind(scenario_lpi_outputs_aggregated[[i]],
+                                                 scenario_mean_lpi) %>%
+    mutate(replicate = as.factor(replicate)) %>%
+    mutate(scenario = scenarios[[i]]) %>% 
+    mutate(level = ifelse(replicate == 0,
+                          "Mean LPI", 
+                          "Replicate LPI"))
+  
+}
+
+head(scenario_lpi_outputs_aggregated[[1]])
+tail(scenario_lpi_outputs_aggregated[[1]])
+
+# * Plot LPI replicates individually ----
+
+scenario_lpi_plots <- list()
+replicate_lpi_plots <- list()
+
+for (i in seq_along(scenario_lpi_outputs)) {
+  
+  replicate_lpi <- scenario_lpi_outputs[[i]]
+  
+  for (j in seq_along(replicate_lpi)) {
+    
+    replicate_lpi_plots[[j]] <- plot_living_planet_index(replicate_lpi[[j]],
+                                                         ci = TRUE)
+    
+    
+    ggsave(file.path(lpi_plots_folder, paste(today, scenarios[[i]], 
+                                             "replicate", j, 
+                                             "LPI_aggregated.png",
+                                             sep = "_")),
+           replicate_lpi_plots[[i]],  device = "png")                                   
+    
+  }
+  
+  scenario_lpi_plots[[i]] <- replicate_lpi_plots
+  
+}
+
+scenario_lpi_plots[[1]][[3]]
+
+# * Plot all replicates together ----
+
+scenario_lpi_plots_aggregated <- list()
+
+for (i in seq_along(scenario_lpi_outputs_aggregated)){
+  
+  scenario_lpi_plots_aggregated[[i]] <- ggplot(data = scenario_lpi_outputs_aggregated[[i]], 
+                                               aes(x = time_step, 
+                                                   y = indicator_score, 
+                                                   group = replicate,
+                                                   color = level)) +
+    geom_line() +
+    scale_color_manual(values = c("black", "gray62")) + 
+    labs(x = "Time", 
+         y = "Living Planet Index Score") +
+    theme(panel.grid.major = element_blank(),
+          axis.title = element_text(size = 18),
+          axis.text = element_text(size = 18),
+          panel.grid.minor = element_blank(),
+          panel.background = element_rect(fill = "grey97"),
+          axis.line = element_line(colour = "black")) +
+    geom_vline(xintercept = impact_start, colour = "red") +
+    geom_vline(xintercept = impact_end, colour = "blue")
+  
+}
+
+scenario_lpi_plots_aggregated[[1]]
