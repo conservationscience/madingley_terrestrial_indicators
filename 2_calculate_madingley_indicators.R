@@ -360,6 +360,9 @@ plot_red_list_index <- function(data, impact_start, impact_end, ci = FALSE) {
 #' @param replicate_num numeric/character identifier if calculating for more than one replicate
 #' @return a dataframe of LPI index scores and confidence intervals over time
 
+## Note: Have tested this code against the code Emily used on the LME ecopath
+## data to see if they produce the same results, which they do.
+
 #data <- scenario_abundance_long[[1]][[1]]
 
 calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
