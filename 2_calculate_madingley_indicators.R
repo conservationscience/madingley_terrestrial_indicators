@@ -28,8 +28,9 @@ rm(list = ls())
 #' TODO: Change LPI to geometric mean as per Mcrae 2017
 #' TODO: Test sampling interval by trying different times of year
 #' TODO: Check gen length equation
-#' TODO: Check bootstrapping, looks weird for both RLI and LPI (timesteps out of sync??)
+#' TODO: Check bootstrapping, looks weird for the LPI and maybe RLI (timesteps out of sync??)
 #' TODO: Make plots pretty
+#' TODO: Update RLI outputs so they match LPI outputs and can be aggregated
 
 # Libraries ----
 
@@ -198,9 +199,9 @@ calculate_red_list_index <- function(data, numboots, ci = FALSE){
       # Calculate the confidence intervals for each fg,
       ci_scores <- summarise(rep_scores, 
                                ci_lower = quantile(rep_scores$RLI, 
-                                                   probs = 0.05),
+                                                   probs = 0.025),
                                ci_upper = quantile(rep_scores$RLI, 
-                                                   probs = 0.95)) %>%
+                                                   probs = 0.975)) %>%
                    mutate(time_step = time) 
       
       timestep_confidence_intervals[[i]] <- ci_scores
@@ -363,7 +364,7 @@ plot_red_list_index <- function(data, impact_start, impact_end, ci = FALSE) {
 ## Note: Have tested this code against the code Emily used on the LME ecopath
 ## data to see if they produce the same results, which they do.
 
-#data <- scenario_abundance_long[[1]][[1]]
+data <- scenario_abundance_long[[1]][[2]]
 
 calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
                                           numboots, replicate_num = NA){
@@ -437,10 +438,19 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
   
   for (j in 1:numboots) {
   
+  # Make sure we get the same sample every time for reproducibility
+    
+  set.seed(j)
+    
+  # Produce a replicate dataset that is randomly sampled from the original 
+  # dataset but with replacement
+  
   rep <- filtered_inputs %>% 
          group_by(time_step) %>% # so we take random samples stratified by timestep (otherwise end up with uneven sample sizes in each timestep)
          slice_sample(prop = 1, replace = TRUE) %>%  # get random sample of rows and add to DF
          mutate(replicate = j)
+  
+  # Calculate the mean rate of change across species
   
   rep_lpi_inputs <- rep %>%
     # Calculate 1% of the mean population over time for each group
@@ -466,6 +476,7 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
   # Set the value of the LPI on the first time step to 1
   rep_lpi_inputs$LPI[start_time_step] <- 1 
   
+  # Calculate the LPI
   # Annoyingly can't get a dplyr version of this to work, but whatever
   
   for (i in 1:(nrow(rep_lpi_inputs) - 1)) {
@@ -479,6 +490,8 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
     # Equation 5 in Mcrae et al 2008
     
     rep_lpi_inputs$LPI[t] <- rep_lpi_inputs$LPI[i] * (10 ^ rep_lpi_inputs$mean_dt[t])
+    
+    print(paste("bootstrap", j, "of", numboots, "complete", sep = " "))
     
   }
   
@@ -494,11 +507,11 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
   
   ci_scores <- bootstrap_replicates_df %>% 
                group_by(time_step) %>% # Get the LPI scores for all reps, for each timestep
-               summarise(ci_lower = quantile(LPI, 
-                                             probs = 0.05), # Get the lower quantile of all LPI rep scores
-                         ci_upper = quantile(LPI, 
-                                             probs = 0.95)) # Get the upper quantile
-  
+               summarise(ci_lower = quantile(LPI,
+                                             probs = 0.025), # Get the lower quantile of all LPI rep scores
+                         ci_upper = quantile(LPI,
+                                             probs = 0.975)) # Get the upper quantile
+     
   # Merge the confidence intervals with the original LPI
   
   index_scores <- lpi_inputs %>% 
@@ -610,7 +623,7 @@ if (development_mode == FALSE) {
   impact_end <- 20
   burnin_months <- 1*12 # in months
   n <- 1 
-  numboots <- 5
+  numboots <- 100
   start_time_step <- 1
   gen_timeframe <- 10
   interval <- 2
@@ -1247,7 +1260,7 @@ scenario_fg_rli_plots[[i]] <- replicate_fg_rli_plots
 
 }
 
-scenario_fg_rli_plots[[1]][[1]]
+scenario_fg_rli_plots[[1]][[4]]
 
 # RLI with all functional groups aggregated
 # i.e. mean of each 'taxa' RLI as per Butchart et al (2010) 'Indicators of
@@ -1280,7 +1293,7 @@ for (i in seq_along(scenario_rli_outputs)) {
 
 }
 
-scenario_rli_plots[[1]][[1]]
+scenario_rli_plots[[1]][[4]]
 
 # * Plot all replicates together ----
 
