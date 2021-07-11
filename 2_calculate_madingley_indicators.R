@@ -1,6 +1,7 @@
 
 ## REPOSITORY: https://github.com/conservationscience/madingley_terrestrial_indicators
 
+
 rm(list = ls())
 
 # Directory path to git repo
@@ -391,26 +392,27 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
   lpi_inputs <- filtered_inputs %>%
                 # Calculate 1% of the mean population over time for each group
                 group_by(group_id) %>%
-                # Add 1% of the species mean abundance across all timesteps 
+                # Add 1% of the species mean abundance across all timesteps
                 # so we can take the log in the next step
-                mutate(abundance_adjusted = abundance + 
+                mutate(abundance_adjusted = abundance +
                          (mean(abundance)*0.01)) %>%
                 # Calculate the rate of change since the previous year (dt)
-                # (equation 1 in Mcrae et al 2008) 
+                # (equation 1 in Mcrae et al 2008)
                 mutate(current_abundance = abundance_adjusted, #abundance at current timestep
                        previous_abundance = lag(abundance_adjusted, 1)) %>%  #abundance at previous timestep
                 mutate(dt = log10(current_abundance/previous_abundance)) %>% # rate of change
-                ungroup(.) %>% 
+                ungroup(.) %>%
                 # Calculate mean dt across all groups, per timestep
                 # (equation 4 in Mcrae et al 2008)
-                group_by(time_step) %>% 
-                summarise(mean_dt = mean(dt, na.rm = TRUE)) %>% 
+                group_by(time_step) %>%
+                summarise(mean_dt = mean(dt, na.rm = TRUE),
+                          sd = sd(dt, na.rm = TRUE)) %>%
                 # Add an empty LPI column to fill up in the next step
                 mutate(LPI = NA)
   
   # Set the value of the LPI on the first time step to 1
   lpi_inputs$LPI[start_time_step] <- 1 
-  
+
   # Annoyingly can't get a dplyr version of this to work, but whatever
   
        for (i in 1:(nrow(lpi_inputs) - 1)) {
@@ -424,6 +426,7 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
          # Equation 5 in Mcrae et al 2008
          
          lpi_inputs$LPI[t] <- lpi_inputs$LPI[i] * (10 ^ lpi_inputs$mean_dt[t])
+        
        
          }
   
@@ -562,9 +565,9 @@ plot_living_planet_index <- function(data, ci = FALSE) {
   }
 }
 
-lpi <- calculate_living_planet_index(data, start_time_step = 1, ci = TRUE,
-                                     numboots = 1000)
-plot_living_planet_index(lpi, ci = TRUE)
+# lpi <- calculate_living_planet_index(data, start_time_step = 1, ci = TRUE,
+#                                      numboots = 1000)
+# plot_living_planet_index(lpi, ci = TRUE)
 
 # Set up paths ----
 
@@ -623,7 +626,7 @@ if (development_mode == FALSE) {
   impact_end <- 20
   burnin_months <- 1*12 # in months
   n <- 1 
-  numboots <- 100
+  numboots <- 1000
   start_time_step <- 1
   gen_timeframe <- 10
   interval <- 2
@@ -702,8 +705,8 @@ processed_scenario_paths <- list.dirs(processed_outputs_path, recursive = FALSE)
 if (development_mode == TRUE) {
   
   all_processed_scenario_paths <- processed_scenario_paths
-  processed_scenario_paths <- all_processed_scenario_paths[str_detect(all_processed_scenario_paths, "999_Test_runs")]
-  
+  #processed_scenario_paths <- all_processed_scenario_paths[str_detect(all_processed_scenario_paths, "999_Test_runs")]
+  processed_scenario_paths <- "N:\\Quantitative-Ecology\\Indicators-Project\\Serengeti\\Outputs_from_adaptor_code\\map_of_life\\666_Long_test_runs"
 }
 
 
@@ -985,14 +988,20 @@ for (i in seq_along(scenario_abundance_long)) {
   # For each individual replicate
   
   for (j in seq_along(replicate_abundance)) {
-
+    
+    # Reduce size of the replicate generations dataframe or the merge won't work
+    gen_length <- replicate_generations[[j]] %>% 
+                  dplyr::select(group_id, generation_length_yrs) %>% 
+                  distinct(.)
+    
+    # Add the generation length info to the abundance dataframe
     replicate_ab_gl_formatted[[j]] <- replicate_abundance[[j]] %>%
-        merge(replicate_generations[[j]], by = "group_id") %>%
+        merge(gen_length, by = "group_id") %>%
     arrange(time_step, group_id) %>%
     mutate(generation_by_three = generation_length_yrs * 3) %>% # Time over which to measure decline, 3 x gen length OR:
     mutate(timeframe = ifelse(generation_by_three > gen_timeframe, # 10 years 
                               round(generation_by_three), gen_timeframe)) %>%
-    dplyr::select(-generation_by_three, -parent_cohort_id, -adult_mass_g) %>%
+    dplyr::select(-generation_by_three) %>%
     distinct(.)
   
   }
