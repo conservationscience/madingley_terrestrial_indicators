@@ -31,7 +31,6 @@ rm(list = ls())
 #' TODO: Check gen length equation
 #' TODO: Check bootstrapping, looks weird for the LPI and maybe RLI (timesteps out of sync??)
 #' TODO: Make plots pretty
-#' TODO: Update RLI outputs so they match LPI outputs and can be aggregated
 
 # Libraries ----
 
@@ -81,7 +80,9 @@ maintain_0_abundance <- function(vec) {
 #' (note, selecting TRUE may increase processing time)
 #' @return a dataframe of RLI index scores and confidence intervals over time
 
-calculate_red_list_index <- function(data, numboots, ci = FALSE){
+# data <- scenario_red_list_inputs_annual[[1]][[1]]
+
+calculate_red_list_index <- function(data, numboots, ci = FALSE, replicate_num = NA){
   
   # Using equation from Butchart et al (2007) Improvements to the Red List Index
   
@@ -216,7 +217,11 @@ calculate_red_list_index <- function(data, numboots, ci = FALSE){
                            by = c("functional_group_name",
                                    "time_step")) %>%
                      dplyr::select(functional_group_name, time_step, ci_lower,
-                                    RLI, ci_upper, everything()) 
+                                    RLI, ci_upper, everything()) %>% 
+                     rename(indicator_score = RLI) %>% 
+                     mutate(indicator = "RLI",
+                            replicate = replicate_num)
+                      
   
   return(red_list_scores)
   
@@ -245,7 +250,7 @@ plot_red_list_index_by_group <- function(data, impact_start, impact_end, ci = FA
   
   if (ci == TRUE) {
   
-  plot <- ggplot(data = data, aes(x = time_step, y = RLI,
+  plot <- ggplot(data = data, aes(x = time_step, y = indicator_score,
                            group = functional_group_name,
                            fill = functional_group_name)) +
     geom_line(aes(colour = functional_group_name)) +
@@ -270,7 +275,7 @@ plot_red_list_index_by_group <- function(data, impact_start, impact_end, ci = FA
   
   } else {
     
-    plot <- ggplot(data = data, aes(x = time_step, y = RLI,
+    plot <- ggplot(data = data, aes(x = time_step, y = indicator_score,
                                     group = functional_group_name,
                                     fill = functional_group_name)) +
       geom_line(aes(colour = functional_group_name)) +
@@ -312,7 +317,7 @@ plot_red_list_index <- function(data, impact_start, impact_end, ci = FALSE) {
   
   if (ci == TRUE) {
   
-  plot <- ggplot(data = data, aes(x = time_step, y = RLI)) +
+  plot <- ggplot(data = data, aes(x = time_step, y = indicator_score)) +
     geom_line() +
     geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),
                 alpha = 0.4) +
@@ -334,7 +339,7 @@ plot_red_list_index <- function(data, impact_start, impact_end, ci = FALSE) {
   
   } else {
     
-    plot <- ggplot(data = data, aes(x = time_step, y = RLI)) +
+    plot <- ggplot(data = data, aes(x = time_step, y = indicator_score)) +
       geom_line() +
       scale_fill_viridis_d() +
       scale_color_viridis_d() + 
@@ -705,8 +710,8 @@ processed_scenario_paths <- list.dirs(processed_outputs_path, recursive = FALSE)
 if (development_mode == TRUE) {
   
   all_processed_scenario_paths <- processed_scenario_paths
-  #processed_scenario_paths <- all_processed_scenario_paths[str_detect(all_processed_scenario_paths, "999_Test_runs")]
-  processed_scenario_paths <- "N:\\Quantitative-Ecology\\Indicators-Project\\Serengeti\\Outputs_from_adaptor_code\\map_of_life\\666_Long_test_runs"
+  processed_scenario_paths <- all_processed_scenario_paths[str_detect(all_processed_scenario_paths, "999_Test_runs")]
+  #processed_scenario_paths <- "N:\\Quantitative-Ecology\\Indicators-Project\\Serengeti\\Outputs_from_adaptor_code\\map_of_life\\666_Long_test_runs"
 }
 
 
@@ -991,7 +996,7 @@ for (i in seq_along(scenario_abundance_long)) {
     
     # Reduce size of the replicate generations dataframe or the merge won't work
     gen_length <- replicate_generations[[j]] %>% 
-                  dplyr::select(group_id, generation_length_yrs) %>% 
+                  dplyr::select(group_id, generation_length_yrs, functional_group_name) %>% 
                   distinct(.)
     
     # Add the generation length info to the abundance dataframe
@@ -1207,16 +1212,18 @@ for (i in seq_along(scenario_fg_rli_outputs)) {
     
    replicate_rli_outputs[[j]] <- replicate_rli_fg[[j]] %>%
                                  group_by(time_step) %>%
-                                 summarise(RLI = mean(RLI),
+                                 summarise(indicator_score = mean(indicator_score),
                                            ci_lower = mean(ci_lower),
                                            ci_upper = mean(ci_upper)) %>%
-                                 mutate(replicate = j)
+                                 mutate(indicator = "RLI",
+                                        replicate = j)
    } else {
      
    replicate_rli_outputs[[j]] <- replicate_rli_fg[[j]] %>%
                                  group_by(time_step) %>%
-                                 summarise(RLI = mean(RLI)) %>%
-                                 mutate(replicate = j)
+                                 summarise(indicator_score = mean(indicator_score)) %>%
+                                 mutate(indicator = "RLI",
+                                        replicate = j)
    }
 
   # saveRDS(replicate_rli_outputs[[j]],
@@ -1314,33 +1321,40 @@ scenario_rli_outputs_aggregated <- list()
 for (i in seq_along(scenario_rli_outputs)) {
   
   scenario_rli_outputs_aggregated[[i]] <- do.call(rbind, 
-                                                  scenario_rli_outputs[[i]]) 
+                                                  scenario_rli_outputs[[i]]) %>%
+                                          mutate(scenario = scenarios[[i]]) 
+  
   
   scenario_mean_rli <- scenario_rli_outputs_aggregated[[i]] %>%
                        group_by(time_step) %>%
-                       summarise(RLI = mean(RLI),
+                       summarise(indicator_score = mean(indicator_score),
                                  ci_lower = mean(ci_lower),
                                  ci_upper = mean(ci_upper)) %>%
-                       mutate(replicate = 0) # Replicate 0 will always be the mean
+                       mutate(indicator = "RLI",
+                              replicate = 0,
+                              scenario = scenarios[[i]]) # Replicate 0 will always be the mean
   
   scenario_rli_outputs_aggregated[[i]] <-  rbind(scenario_rli_outputs_aggregated[[i]],
                                                  scenario_mean_rli) %>%
                                            mutate(replicate = as.factor(replicate)) %>%
                                            mutate(level = ifelse(replicate == 0,
                                                                  "Mean RLI", 
-                                                                 "Replicate RLI"))
+                                                                 "Replicate RLI"),
+                                                  scenario = scenarios[[i]])
   
 }
 
 head(scenario_rli_outputs_aggregated[[1]])
 tail(scenario_rli_outputs_aggregated[[1]])
 
+# Plot all together
+
 scenario_rli_plots_aggregated <- list()
 
 for (i in seq_along(scenario_rli_outputs_aggregated)){
 
 scenario_rli_plots_aggregated[[i]] <- ggplot(data = scenario_rli_outputs_aggregated[[i]], 
-       aes(x = time_step, y = RLI, group = replicate,
+       aes(x = time_step, y = indicator_score, group = replicate,
            color = level)) +
   geom_line() +
   scale_color_manual(values = c("black", "gray62")) + 
@@ -1454,20 +1468,21 @@ scenario_lpi_outputs_aggregated <- list()
 for (i in seq_along(scenario_lpi_outputs)) {
   
   scenario_lpi_outputs_aggregated[[i]] <- do.call(rbind, 
-                                                  scenario_lpi_outputs[[i]]) 
+                                                  scenario_lpi_outputs[[i]]) %>%
+                                          mutate(scenario = scenarios[[i]]) 
   
   scenario_mean_lpi <- scenario_lpi_outputs_aggregated[[i]] %>%
     group_by(time_step) %>%
     summarise(indicator_score = mean(indicator_score),
               ci_lower = mean(ci_lower),
               ci_upper = mean(ci_upper)) %>%
-    mutate(replicate = 0,
-           indicator = "LPI") # Replicate 0 will always be the mean
+    mutate(replicate = 0,# Replicate 0 will always be the mean
+           indicator = "LPI",
+           scenario = scenarios[[i]]) 
   
   scenario_lpi_outputs_aggregated[[i]] <-  rbind(scenario_lpi_outputs_aggregated[[i]],
                                                  scenario_mean_lpi) %>%
     mutate(replicate = as.factor(replicate)) %>%
-    mutate(scenario = scenarios[[i]]) %>% 
     mutate(level = ifelse(replicate == 0,
                           "Mean LPI", 
                           "Replicate LPI"))
@@ -1533,3 +1548,24 @@ for (i in seq_along(scenario_lpi_outputs_aggregated)){
 }
 
 scenario_lpi_plots_aggregated[[1]]
+
+# Combine indicators ----
+
+all_lpi <- do.call(rbind, scenario_lpi_outputs_aggregated) %>% 
+           filter(replicate != 0) # Remove the mean so we just have replicates 
+
+all_rli <- do.call(rbind, scenario_rli_outputs_aggregated) %>% 
+           filter(replicate != 0) # Remove the mean so we just have replicates
+
+all_indicators <- rbind(all_lpi, all_rli)
+
+saveRDS(all_indicators,
+        file.path(indicator_outputs_folder,
+                  paste(today, "all_indicators_output_data.rds",
+                        sep = "_")))
+
+write.csv(all_indicators,
+          file.path(indicator_outputs_folder,
+                    paste(today, "all_indicators_output_data.csv",
+                          sep = "_")))
+
