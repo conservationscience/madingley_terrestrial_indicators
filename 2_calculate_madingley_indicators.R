@@ -1,7 +1,6 @@
 
 ## REPOSITORY: https://github.com/conservationscience/madingley_terrestrial_indicators
 
-
 rm(list = ls())
 
 # Directory path to git repo
@@ -30,7 +29,8 @@ rm(list = ls())
 #' TODO: Test sampling interval by trying different times of year
 #' TODO: Check gen length equation
 #' TODO: Check bootstrapping, looks weird for the LPI and maybe RLI (timesteps out of sync??)
-#' TODO: Make plots pretty
+#' TODO: Make LPI plots pretty
+#' TODO: Make timesteps in plots annual (or whatever is relevant - when final sampling regime decided)
 
 # Libraries ----
 
@@ -80,7 +80,7 @@ maintain_0_abundance <- function(vec) {
 #' (note, selecting TRUE may increase processing time)
 #' @return a dataframe of RLI index scores and confidence intervals over time
 
-# data <- scenario_red_list_inputs_annual[[1]][[1]]
+#data <- scenario_red_list_inputs_annual[[1]][[1]]
 
 calculate_red_list_index <- function(data, numboots, ci = FALSE, replicate_num = NA){
   
@@ -127,7 +127,7 @@ calculate_red_list_index <- function(data, numboots, ci = FALSE, replicate_num =
   # (would normally be taxa) for each year. If you run on a single group
   # it shouldn't matter, will just turn data into one big group
   
-  grouped_data <- weighted_data %>% group_by(functional_group_name, time_step)
+  grouped_data <- weighted_data %>% group_by(functional_group_name, annual_time_step)
   
   # Sum category weights for each group, in each timestep,
   # calculate number of species per group
@@ -149,7 +149,7 @@ calculate_red_list_index <- function(data, numboots, ci = FALSE, replicate_num =
   
   # Split by timestep - we want CI for each functional group, for each timestep 
   
-  weighted_data_timestep_list <- split(weighted_data, weighted_data$time_step)
+  weighted_data_timestep_list <- split(weighted_data, weighted_data$annual_time_step)
   
   ## For each functional group (level 1)
 
@@ -162,7 +162,7 @@ calculate_red_list_index <- function(data, numboots, ci = FALSE, replicate_num =
       grouped_timestep_data <- weighted_data_timestep_list[[i]] %>%
                              group_by(functional_group_name)
     
-      time <- grouped_timestep_data$time_step[1]
+      time <- grouped_timestep_data$annual_time_step[1]
     
       boot <- list()
      # Calculate the bootstrap confidence intervals
@@ -204,7 +204,7 @@ calculate_red_list_index <- function(data, numboots, ci = FALSE, replicate_num =
                                                    probs = 0.025),
                                ci_upper = quantile(rep_scores$RLI, 
                                                    probs = 0.975)) %>%
-                   mutate(time_step = time) 
+                   mutate(annual_time_step = time) 
       
       timestep_confidence_intervals[[i]] <- ci_scores
     
@@ -215,8 +215,8 @@ calculate_red_list_index <- function(data, numboots, ci = FALSE, replicate_num =
   red_list_scores <- index_scores %>%
                      merge(confidence_intervals, 
                            by = c("functional_group_name",
-                                   "time_step")) %>%
-                     dplyr::select(functional_group_name, time_step, ci_lower,
+                                   "annual_time_step")) %>%
+                     dplyr::select(functional_group_name, annual_time_step, ci_lower,
                                     RLI, ci_upper, everything()) %>% 
                      rename(indicator_score = RLI) %>% 
                      mutate(indicator = "RLI",
@@ -250,7 +250,7 @@ plot_red_list_index_by_group <- function(data, impact_start, impact_end, ci = FA
   
   if (ci == TRUE) {
   
-  plot <- ggplot(data = data, aes(x = time_step, y = indicator_score,
+  plot <- ggplot(data = data, aes(x = annual_time_step, y = indicator_score,
                            group = functional_group_name,
                            fill = functional_group_name)) +
     geom_line(aes(colour = functional_group_name)) +
@@ -275,7 +275,7 @@ plot_red_list_index_by_group <- function(data, impact_start, impact_end, ci = FA
   
   } else {
     
-    plot <- ggplot(data = data, aes(x = time_step, y = indicator_score,
+    plot <- ggplot(data = data, aes(x = annual_time_step, y = indicator_score,
                                     group = functional_group_name,
                                     fill = functional_group_name)) +
       geom_line(aes(colour = functional_group_name)) +
@@ -317,7 +317,7 @@ plot_red_list_index <- function(data, impact_start, impact_end, ci = FALSE) {
   
   if (ci == TRUE) {
   
-  plot <- ggplot(data = data, aes(x = time_step, y = indicator_score)) +
+  plot <- ggplot(data = data, aes(x = annual_time_step, y = indicator_score)) +
     geom_line() +
     geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),
                 alpha = 0.4) +
@@ -339,7 +339,7 @@ plot_red_list_index <- function(data, impact_start, impact_end, ci = FALSE) {
   
   } else {
     
-    plot <- ggplot(data = data, aes(x = time_step, y = indicator_score)) +
+    plot <- ggplot(data = data, aes(x = annual_time_step, y = indicator_score)) +
       geom_line() +
       scale_fill_viridis_d() +
       scale_color_viridis_d() + 
@@ -370,7 +370,7 @@ plot_red_list_index <- function(data, impact_start, impact_end, ci = FALSE) {
 ## Note: Have tested this code against the code Emily used on the LME ecopath
 ## data to see if they produce the same results, which they do.
 
-data <- scenario_abundance_long[[1]][[2]]
+data <- scenario_lpi_inputs[[1]][[2]]
 
 calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
                                           numboots, replicate_num = NA){
@@ -409,7 +409,7 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
                 ungroup(.) %>%
                 # Calculate mean dt across all groups, per timestep
                 # (equation 4 in Mcrae et al 2008)
-                group_by(time_step) %>%
+                group_by(annual_time_step) %>%
                 summarise(mean_dt = mean(dt, na.rm = TRUE),
                           sd = sd(dt, na.rm = TRUE)) %>%
                 # Add an empty LPI column to fill up in the next step
@@ -454,7 +454,7 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
   # dataset but with replacement
   
   rep <- filtered_inputs %>% 
-         group_by(time_step) %>% # so we take random samples stratified by timestep (otherwise end up with uneven sample sizes in each timestep)
+         group_by(annual_time_step) %>% # so we take random samples stratified by timestep (otherwise end up with uneven sample sizes in each timestep)
          slice_sample(prop = 1, replace = TRUE) %>%  # get random sample of rows and add to DF
          mutate(replicate = j)
   
@@ -475,7 +475,7 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
     ungroup(.) %>% 
     # Calculate mean dt across all groups, per timestep
     # (equation 4 in Mcrae et al 2008)
-    group_by(time_step) %>% 
+    group_by(annual_time_step) %>% 
     summarise(mean_dt = mean(dt, na.rm = TRUE)) %>% 
     # Add an empty LPI column to fill up in the next step
     mutate(LPI = NA,
@@ -514,7 +514,7 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
   # Get the confidence intervals for each timestep
   
   ci_scores <- bootstrap_replicates_df %>% 
-               group_by(time_step) %>% # Get the LPI scores for all reps, for each timestep
+               group_by(annual_time_step) %>% # Get the LPI scores for all reps, for each timestep
                summarise(ci_lower = quantile(LPI,
                                              probs = 0.025), # Get the lower quantile of all LPI rep scores
                          ci_upper = quantile(LPI,
@@ -523,8 +523,8 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
   # Merge the confidence intervals with the original LPI
   
   index_scores <- lpi_inputs %>% 
-                  merge(ci_scores, by = "time_step") %>% 
-                  select(time_step, LPI, ci_lower, ci_upper) %>% 
+                  merge(ci_scores, by = "annual_time_step") %>% 
+                  select(annual_time_step, LPI, ci_lower, ci_upper) %>% 
                   mutate(indicator = "LPI",
                          replicate = replicate_num) %>% 
                   rename(indicator_score = LPI)
@@ -532,7 +532,7 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
   } else {
     
   index_scores <- lpi_inputs %>% 
-    select(time_step, LPI) %>%
+    select(annual_time_step, LPI) %>%
     mutate(indicator = LPI,
            replicate = replicate_num,
            ci_lower = NA,
@@ -558,13 +558,13 @@ plot_living_planet_index <- function(data, ci = FALSE) {
   
   if (ci == TRUE) {
   
-    ggplot(data, aes(x = time_step, y = indicator_score)) +
+    ggplot(data, aes(x = annual_time_step, y = indicator_score)) +
     geom_line()  +
     geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),
                     alpha = 0.4)
   } else {
     
-    ggplot(data, aes(x = time_step, y = indicator_score)) +
+    ggplot(data, aes(x = annual_time_step, y = indicator_score)) +
       geom_line()
     
   }
@@ -616,8 +616,8 @@ development_mode <- TRUE
 
 if (development_mode == FALSE) {
   
-  impact_start <- 1100
-  impact_end <- 1200
+  impact_start <- 100  #in years
+  impact_end <- 200  #in years
   burnin_months <- 1000*12 # in months
   n <- 12
   numboots <- 1000 # Rowland et al 2021 (uncertainty)
@@ -627,14 +627,14 @@ if (development_mode == FALSE) {
   
 } else {
   
-  impact_start <- 10
-  impact_end <- 20
-  burnin_months <- 1*12 # in months
+  impact_start <- 1 * 12 # in months
+  impact_end <- 2 * 12 # in months
+  burnin_months <- 1 * 12 # in months
   n <- 1 
-  numboots <- 1000
+  numboots <- 100
   start_time_step <- 1
   gen_timeframe <- 10
-  interval <- 2
+  interval <- 12
   
 }
 
@@ -710,8 +710,8 @@ processed_scenario_paths <- list.dirs(processed_outputs_path, recursive = FALSE)
 if (development_mode == TRUE) {
   
   all_processed_scenario_paths <- processed_scenario_paths
-  processed_scenario_paths <- all_processed_scenario_paths[str_detect(all_processed_scenario_paths, "999_Test_runs")]
-  #processed_scenario_paths <- "N:\\Quantitative-Ecology\\Indicators-Project\\Serengeti\\Outputs_from_adaptor_code\\map_of_life\\666_Long_test_runs"
+  #processed_scenario_paths <- all_processed_scenario_paths[str_detect(all_processed_scenario_paths, "999_Test_runs")]
+  processed_scenario_paths <- "N:\\Quantitative-Ecology\\Indicators-Project\\Serengeti\\Outputs_from_adaptor_code\\map_of_life\\666_Long_test_runs"
 }
 
 
@@ -818,6 +818,8 @@ scenario_abundance_raw[[i]] <- lapply(abundance_files, readRDS)
 
 }
 
+x <- scenario_abundance_raw[[1]][[1]]
+
 # Remove burn-in ----
 
 # Remove the burn in timesteps for abundance files (output should be same structure
@@ -892,6 +894,7 @@ for (i in seq_along(scenario_abundance_formatted)) {
   colnames(abundance_single) <- new_names
   
   # Convert from wide to long
+  # NOTE: This begins the time_step at one (rather than the true post-burn-in timestep)
   replicate_abundance_long[[j]] <- abundance_single %>% 
     rownames_to_column(.) %>%
     pivot_longer(all_of(new_names)) %>%
@@ -1005,7 +1008,7 @@ for (i in seq_along(scenario_abundance_long)) {
     arrange(time_step, group_id) %>%
     mutate(generation_by_three = generation_length_yrs * 3) %>% # Time over which to measure decline, 3 x gen length OR:
     mutate(timeframe = ifelse(generation_by_three > gen_timeframe, # 10 years 
-                              round(generation_by_three), gen_timeframe)) %>%
+                       round(generation_by_three), gen_timeframe)) %>%
     dplyr::select(-generation_by_three) %>%
     distinct(.)
   
@@ -1144,13 +1147,20 @@ for (i in seq_along(scenario_red_list_data)) {
   for (j in seq_along(replicate_red_list_data)) {
     
   replicate_red_list_inputs_annual[[j]] <-  replicate_red_list_data[[j]] %>%
-                                     slice(which(row_number() %% interval == 1))
+                                            group_by(group_id) %>% 
+                                            # select rows that are multiples of the specified interval 
+                                            # (eg if interval is 12, it samples one month from every year)
+                                            slice(which(row_number() %% interval == 0)) %>% 
+    mutate(annual_time_step = seq(1,300,1)) #see if it works just hard coding in number of time steps
   
   }
   
   scenario_red_list_inputs_annual[[i]] <- replicate_red_list_inputs_annual
   
 }
+
+y <- scenario_red_list_data[[1]][[1]]
+x <- scenario_red_list_inputs_annual[[1]][[1]]
 
 
 # * Calculate RLI ----
@@ -1211,7 +1221,7 @@ for (i in seq_along(scenario_fg_rli_outputs)) {
    if ("ci_lower" %in% names(replicate_rli_fg[[j]])) {
     
    replicate_rli_outputs[[j]] <- replicate_rli_fg[[j]] %>%
-                                 group_by(time_step) %>%
+                                 group_by(annual_time_step) %>%
                                  summarise(indicator_score = mean(indicator_score),
                                            ci_lower = mean(ci_lower),
                                            ci_upper = mean(ci_upper)) %>%
@@ -1220,7 +1230,7 @@ for (i in seq_along(scenario_fg_rli_outputs)) {
    } else {
      
    replicate_rli_outputs[[j]] <- replicate_rli_fg[[j]] %>%
-                                 group_by(time_step) %>%
+                                 group_by(annual_time_step) %>%
                                  summarise(indicator_score = mean(indicator_score)) %>%
                                  mutate(indicator = "RLI",
                                         replicate = j)
@@ -1326,7 +1336,7 @@ for (i in seq_along(scenario_rli_outputs)) {
   
   
   scenario_mean_rli <- scenario_rli_outputs_aggregated[[i]] %>%
-                       group_by(time_step) %>%
+                       group_by(annual_time_step) %>%
                        summarise(indicator_score = mean(indicator_score),
                                  ci_lower = mean(ci_lower),
                                  ci_upper = mean(ci_upper)) %>%
@@ -1354,7 +1364,7 @@ scenario_rli_plots_aggregated <- list()
 for (i in seq_along(scenario_rli_outputs_aggregated)){
 
 scenario_rli_plots_aggregated[[i]] <- ggplot(data = scenario_rli_outputs_aggregated[[i]], 
-       aes(x = time_step, y = indicator_score, group = replicate,
+       aes(x = annual_time_step, y = indicator_score, group = replicate,
            color = level)) +
   geom_line() +
   scale_color_manual(values = c("black", "gray62")) + 
@@ -1401,7 +1411,7 @@ if( !dir.exists( file.path(lpi_plots_folder) ) ) {
 # TEMP CODE ---
 ## Look at the data we are dealing with
 
-data <- abundance_long[[1]]
+data <- scenario_abundance_long[[1]][[1]]
 
 head(data)
 
@@ -1411,12 +1421,38 @@ ggplot(data, aes(x = time_step, y = abundance,
           geom_text(aes(label= group_id),hjust=0, vjust=0) +
           theme(legend.position = "none")
 
+# * Sample data ----
+
+scenario_lpi_inputs <- list()
+replicate_lpi_inputs <- list()
+
+for (i in seq_along(scenario_abundance_long)) {
+  
+  # Get replicates for a single scenario
+  replicate_abundance_long <- scenario_abundance_long[[i]]
+  
+  # Calculate the LPI for each replicate within the scenario
+  for (j in seq_along(replicate_abundance_long)) {
+
+  replicate_lpi_inputs[[j]] <- replicate_abundance_long[[j]] %>%
+    group_by(group_id) %>% 
+    # select rows that are multiples of the specified interval 
+    # (eg if interval is 12, it samples one month from every year)
+    slice(which(row_number() %% interval == 0)) %>% 
+    mutate(annual_time_step = seq(1,300,1)) #see if it works just hard coding in number of time steps
+  
+  }
+  
+  scenario_lpi_inputs[[i]] <- replicate_lpi_inputs
+
+}
+
 # * Calculate LPI ----
 
 # Retain naming convention, the LPI just takes the abundance dataframes we
 # already formatted while making the RLI inputs
 
-scenario_lpi_inputs <- scenario_abundance_long
+# scenario_lpi_inputs <- scenario_abundance_long
 
 # Loop through each scenario and replicate and calculate the LPI per rep
 
@@ -1472,7 +1508,7 @@ for (i in seq_along(scenario_lpi_outputs)) {
                                           mutate(scenario = scenarios[[i]]) 
   
   scenario_mean_lpi <- scenario_lpi_outputs_aggregated[[i]] %>%
-    group_by(time_step) %>%
+    group_by(annual_time_step) %>%
     summarise(indicator_score = mean(indicator_score),
               ci_lower = mean(ci_lower),
               ci_upper = mean(ci_upper)) %>%
@@ -1519,7 +1555,11 @@ for (i in seq_along(scenario_lpi_outputs)) {
   
 }
 
-scenario_lpi_plots[[1]][[3]]
+i <- 1
+scenario_lpi_plots[[1]][[i]]
+
+i <- i + 1
+scenario_lpi_plots[[1]][[i]]
 
 # * Plot all replicates together ----
 
@@ -1528,7 +1568,7 @@ scenario_lpi_plots_aggregated <- list()
 for (i in seq_along(scenario_lpi_outputs_aggregated)){
   
   scenario_lpi_plots_aggregated[[i]] <- ggplot(data = scenario_lpi_outputs_aggregated[[i]], 
-                                               aes(x = time_step, 
+                                               aes(x = annual_time_step, 
                                                    y = indicator_score, 
                                                    group = replicate,
                                                    color = level)) +
@@ -1550,6 +1590,16 @@ for (i in seq_along(scenario_lpi_outputs_aggregated)){
 scenario_lpi_plots_aggregated[[1]]
 
 # Combine indicators ----
+
+all_indicators_list <- list(scenario_rli_outputs,
+                            scenario_lpi_outputs)
+
+names(all_indicators_list) <- c("RLI", "LPI")
+
+saveRDS(all_indicators_list,
+        file.path(indicator_outputs_folder,
+                  paste(today, "all_indicators_output_data_list.rds",
+                        sep = "_")))
 
 all_lpi <- do.call(rbind, scenario_lpi_outputs_aggregated) %>% 
            filter(replicate != 0) # Remove the mean so we just have replicates 
