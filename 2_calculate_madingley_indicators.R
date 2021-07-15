@@ -385,7 +385,8 @@ calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
     # Save a copy of original abundance values
     rename(abundance_original = abundance) %>%
     # Identify rows where abundance == 0, and change all subsequent years to 0 too
-    mutate(abundance = maintain_0_abundance(abundance_original)) 
+    # mutate(abundance = maintain_0_abundance(abundance_original)) 
+    mutate(abundance = abundance_original)
   
   head(filtered_inputs)
   
@@ -627,14 +628,23 @@ if (development_mode == FALSE) {
   
 } else {
   
-  impact_start <- 1 * 12 # in months
-  impact_end <- 2 * 12 # in months
-  burnin_months <- 1 * 12 # in months
-  n <- 1 
-  numboots <- 100
+  # impact_start <- 1 * 12 # in years
+  # impact_end <- 2 * 12 # in years
+  # burnin_months <- 1 * 12 # in months
+  # n <- 1 
+  # numboots <- 100
+  # start_time_step <- 1
+  # gen_timeframe <- 10
+  # interval <- 12
+  
+  impact_start <- 100  #in years
+  impact_end <- 200  #in years
+  burnin_months <- 1000*12 # in months
+  n <- 12
+  numboots <- 2 # Rowland et al 2021 (uncertainty)
   start_time_step <- 1
-  gen_timeframe <- 10
-  interval <- 12
+  gen_timeframe <- 10 * 12
+  interval <- 12 * 5
   
 }
 
@@ -774,7 +784,7 @@ scenario_replicate_paths
 # Details for the virtual species or 'groups'
 # Groups file is the same for all simulations, so can just pull it from whichever directory
 
-groups <- readRDS(file.path(processed_simulation_paths[[1]][2], "groups.rds"))
+groups <- readRDS(file.path(processed_simulation_paths[[1]][1], "groups.rds"))
 
 # Get abundance ----
 
@@ -818,7 +828,7 @@ scenario_abundance_raw[[i]] <- lapply(abundance_files, readRDS)
 
 }
 
-x <- scenario_abundance_raw[[1]][[1]]
+# x <- scenario_abundance_raw[[1]][[1]]
 
 # Remove burn-in ----
 
@@ -1071,8 +1081,9 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
                  arrange(group_id, time_step) %>%
      # Replace all non-ex status with ex after first occurrence 
      mutate(extinct = match("EX", rl_status)) %>%
-     mutate(rl_status_adjusted = with(., ave(rl_status, 
-                                             FUN=maintain_ex_status)))
+     # mutate(rl_status_adjusted = with(., ave(rl_status, 
+     #                                         FUN=maintain_ex_status)))
+     mutate(rl_status_adjusted = rl_status)
   
     # Print a message if extinctions have been adjusted
     
@@ -1121,15 +1132,15 @@ tail(rli_inputs)
 ## Get one group to check how their status changes over time relative to how
 ## their abundance changes
 
-group_id_select <- "13.16.17" # Shows example of 'resurrected' virtual spp
-# group_id_select <- "10.40"
-
-data <- rli_inputs %>% dplyr::filter(group_id == group_id_select)
-
-ggplot(data, aes(x = time_step, y = abundance)) +
-  geom_line() +
-  geom_text(aes(label= rl_status_adjusted,
-                col = rl_status_adjusted),hjust=0, vjust=0)
+# group_id_select <- "13.16.17" # Shows example of 'resurrected' virtual spp
+# # group_id_select <- "10.40"
+# 
+# data <- rli_inputs %>% dplyr::filter(group_id == group_id_select)
+# 
+# ggplot(data, aes(x = time_step, y = abundance)) +
+#   geom_line() +
+#   geom_text(aes(label= rl_status_adjusted,
+#                 col = rl_status_adjusted),hjust=0, vjust=0)
 
 # * Sample data ----
 
@@ -1286,7 +1297,7 @@ scenario_fg_rli_plots[[i]] <- replicate_fg_rli_plots
 
 }
 
-scenario_fg_rli_plots[[1]][[4]]
+scenario_fg_rli_plots[[1]][[3]]
 
 # RLI with all functional groups aggregated
 # i.e. mean of each 'taxa' RLI as per Butchart et al (2010) 'Indicators of
@@ -1319,7 +1330,7 @@ for (i in seq_along(scenario_rli_outputs)) {
 
 }
 
-scenario_rli_plots[[1]][[4]]
+scenario_rli_plots[[1]][[1]]
 
 # * Plot all replicates together ----
 
