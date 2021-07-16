@@ -644,7 +644,8 @@ if (development_mode == FALSE) {
   numboots <- 2 # Rowland et al 2021 (uncertainty)
   start_time_step <- 1
   gen_timeframe <- 10 * 12
-  interval <- 12 * 5
+  interval <- 12 
+  df_size <- 300/(interval/12)
   
 }
 
@@ -1162,7 +1163,7 @@ for (i in seq_along(scenario_red_list_data)) {
                                             # select rows that are multiples of the specified interval 
                                             # (eg if interval is 12, it samples one month from every year)
                                             slice(which(row_number() %% interval == 0)) %>% 
-    mutate(annual_time_step = seq(1,300,1)) #see if it works just hard coding in number of time steps
+    mutate(annual_time_step = seq(1,df_size,1)) #see if it works just hard coding in number of time steps
   
   }
   
@@ -1450,7 +1451,7 @@ for (i in seq_along(scenario_abundance_long)) {
     # select rows that are multiples of the specified interval 
     # (eg if interval is 12, it samples one month from every year)
     slice(which(row_number() %% interval == 0)) %>% 
-    mutate(annual_time_step = seq(1,300,1)) #see if it works just hard coding in number of time steps
+    mutate(annual_time_step = seq(1,df_size,1)) #see if it works just hard coding in number of time steps
   
   }
   
