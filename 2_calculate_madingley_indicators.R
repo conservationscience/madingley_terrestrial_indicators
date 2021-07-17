@@ -657,7 +657,7 @@ if (development_mode == FALSE) {
   numboots <- 2 # Rowland et al 2021 (uncertainty)
   start_time_step <- 1
   gen_timeframe <- 10 # in years
-  interval <- 12 * 5
+  interval <- 12 
   # Don't adjust these
   max_timestep <- 300/(interval/12)
   impact_start <- max_timestep/3 * 1  #in years
@@ -1023,6 +1023,8 @@ if( !dir.exists( file.path(rli_plots_folder) ) ) {
 
 # * Merge abundance and generation length data ----
 
+rm(formatted)
+
 scenario_ab_gl_formatted <- list()
 replicate_ab_gl_formatted <- list()
 
@@ -1054,19 +1056,53 @@ for (i in seq_along(scenario_abundance_long)) {
       # select rows that are multiples of the specified interval 
       # (eg if interval is 12, it samples one month from every year)
     slice(which(row_number() %% interval == 0)) %>% 
-    mutate(annual_time_step = seq(1,max_timestep,1)) 
+    mutate(annual_time_step = seq(1,max_timestep,1)) %>% 
+    # Check whether the group's abundance is 0 at the last timestep
+    mutate(goes_extinct = ifelse(monthly_time_step == max(monthly_time_step) &
+                                 abundance == 0, TRUE, FALSE),
+           previous_abundance = lag(abundance, 1),
+           next_abundance = lead(abundance, 1),
+           true_extinction = ifelse(goes_extinct == TRUE &
+                                    abundance == 0 &
+                                    previous_abundance == 0,
+                                    "true extinction", # 1 = true extinction
+                                    ifelse(goes_extinct == FALSE &
+                                           abundance == 0,
+                                    "false extinction", "not extinct")))# %>% 
+      #filter(true_extinction != "false extinction") 
     
-  
+    # Check if there are any carnivorous endotherms
+    
+    check <- replicate_ab_gl_formatted[[j]] %>% 
+             group_by(functional_group_name) %>% 
+             summarise(present = sum(abundance)) %>% 
+             filter(functional_group_name == "carnivore endotherm") %>% 
+             dplyr::select(present) %>% 
+             pull(.)
+    
+    # if they are present, keep the replicate
+    
+    if (check != 0) {
+      
+      scenario_ab_gl_formatted[[i]] <- replicate_ab_gl_formatted
+      
+    } else {
+      
+    # if they are not, remove that replicate
+      
+      rm(replicate_ab_gl_formatted)
+      
+      print(paste("Replicate", i, "removed because no carnivorous endotherms are present", sep = " "))
+    
+    }
   }
-  
-  scenario_ab_gl_formatted[[i]] <- replicate_ab_gl_formatted
-
-}
+}  
 
 head(scenario_ab_gl_formatted[[1]][[1]])
 dim(scenario_ab_gl_formatted[[1]][[1]])
 length(unique(scenario_ab_gl_formatted[[1]][[1]]$group_id))
 
+formatted <- scenario_ab_gl_formatted[[1]][[1]]
 
 # * Sample data ----
 
@@ -1136,9 +1172,9 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
     # (specified by 'timeframe' column). Its okay to take the first value of 
     # timeframe bc the dataframe is grouped by group_id, and timeframe only changes
     # between and not within group_ids
-    mutate(diff = (abundance - dplyr::lag(abundance, timeframe[1]))) %>%
+    mutate(diff = (abundance_adjusted - dplyr::lag(abundance_adjusted, timeframe[1]))) %>%
     # calculate the rate of change
-    mutate(decline = diff/dplyr::lag(abundance, timeframe[1])) %>% 
+    mutate(decline = diff/dplyr::lag(abundance_adjusted, timeframe[1])) %>% 
     # assign red list risk status based on decline 
     mutate(rl_status = ifelse(decline > -0.40, "LC",
                               ifelse(decline <= -0.40 & decline > -0.50, "NT", # Where did this and LC thresholds come from?
@@ -1148,10 +1184,25 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
                               ifelse(decline <= -1, "EX", "NA"))))))) %>%
                  arrange(group_id, monthly_time_step) %>%
      # Replace all non-ex status with ex after first occurrence 
-     mutate(extinct = match("EX", rl_status)) %>%
+     # mutate(extinct = match("EX", rl_status)) %>%
+     mutate(extinct = ifelse(rl_status == "EX", 1, 0)) %>% 
      # mutate(rl_status_adjusted = with(., ave(rl_status, 
      #                                         FUN=maintain_ex_status)))
-     mutate(rl_status_adjusted = rl_status)
+     #mutate(rl_status_adjusted = rl_status) %>% 
+     group_by(group_id) #%>% 
+     # # Check whether red list status is temporary or if it repeats
+     # mutate(goes_extinct = ifelse(annual_time_step == max(annual_time_step) &
+     #                              rl_status == "EX", TRUE, FALSE),
+     #        previous_status = lag(rl_status, 1),
+     #        next_status = lead(rl_status, 1),
+     #        true_extinction = ifelse(goes_extinct == TRUE &
+     #                                 rl_status == "EX" &
+     #                                 previous_status == "EX",
+     #                                 1,
+     #                                 ifelse(goes_extinct == FALSE &
+     #                                        rl_status == "EX",
+     #                                 0, 2)),
+     #        rl_status_adjusted = ifelse(true_extinction == 0, NA , rl_status))
   
     # Print a message if extinctions have been adjusted
     
@@ -1254,7 +1305,7 @@ for (i in seq_along(scenario_red_list_data)) {
 }
   
   
-x <- scenario_fg_rli_outputs[[1]][[1]]
+x <- scenario_fg_rli_outputs[[1]][[3]]
 head(x)
 
 # Mean RLI aggregated across groups
@@ -1307,6 +1358,7 @@ for (i in seq_along(scenario_fg_rli_outputs)) {
 }
 
 head(scenario_rli_outputs)[[1]][[1]]
+
 
 # * Plot RLI ----
 
@@ -1501,7 +1553,7 @@ for (i in seq_along(scenario_abundance_long)) {
 
 # lpi_input <- scenario_lpi_inputs[[1]][[2]]
 # head(lpi_input)
-# write.csv(lpi_input, file.path(indicator_outputs_folder, "lpi_input_example_data_annual.csv"))
+# write.csv(lpi_input, file.path(indicator_outputs_folder, "lpi_input_example_annual.csv"))
 
 # * Calculate LPI ----
 
