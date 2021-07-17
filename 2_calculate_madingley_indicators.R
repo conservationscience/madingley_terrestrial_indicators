@@ -227,7 +227,17 @@ calculate_red_list_index <- function(data, numboots, ci = FALSE, replicate_num =
   
   } else {
     
- red_list_scores <- index_scores 
+ red_list_scores <- index_scores  %>% 
+                    rename(indicator_score = RLI) %>% 
+                    mutate(indicator = "RLI",
+                            replicate = replicate_num,
+                            ci_lower = NA,
+                            ci_upper = NA) %>% 
+                    dplyr::select(functional_group_name, annual_time_step,
+                                  ci_lower, indicator_score, ci_upper, total_weight,
+                                  total_count, Criteria, indicator, replicate) 
+                    
+ 
  return(red_list_scores)
  
     }
@@ -370,14 +380,14 @@ plot_red_list_index <- function(data, impact_start, impact_end, ci = FALSE) {
 ## Note: Have tested this code against the code Emily used on the LME ecopath
 ## data to see if they produce the same results, which they do.
 
-data <- scenario_lpi_inputs[[1]][[2]]
+
 
 calculate_living_planet_index <- function(data, start_time_step = 1, ci = FALSE,
                                           numboots, replicate_num = NA){
   
   filtered_inputs <- data %>%
     # Remove timesteps if needed (if not make start_time_step = 1)
-    filter(time_step >= start_time_step) %>%
+    filter(annual_time_step >= start_time_step) %>%
     # Group by virtual species (vs)
     group_by(group_id) %>% 
     # Remove vs that have no individuals at any timestep
@@ -617,35 +627,41 @@ development_mode <- TRUE
 
 if (development_mode == FALSE) {
   
-  impact_start <- 100  #in years
-  impact_end <- 200  #in years
+
   burnin_months <- 1000*12 # in months
   n <- 12
   numboots <- 1000 # Rowland et al 2021 (uncertainty)
   start_time_step <- 1
-  gen_timeframe <- 10 * 12
+  gen_timeframe <- 10 
   interval <- 12
+  # Don't adjust these
+  max_timestep <- 300/(interval/12)
+  impact_start <- max_timestep/3 * 1  #in years
+  impact_end <- max_timestep/3 * 2  #in years
   
 } else {
   
-  # impact_start <- 1 * 12 # in years
-  # impact_end <- 2 * 12 # in years
   # burnin_months <- 1 * 12 # in months
   # n <- 1 
   # numboots <- 100
   # start_time_step <- 1
   # gen_timeframe <- 10
   # interval <- 12
+  # Don't adjust these
+  # max_timestep <- 300/(interval/12)
+  # impact_start <- max_timestep/3 * 1  #in years
+  # impact_end <- max_timestep/3 * 2  #in years
   
-  impact_start <- 100  #in years
-  impact_end <- 200  #in years
   burnin_months <- 1000*12 # in months
   n <- 12
   numboots <- 2 # Rowland et al 2021 (uncertainty)
   start_time_step <- 1
-  gen_timeframe <- 10 * 12
-  interval <- 12 
-  df_size <- 300/(interval/12)
+  gen_timeframe <- 10 # in years
+  interval <- 12 * 5
+  # Don't adjust these
+  max_timestep <- 300/(interval/12)
+  impact_start <- max_timestep/3 * 1  #in years
+  impact_end <- max_timestep/3 * 2  #in years
   
 }
 
@@ -852,6 +868,12 @@ for (i in seq_along(scenario_abundance_raw)) {
     
     rep <- abundance_reps[[j]]
     
+    # Make correct numeric column names now
+    
+    col_names <- seq(1,ncol(rep),1)
+    
+    colnames(rep) <- col_names
+    
     # Remove the burnin period 
     
     abundance_temp <- rep[,burnin_months:ncol(rep)]
@@ -874,6 +896,8 @@ for (i in seq_along(scenario_abundance_raw)) {
 
 }
 
+scenario_abundance_formatted[[1]][[1]][1:20,1:20]
+
 rm(abundance_reps, abundance_temp, replicate_abundance_formatted, rep)
 
 # Check structure is still correct
@@ -885,6 +909,9 @@ length(scenario_abundance_formatted) == length(scenario_abundance_raw)
 rm(scenario_abundance_raw)
 
 # Convert to long format ----
+
+## NOTE: Now the burnin period has been removed, what was previously monthly timestep
+## 1200 is now monthly time step 1.
 
 ## Pivot longer (group_id, timestep, abundance)
 
@@ -901,18 +928,18 @@ for (i in seq_along(scenario_abundance_formatted)) {
   # Rename columns as timesteps so we can use them as a numeric variable
   abundance_single <- as.data.frame(scenario_abundance[[j]])
   new_names <- colnames(abundance_single)
-  new_names <- str_remove(new_names, "V")
-  colnames(abundance_single) <- new_names
+  # new_names <- str_remove(new_names, "V")
+  # colnames(abundance_single) <- new_names
   
   # Convert from wide to long
-  # NOTE: This begins the time_step at one (rather than the true post-burn-in timestep)
+  
   replicate_abundance_long[[j]] <- abundance_single %>% 
     rownames_to_column(.) %>%
     pivot_longer(all_of(new_names)) %>%
-    rename(time_step = name,
+    rename(monthly_time_step = name,
            abundance = value,
            group_id = rowname) %>%
-    mutate(time_step = as.numeric(time_step),
+    mutate(monthly_time_step = as.numeric(monthly_time_step),
            abundance = as.numeric(abundance))
   
   }
@@ -1016,12 +1043,19 @@ for (i in seq_along(scenario_abundance_long)) {
     # Add the generation length info to the abundance dataframe
     replicate_ab_gl_formatted[[j]] <- replicate_abundance[[j]] %>%
         merge(gen_length, by = "group_id") %>%
-    arrange(time_step, group_id) %>%
+    arrange(monthly_time_step, group_id) %>%
+    # Important - following lines assume an annual timeframe, will need to adjust if change interval
     mutate(generation_by_three = generation_length_yrs * 3) %>% # Time over which to measure decline, 3 x gen length OR:
     mutate(timeframe = ifelse(generation_by_three > gen_timeframe, # 10 years 
                        round(generation_by_three), gen_timeframe)) %>%
     dplyr::select(-generation_by_three) %>%
-    distinct(.)
+    distinct(.) %>%
+    group_by(group_id) %>% 
+      # select rows that are multiples of the specified interval 
+      # (eg if interval is 12, it samples one month from every year)
+    slice(which(row_number() %% interval == 0)) %>% 
+    mutate(annual_time_step = seq(1,max_timestep,1)) 
+    
   
   }
   
@@ -1030,7 +1064,40 @@ for (i in seq_along(scenario_abundance_long)) {
 }
 
 head(scenario_ab_gl_formatted[[1]][[1]])
+dim(scenario_ab_gl_formatted[[1]][[1]])
 length(unique(scenario_ab_gl_formatted[[1]][[1]]$group_id))
+
+
+# * Sample data ----
+
+# scenario_red_list_inputs_annual <- list()
+# replicate_red_list_inputs_annual <- list()
+# 
+# for (i in seq_along(scenario_red_list_data)) {
+#   
+#   # Get replicate data for a single scenario
+#   
+#   replicate_red_list_data <- scenario_red_list_data[[i]]
+#   
+#   # For each individual replicate
+#   
+#   for (j in seq_along(replicate_red_list_data)) {
+#     
+#     replicate_red_list_inputs_annual[[j]] <-  replicate_red_list_data[[j]] %>%
+#       group_by(group_id) %>% 
+#       # select rows that are multiples of the specified interval 
+#       # (eg if interval is 12, it samples one month from every year)
+#       slice(which(row_number() %% interval == 0)) %>% 
+#       mutate(annual_time_step = seq(1,max_timestep,1)) #see if it works just hard coding in number of time steps
+#     
+#   }
+#   
+#   scenario_red_list_inputs_annual[[i]] <- replicate_red_list_inputs_annual
+#   
+# }
+# 
+# y <- scenario_red_list_data[[1]][[1]]
+# x <- scenario_red_list_inputs_annual[[1]][[1]]
 
 # * Assign Red List Categories ----
 
@@ -1064,7 +1131,7 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
     
     group_red_list_data[[k]] <- status_inputs[[k]] %>%
     group_by(group_id) %>%
-    arrange(time_step) %>%
+    arrange(monthly_time_step) %>%
     # calculate the difference in abundance over 10 yrs or 3 generation lengths
     # (specified by 'timeframe' column). Its okay to take the first value of 
     # timeframe bc the dataframe is grouped by group_id, and timeframe only changes
@@ -1079,7 +1146,7 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
                               ifelse(decline <= -0.70 & decline > -0.90, "EN",
                               ifelse(decline <= -0.90 & decline > -1, "CR",
                               ifelse(decline <= -1, "EX", "NA"))))))) %>%
-                 arrange(group_id, time_step) %>%
+                 arrange(group_id, monthly_time_step) %>%
      # Replace all non-ex status with ex after first occurrence 
      mutate(extinct = match("EX", rl_status)) %>%
      # mutate(rl_status_adjusted = with(., ave(rl_status, 
@@ -1128,6 +1195,8 @@ length(scenario_red_list_data[[1]]) == length(scenario_ab_gl_formatted[[1]])
 rli_inputs <- scenario_red_list_data[[1]][[1]]
 tail(rli_inputs)
 
+write.csv(rli_inputs, file.path(indicator_outputs_folder, "rli_input_example_annual.csv"))
+
 # Plot some results to check they're not completely whack
 
 ## Get one group to check how their status changes over time relative to how
@@ -1143,36 +1212,7 @@ tail(rli_inputs)
 #   geom_text(aes(label= rl_status_adjusted,
 #                 col = rl_status_adjusted),hjust=0, vjust=0)
 
-# * Sample data ----
 
-scenario_red_list_inputs_annual <- list()
-replicate_red_list_inputs_annual <- list()
-
-for (i in seq_along(scenario_red_list_data)) {
-  
-  # Get replicate data for a single scenario
-  
-  replicate_red_list_data <- scenario_red_list_data[[i]]
-  
-  # For each individual replicate
-  
-  for (j in seq_along(replicate_red_list_data)) {
-    
-  replicate_red_list_inputs_annual[[j]] <-  replicate_red_list_data[[j]] %>%
-                                            group_by(group_id) %>% 
-                                            # select rows that are multiples of the specified interval 
-                                            # (eg if interval is 12, it samples one month from every year)
-                                            slice(which(row_number() %% interval == 0)) %>% 
-    mutate(annual_time_step = seq(1,df_size,1)) #see if it works just hard coding in number of time steps
-  
-  }
-  
-  scenario_red_list_inputs_annual[[i]] <- replicate_red_list_inputs_annual
-  
-}
-
-y <- scenario_red_list_data[[1]][[1]]
-x <- scenario_red_list_inputs_annual[[1]][[1]]
 
 
 # * Calculate RLI ----
@@ -1182,9 +1222,9 @@ x <- scenario_red_list_inputs_annual[[1]][[1]]
 scenario_fg_rli_outputs <- list()
 replicate_fg_rli_outputs <- list()
 
-for (i in seq_along(scenario_red_list_inputs_annual)) {
+for (i in seq_along(scenario_red_list_data)) {
   
-  replicate_red_list_inputs <- scenario_red_list_inputs_annual[[i]]
+  replicate_red_list_inputs <- scenario_red_list_data[[i]]
   
   for (j in seq_along(replicate_red_list_inputs)) {
     
@@ -1423,15 +1463,15 @@ if( !dir.exists( file.path(lpi_plots_folder) ) ) {
 # TEMP CODE ---
 ## Look at the data we are dealing with
 
-data <- scenario_abundance_long[[1]][[1]]
-
-head(data)
-
-ggplot(data, aes(x = time_step, y = abundance,
-                 col = group_id)) +
-          geom_line()  + 
-          geom_text(aes(label= group_id),hjust=0, vjust=0) +
-          theme(legend.position = "none")
+# data <- scenario_abundance_long[[1]][[1]]
+# 
+# head(data)
+# 
+# ggplot(data, aes(x = time_step, y = abundance,
+#                  col = group_id)) +
+#           geom_line()  + 
+#           geom_text(aes(label= group_id),hjust=0, vjust=0) +
+#           theme(legend.position = "none")
 
 # * Sample data ----
 
@@ -1451,13 +1491,17 @@ for (i in seq_along(scenario_abundance_long)) {
     # select rows that are multiples of the specified interval 
     # (eg if interval is 12, it samples one month from every year)
     slice(which(row_number() %% interval == 0)) %>% 
-    mutate(annual_time_step = seq(1,df_size,1)) #see if it works just hard coding in number of time steps
+    mutate(annual_time_step = seq(1,max_timestep,1)) #see if it works just hard coding in number of time steps
   
   }
   
   scenario_lpi_inputs[[i]] <- replicate_lpi_inputs
 
 }
+
+# lpi_input <- scenario_lpi_inputs[[1]][[2]]
+# head(lpi_input)
+# write.csv(lpi_input, file.path(indicator_outputs_folder, "lpi_input_example_data_annual.csv"))
 
 # * Calculate LPI ----
 
