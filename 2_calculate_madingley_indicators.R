@@ -37,7 +37,6 @@ rm(list = ls())
 ## Data wrangling
 
 library(tidyverse)
-library(tidylog)
 
 # Functions ----
 
@@ -621,7 +620,7 @@ today <- Sys.Date()
 # Define mode (development == TRUE will only perform operations on a small subset
 # of folders, not all outputs)
 
-development_mode <- TRUE
+development_mode <- FALSE
 
 # Specify universal input arguments
 
@@ -834,7 +833,8 @@ abundance_files <- abundance_files[!str_detect(abundance_files, ".csv")]
 
 if (length(abundance_files) != length(generation_files)) {
   
-  stop("Number of abundance files and generation files do not match")
+  stop(paste("Number of abundance files and generation files in",
+  scenarios[[i]], "do not match", sep = " "))
 
   }
 
@@ -1333,7 +1333,7 @@ for (i in seq_along(scenario_red_list_data)) {
   for (j in seq_along(replicate_red_list_inputs)) {
     
   replicate_rli <- calculate_red_list_index(
-    replicate_red_list_inputs[[j]], numboots, ci = TRUE) %>%
+    replicate_red_list_inputs[[j]], numboots, ci = FALSE) %>%
     mutate(replicate = j)
   
   replicate_fg_rli_outputs[[j]] <- replicate_rli 
@@ -1630,7 +1630,7 @@ for (i in seq_along(scenario_lpi_inputs)) {
     
   replicate_lpi_outputs[[j]] <- calculate_living_planet_index(
     
-    replicate_lpi_inputs[[j]], start_time_step, ci = TRUE, numboots, j
+    replicate_lpi_inputs[[j]], start_time_step, ci = FALSE, numboots, j
   ) 
     
   # Save the output LPI data as a csv and rds
