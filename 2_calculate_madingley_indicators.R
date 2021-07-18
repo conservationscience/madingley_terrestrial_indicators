@@ -74,7 +74,7 @@ maintain_0_abundance <- function(vec) {
 #' group_id (representing functional group-massbin pseudo species), time_step
 #' abundance, generation_length_yrs, "functional_group_index", "functional_group_name"
 #' "mass_lower_g", "mass_upper_g", "massbin_g", timeframe, "diff" , "decline",
-#' "rl_status",  "extinct", "rl_status_adjusted"
+#' "rl_status",  "extinct", "rl_status"
 #' @param numboots an integer representing the number of bootstraps to calculate
 #' @param ci logical, do you want to include confidence intervals? default = FALSE
 #' (note, selecting TRUE may increase processing time)
@@ -93,7 +93,7 @@ calculate_red_list_index <- function(data, numboots, ci = FALSE, replicate_num =
   #data$redlist_assessment_year <- as.numeric(as.character(data$redlist_assessment_year))
   
   data <- data %>%
-          filter(!is.na(rl_status_adjusted)) %>%
+          filter(!is.na(rl_status)) %>%
           group_by(group_id) 
   
   head(data)
@@ -103,12 +103,12 @@ calculate_red_list_index <- function(data, numboots, ci = FALSE, replicate_num =
   # Assign category weights
   
   weighted_data <- data %>%
-    dplyr::mutate(rl_weight = ifelse(rl_status_adjusted == "LC", 0,
-                              ifelse(rl_status_adjusted == "NT", 1,
-                              ifelse(rl_status_adjusted == "VU", 2,
-                              ifelse(rl_status_adjusted == "EN", 3,
-                              ifelse(rl_status_adjusted == "CR", 4,
-                              ifelse(rl_status_adjusted == "EX", 5, NA))))))) 
+    dplyr::mutate(rl_weight = ifelse(rl_status == "LC", 0,
+                              ifelse(rl_status == "NT", 1,
+                              ifelse(rl_status == "VU", 2,
+                              ifelse(rl_status == "EN", 3,
+                              ifelse(rl_status == "CR", 4,
+                              ifelse(rl_status == "EX", 5, NA))))))) 
   head(weighted_data)
   dim(weighted_data)
  
@@ -1043,9 +1043,9 @@ for (i in seq_along(scenario_abundance_long)) {
                   distinct(.)
     
     # Add the generation length info to the abundance dataframe
-    replicate_ab_gl_formatted[[j]] <- replicate_abundance[[j]] %>%
+    temp1 <- replicate_abundance[[j]] %>%
         merge(gen_length, by = "group_id") %>%
-    arrange(monthly_time_step, group_id) %>%
+        arrange(monthly_time_step, group_id) %>%
     # Important - following lines assume an annual timeframe, will need to adjust if change interval
     mutate(generation_by_three = generation_length_yrs * 3) %>% # Time over which to measure decline, 3 x gen length OR:
     mutate(timeframe = ifelse(generation_by_three > gen_timeframe, # 10 years 
@@ -1056,21 +1056,47 @@ for (i in seq_along(scenario_abundance_long)) {
       # select rows that are multiples of the specified interval 
       # (eg if interval is 12, it samples one month from every year)
     slice(which(row_number() %% interval == 0)) %>% 
-    mutate(annual_time_step = seq(1,max_timestep,1)) %>% 
-    # Check whether the group's abundance is 0 at the last timestep
-    mutate(goes_extinct = ifelse(monthly_time_step == max(monthly_time_step) &
-                                 abundance == 0, TRUE, FALSE),
-           previous_abundance = lag(abundance, 1),
-           next_abundance = lead(abundance, 1),
-           true_extinction = ifelse(goes_extinct == TRUE &
-                                    abundance == 0 &
-                                    previous_abundance == 0,
-                                    "true extinction", # 1 = true extinction
-                                    ifelse(goes_extinct == FALSE &
-                                           abundance == 0,
-                                    "false extinction", "not extinct")))# %>% 
-      #filter(true_extinction != "false extinction") 
+    mutate(annual_time_step = seq(1,max_timestep,1)) # %>% 
     
+    # Find the last time step where non-0 abundance occurred for each group
+    
+    temp2 <- temp1 %>% 
+            group_by(group_id) %>% 
+            filter(abundance > 0) %>% 
+            dplyr::select(group_id, annual_time_step, abundance) %>% 
+            filter(annual_time_step == max(annual_time_step)) %>% 
+            dplyr::select(group_id, annual_time_step) %>% 
+            rename(last_abundance = annual_time_step)
+
+    # Add the year of last positive abundance number as a column to the data    
+    temp3 <- temp1 %>% 
+           merge(temp2, by = c("group_id"), all = TRUE)
+    
+    
+    replicate_ab_gl_formatted[[j]] <- temp3 %>% 
+               group_by(group_id) %>% 
+               mutate(true_extinction = ifelse(abundance == 0 & 
+                                               annual_time_step < last_abundance,
+                      "false extinction",
+                      ifelse(abundance > 0 & 
+                               annual_time_step < last_abundance,
+                             "not extinct",
+                             ifelse(abundance == 0 & 
+                                    annual_time_step >= last_abundance,
+                                    "true extinction", "not extinct")))) %>% 
+               filter(true_extinction != "false extinction") %>% 
+               group_by(group_id) %>% 
+               arrange(annual_time_step)
+    
+
+    # if (length(formatted_replicate) == 0) {
+    #   
+    #   rm(formatted_replicate)
+    #   
+    # } else {
+    
+    # add formatted replicate here
+      
     # Check if there are any carnivorous endotherms
     
     check <- replicate_ab_gl_formatted[[j]] %>% 
@@ -1082,7 +1108,7 @@ for (i in seq_along(scenario_abundance_long)) {
     
     # if they are present, keep the replicate
     
-    if (check != 0) {
+    if (length(check != 0)) {
       
       scenario_ab_gl_formatted[[i]] <- replicate_ab_gl_formatted
       
@@ -1093,7 +1119,8 @@ for (i in seq_along(scenario_abundance_long)) {
       rm(replicate_ab_gl_formatted)
       
       print(paste("Replicate", i, "removed because no carnivorous endotherms are present", sep = " "))
-    
+      
+      
     }
   }
 }  
@@ -1102,7 +1129,7 @@ head(scenario_ab_gl_formatted[[1]][[1]])
 dim(scenario_ab_gl_formatted[[1]][[1]])
 length(unique(scenario_ab_gl_formatted[[1]][[1]]$group_id))
 
-formatted <- scenario_ab_gl_formatted[[1]][[1]]
+formatted <- scenario_ab_gl_formatted[[1]][[3]]
 
 # * Sample data ----
 
@@ -1166,30 +1193,56 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
   for (k in seq_along(status_inputs)) {
     
     group_red_list_data[[k]] <- status_inputs[[k]] %>%
-    group_by(group_id) %>%
-    arrange(monthly_time_step) %>%
-    # calculate the difference in abundance over 10 yrs or 3 generation lengths
-    # (specified by 'timeframe' column). Its okay to take the first value of 
-    # timeframe bc the dataframe is grouped by group_id, and timeframe only changes
-    # between and not within group_ids
-    mutate(diff = (abundance_adjusted - dplyr::lag(abundance_adjusted, timeframe[1]))) %>%
-    # calculate the rate of change
-    mutate(decline = diff/dplyr::lag(abundance_adjusted, timeframe[1])) %>% 
-    # assign red list risk status based on decline 
-    mutate(rl_status = ifelse(decline > -0.40, "LC",
-                              ifelse(decline <= -0.40 & decline > -0.50, "NT", # Where did this and LC thresholds come from?
-                              ifelse(decline <= -0.50 & decline > -0.70, "VU",
-                              ifelse(decline <= -0.70 & decline > -0.90, "EN",
-                              ifelse(decline <= -0.90 & decline > -1, "CR",
-                              ifelse(decline <= -1, "EX", "NA"))))))) %>%
-                 arrange(group_id, monthly_time_step) %>%
-     # Replace all non-ex status with ex after first occurrence 
-     # mutate(extinct = match("EX", rl_status)) %>%
-     mutate(extinct = ifelse(rl_status == "EX", 1, 0)) %>% 
-     # mutate(rl_status_adjusted = with(., ave(rl_status, 
-     #                                         FUN=maintain_ex_status)))
-     #mutate(rl_status_adjusted = rl_status) %>% 
-     group_by(group_id) #%>% 
+      group_by(group_id) %>%
+      arrange(monthly_time_step) %>%
+      # calculate the difference in abundance over 10 yrs or 3 generation lengths
+      # (specified by 'timeframe' column). Its okay to take the first value of 
+      # timeframe bc the dataframe is grouped by group_id, and timeframe only changes
+      # between and not within group_ids
+      mutate(diff = (abundance - dplyr::lag(abundance, timeframe[1]))) %>%
+      # calculate the rate of change
+      mutate(decline = diff/dplyr::lag(abundance, timeframe[1])) %>% 
+      # assign red list risk status based on decline 
+      mutate(rl_status = ifelse(decline > -0.40, "LC",
+                                ifelse(decline <= -0.40 & decline > -0.50, "NT", # Where did this and LC thresholds come from?
+                                       ifelse(decline <= -0.50 & decline > -0.70, "VU",
+                                              ifelse(decline <= -0.70 & decline > -0.90, "EN",
+                                                     ifelse(decline <= -0.90 & decline > -1, "CR",
+                                                            ifelse(decline <= -1, "EX", "NA"))))))) %>%
+      arrange(group_id, monthly_time_step) %>%
+      # Replace all non-ex status with ex after first occurrence 
+      # mutate(extinct = match("EX", rl_status)) %>%
+      mutate(extinct = ifelse(rl_status == "EX", 1, 0)) %>% 
+      # mutate(rl_status = with(., ave(rl_status, 
+      #                                         FUN=maintain_ex_status)))
+      #mutate(rl_status = rl_status) %>% 
+      group_by(group_id)
+    
+    # group_red_list_data[[k]] <- status_inputs[[k]] %>%
+    # group_by(group_id) %>%
+    # arrange(monthly_time_step) %>%
+    # # calculate the difference in abundance over 10 yrs or 3 generation lengths
+    # # (specified by 'timeframe' column). Its okay to take the first value of 
+    # # timeframe bc the dataframe is grouped by group_id, and timeframe only changes
+    # # between and not within group_ids
+    # mutate(diff = (abundance_adjusted - dplyr::lag(abundance_adjusted, timeframe[1]))) %>%
+    # # calculate the rate of change
+    # mutate(decline = diff/dplyr::lag(abundance_adjusted, timeframe[1])) %>% 
+    # # assign red list risk status based on decline 
+    # mutate(rl_status = ifelse(decline > -0.40, "LC",
+    #                           ifelse(decline <= -0.40 & decline > -0.50, "NT", # Where did this and LC thresholds come from?
+    #                           ifelse(decline <= -0.50 & decline > -0.70, "VU",
+    #                           ifelse(decline <= -0.70 & decline > -0.90, "EN",
+    #                           ifelse(decline <= -0.90 & decline > -1, "CR",
+    #                           ifelse(decline <= -1, "EX", "NA"))))))) %>%
+    #              arrange(group_id, monthly_time_step) %>%
+    #  # Replace all non-ex status with ex after first occurrence 
+    #  # mutate(extinct = match("EX", rl_status)) %>%
+    #  mutate(extinct = ifelse(rl_status == "EX", 1, 0)) %>% 
+    #  # mutate(rl_status = with(., ave(rl_status, 
+    #  #                                         FUN=maintain_ex_status)))
+    #  #mutate(rl_status = rl_status) %>% 
+    #  group_by(group_id) #%>% 
      # # Check whether red list status is temporary or if it repeats
      # mutate(goes_extinct = ifelse(annual_time_step == max(annual_time_step) &
      #                              rl_status == "EX", TRUE, FALSE),
@@ -1202,7 +1255,7 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
      #                                 ifelse(goes_extinct == FALSE &
      #                                        rl_status == "EX",
      #                                 0, 2)),
-     #        rl_status_adjusted = ifelse(true_extinction == 0, NA , rl_status))
+     #        rl_status = ifelse(true_extinction == 0, NA , rl_status))
   
     # Print a message if extinctions have been adjusted
     
@@ -1260,8 +1313,8 @@ write.csv(rli_inputs, file.path(indicator_outputs_folder, "rli_input_example_ann
 # 
 # ggplot(data, aes(x = time_step, y = abundance)) +
 #   geom_line() +
-#   geom_text(aes(label= rl_status_adjusted,
-#                 col = rl_status_adjusted),hjust=0, vjust=0)
+#   geom_text(aes(label= rl_status,
+#                 col = rl_status),hjust=0, vjust=0)
 
 
 
