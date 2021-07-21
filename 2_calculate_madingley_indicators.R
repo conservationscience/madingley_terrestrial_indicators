@@ -1563,23 +1563,23 @@ if( !dir.exists( file.path(lpi_plots_folder) ) ) {
 # * Sample data ----
 
 scenario_lpi_inputs <- list()
-replicate_lpi_inputs <- list()
+
 
 for (i in seq_along(scenario_abundance_long)) {
   
   # Get replicates for a single scenario
-  replicate_abundance_long <- scenario_abundance_long[[i]]
+ # replicate_abundance_long <- scenario_abundance_long[[i]]
   
+  replicate_abundance_long <- scenario_ab_gl_formatted[[i]]
+  
+  replicate_lpi_inputs <- list()
   # Calculate the LPI for each replicate within the scenario
   for (j in seq_along(replicate_abundance_long)) {
 
-  replicate_lpi_inputs[[j]] <- replicate_abundance_long[[j]] %>%
-    group_by(group_id) %>% 
-    # select rows that are multiples of the specified interval 
-    # (eg if interval is 12, it samples one month from every year)
-    slice(which(row_number() %% interval == 0)) %>% 
-    mutate(annual_time_step = seq(1,max_timestep,1)) #see if it works just hard coding in number of time steps
-  
+  replicate_lpi_inputs[[j]] <- replicate_abundance_long[[j]] %>% 
+                               dplyr::select(group_id, annual_time_step, abundance)
+    
+    
   }
   
   scenario_lpi_inputs[[i]] <- replicate_lpi_inputs
@@ -1600,12 +1600,13 @@ for (i in seq_along(scenario_abundance_long)) {
 # Loop through each scenario and replicate and calculate the LPI per rep
 
 scenario_lpi_outputs <- list()
-replicate_lpi_outputs <- list()
 
 for (i in seq_along(scenario_lpi_inputs)) {
   
   # Get replicates for a single scenario
   replicate_lpi_inputs <- scenario_lpi_inputs[[i]]
+  
+  replicate_lpi_outputs <- list()
   
  # Calculate the LPI for each replicate within the scenario
   for (j in seq_along(replicate_lpi_inputs)) {
@@ -1674,23 +1675,23 @@ tail(scenario_lpi_outputs_aggregated[[1]])
 # * Plot LPI replicates individually ----
 
 scenario_lpi_plots <- list()
-replicate_lpi_plots <- list()
 
 for (i in seq_along(scenario_lpi_outputs)) {
   
   replicate_lpi <- scenario_lpi_outputs[[i]]
+  replicate_lpi_plots <- list()
   
   for (j in seq_along(replicate_lpi)) {
     
     replicate_lpi_plots[[j]] <- plot_living_planet_index(replicate_lpi[[j]],
-                                                         ci = TRUE)
+                                                         ci = FALSE)
     
     
     ggsave(file.path(lpi_plots_folder, paste(today, scenarios[[i]], 
                                              "replicate", j, 
                                              "LPI_aggregated.png",
                                              sep = "_")),
-           replicate_lpi_plots[[i]],  device = "png")                                   
+           replicate_lpi_plots[[j]],  device = "png")                                   
     
   }
   
@@ -1702,7 +1703,7 @@ i <- 1
 scenario_lpi_plots[[1]][[i]]
 
 i <- i + 1
-scenario_lpi_plots[[1]][[i]]
+scenario_lpi_plots[[4]][[i]]
 
 # * Plot all replicates together ----
 
