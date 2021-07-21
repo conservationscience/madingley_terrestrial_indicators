@@ -251,6 +251,8 @@ calculate_red_list_index <- function(data, numboots, ci = FALSE, replicate_num =
 #' @param ci logical, do you want to include confidence intervals? default = FALSE
 #' (note, selecting TRUE may increase processing time)
 #' @return a line plot of RLI over time for each functional group/taxa or whatever 
+#' 
+# data <- scenario_rli_outputs[[1]][[1]]
 
 plot_red_list_index_by_group <- function(data, impact_start, impact_end, ci = FALSE) {
   
@@ -265,8 +267,8 @@ plot_red_list_index_by_group <- function(data, impact_start, impact_end, ci = FA
     geom_line(aes(colour = functional_group_name)) +
     geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),
                 alpha = 0.4) +
-    scale_fill_viridis_d() +
-    scale_color_viridis_d() + 
+    scale_fill_viridis_c() +
+    scale_color_viridis_c() + 
     facet_wrap(~functional_group_name) +
     labs(x = "Time", 
          y = "Red List Index Score") +
@@ -287,7 +289,7 @@ plot_red_list_index_by_group <- function(data, impact_start, impact_end, ci = FA
     plot <- ggplot(data = data, aes(x = annual_time_step, y = indicator_score,
                                     group = functional_group_name,
                                     fill = functional_group_name)) +
-      geom_line(aes(colour = functional_group_name)) +
+      geom_line(aes(color = functional_group_name)) +
       scale_fill_viridis_d() +
       scale_color_viridis_d() + 
       facet_wrap(~functional_group_name) +
@@ -855,12 +857,16 @@ scenario_abundance_raw[[i]] <- lapply(abundance_files, readRDS)
 # abundance densities)
 
 scenario_abundance_formatted <- list()
-replicate_abundance_formatted <- list()
+
 
 for (i in seq_along(scenario_abundance_raw)) {
   
   # Get all replicates for one scenario
   abundance_reps <- scenario_abundance_raw[[i]]
+  
+  # Make a list to capture the outputs
+  
+  replicate_abundance_formatted <- list()
   
   # For each individual replicate
   
@@ -916,11 +922,16 @@ rm(scenario_abundance_raw)
 ## Pivot longer (group_id, timestep, abundance)
 
 scenario_abundance_long <- list()
-replicate_abundance_long <- list()
 
 for (i in seq_along(scenario_abundance_formatted)) {
   
+  # Get data for one scenario
+  
   scenario_abundance <- scenario_abundance_formatted[[i]]
+  
+  # Make a list to catch replicate outputs
+  
+  replicate_abundance_long <- list()
   
   # For each individual replicate
   
@@ -1023,15 +1034,17 @@ if( !dir.exists( file.path(rli_plots_folder) ) ) {
 
 # * Merge abundance and generation length data ----
 
-rm(formatted)
-
 scenario_ab_gl_formatted <- list()
-replicate_ab_gl_formatted <- list()
+scenario_ab_gl_removed <- list() # For replicates we removed from analysis
 
 for (i in seq_along(scenario_abundance_long)) {
   
   replicate_abundance <- scenario_abundance_long[[i]]
   replicate_generations <- scenario_generations_raw[[i]]
+  
+  # Make a list to catch the outputs
+  
+  replicate_ab_gl_formatted <- list()
   
   # For each individual replicate
   
@@ -1089,14 +1102,6 @@ for (i in seq_along(scenario_abundance_long)) {
                arrange(annual_time_step)
     
 
-    # if (length(formatted_replicate) == 0) {
-    #   
-    #   rm(formatted_replicate)
-    #   
-    # } else {
-    
-    # add formatted replicate here
-      
     # Check if there are any carnivorous endotherms
     
     check <- replicate_ab_gl_formatted[[j]] %>% 
@@ -1106,24 +1111,34 @@ for (i in seq_along(scenario_abundance_long)) {
              dplyr::select(present) %>% 
              pull(.)
     
+    }
+    
     # if they are present, keep the replicate
     
-    if (length(check != 0)) {
+    if (length(check) != 0) {
+    
+    scenario_ab_gl_formatted[[i]] <- replicate_ab_gl_formatted
+    
+    print(paste("Replicate", j, 
+                "formatting complete", 
+                sep = " "))
       
-      scenario_ab_gl_formatted[[i]] <- replicate_ab_gl_formatted
-      
-    } else {
+   } else {
       
     # if they are not, remove that replicate
+     
+   scenario_ab_gl_removed[[i]] <- data.frame(scenario = scenarios[[i]],
+                                             replicate = j)
       
-      rm(replicate_ab_gl_formatted)
+   rm(replicate_ab_gl_formatted[[j]])
       
-      print(paste("Replicate", i, "removed because no carnivorous endotherms are present", sep = " "))
-      
-      
-    }
-  }
-}  
+   print(paste("Replicate", j, 
+               "removed because no carnivorous endotherms are present", 
+               sep = " "))
+   }
+  
+}
+
 
 head(scenario_ab_gl_formatted[[1]][[1]])
 dim(scenario_ab_gl_formatted[[1]][[1]])
@@ -1165,7 +1180,7 @@ formatted <- scenario_ab_gl_formatted[[1]][[3]]
 # * Assign Red List Categories ----
 
 scenario_red_list_data <- list()
-replicate_red_list_data <- list()
+
 
 for (i in seq_along(scenario_ab_gl_formatted)) {
   
@@ -1173,9 +1188,15 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
   
   replicate_ab_gl <- scenario_ab_gl_formatted[[i]]
   
+  print(paste("Processing scenario", scenarios[[i]], sep = " "))
+  
+  replicate_red_list_data <- list()
+  
   # For each individual replicate
   
   for (j in seq_along(replicate_ab_gl)) {
+    
+  print(paste("Processing replicate", j, sep = " "))
   
   # Split by functional group, because we calculate RLI for different
   # functional groups then aggregate later (as per Butchart etal 2010),
@@ -1189,8 +1210,9 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
   
   group_red_list_data <- list()
   
-  
   for (k in seq_along(status_inputs)) {
+    
+    print(paste("Processing group", names(status_inputs)[[k]], sep = " "))
     
     group_red_list_data[[k]] <- status_inputs[[k]] %>%
       group_by(group_id) %>%
@@ -1217,70 +1239,25 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
       #                                         FUN=maintain_ex_status)))
       #mutate(rl_status = rl_status) %>% 
       group_by(group_id)
-    
-    # group_red_list_data[[k]] <- status_inputs[[k]] %>%
-    # group_by(group_id) %>%
-    # arrange(monthly_time_step) %>%
-    # # calculate the difference in abundance over 10 yrs or 3 generation lengths
-    # # (specified by 'timeframe' column). Its okay to take the first value of 
-    # # timeframe bc the dataframe is grouped by group_id, and timeframe only changes
-    # # between and not within group_ids
-    # mutate(diff = (abundance_adjusted - dplyr::lag(abundance_adjusted, timeframe[1]))) %>%
-    # # calculate the rate of change
-    # mutate(decline = diff/dplyr::lag(abundance_adjusted, timeframe[1])) %>% 
-    # # assign red list risk status based on decline 
-    # mutate(rl_status = ifelse(decline > -0.40, "LC",
-    #                           ifelse(decline <= -0.40 & decline > -0.50, "NT", # Where did this and LC thresholds come from?
-    #                           ifelse(decline <= -0.50 & decline > -0.70, "VU",
-    #                           ifelse(decline <= -0.70 & decline > -0.90, "EN",
-    #                           ifelse(decline <= -0.90 & decline > -1, "CR",
-    #                           ifelse(decline <= -1, "EX", "NA"))))))) %>%
-    #              arrange(group_id, monthly_time_step) %>%
-    #  # Replace all non-ex status with ex after first occurrence 
-    #  # mutate(extinct = match("EX", rl_status)) %>%
-    #  mutate(extinct = ifelse(rl_status == "EX", 1, 0)) %>% 
-    #  # mutate(rl_status = with(., ave(rl_status, 
-    #  #                                         FUN=maintain_ex_status)))
-    #  #mutate(rl_status = rl_status) %>% 
-    #  group_by(group_id) #%>% 
-     # # Check whether red list status is temporary or if it repeats
-     # mutate(goes_extinct = ifelse(annual_time_step == max(annual_time_step) &
-     #                              rl_status == "EX", TRUE, FALSE),
-     #        previous_status = lag(rl_status, 1),
-     #        next_status = lead(rl_status, 1),
-     #        true_extinction = ifelse(goes_extinct == TRUE &
-     #                                 rl_status == "EX" &
-     #                                 previous_status == "EX",
-     #                                 1,
-     #                                 ifelse(goes_extinct == FALSE &
-     #                                        rl_status == "EX",
-     #                                 0, 2)),
-     #        rl_status = ifelse(true_extinction == 0, NA , rl_status))
-  
-    # Print a message if extinctions have been adjusted
-    
-    if(!any(is.na(group_red_list_data[[k]]$extinct))) {
-      
-      print(paste("Note, non-extinct status replaced with extinct status for group", 
-                  group_red_list_data[[k]]$group_id[1], sep = " "))
-    }
-   
+
   }
   
-   replicate_red_list_df <- do.call(rbind, group_red_list_data)
+  print(paste("replicate", j, "from", scenarios[[i]], "complete", sep = " "))
+  
+  replicate_red_list_df <- do.call(rbind, group_red_list_data)
    
-   replicate_red_list_data[[j]] <- replicate_red_list_df
+  replicate_red_list_data[[j]] <- replicate_red_list_df
    
    # Save the inputs
    
    saveRDS(replicate_red_list_df,
            file.path(rli_inputs_folder,
-                     paste(today, scenarios, "replicate", j,
+                     paste(today, scenarios[[i]], "replicate", j,
                            "RLI_input_data.rds", sep = "_")))
 
    write.csv(replicate_red_list_df,
            file.path(rli_inputs_folder,
-                     paste(today, scenarios, "replicate", j,
+                     paste(today, scenarios[[i]], "replicate", j,
                            "RLI_input_data.csv", sep = "_")))
   
   
@@ -1324,11 +1301,12 @@ write.csv(rli_inputs, file.path(indicator_outputs_folder, "rli_input_example_ann
 # RLI by individual functional groups
 
 scenario_fg_rli_outputs <- list()
-replicate_fg_rli_outputs <- list()
 
 for (i in seq_along(scenario_red_list_data)) {
   
   replicate_red_list_inputs <- scenario_red_list_data[[i]]
+  
+  replicate_fg_rli_outputs <- list()
   
   for (j in seq_along(replicate_red_list_inputs)) {
     
@@ -1346,7 +1324,7 @@ for (i in seq_along(scenario_red_list_data)) {
 
   write.csv(replicate_fg_rli_outputs[[j]],
             file.path(rli_outputs_folder,
-                      paste(today, scenarios, "RLI_func_group_output_data.rds",
+                      paste(today, scenarios[[i]], "RLI_func_group_output_data.rds",
                             sep = "_")))
   
   print(paste("RLI for replicate", j, "complete", sep = " "))
@@ -1364,12 +1342,13 @@ head(x)
 # Mean RLI aggregated across groups
 
 scenario_rli_outputs <- list()
-replicate_rli_outputs <- list()
 
 for (i in seq_along(scenario_fg_rli_outputs)) {
   
   # Get replicates for a single scenario
   replicate_rli_fg <- scenario_fg_rli_outputs[[i]]
+  
+  replicate_rli_outputs <- list()
   
   # Aggregate RLI across functional groups for each replicate
   for (j in seq_along(replicate_rli_fg)) {
@@ -1413,16 +1392,18 @@ for (i in seq_along(scenario_fg_rli_outputs)) {
 head(scenario_rli_outputs)[[1]][[1]]
 
 
+
 # * Plot RLI ----
 
 ## By functional group
 
 scenario_fg_rli_plots <- list()
-replicate_fg_rli_plots <- list()
 
 for (i in seq_along(scenario_fg_rli_outputs)) {
   
   replicate_fg_rli <- scenario_fg_rli_outputs[[i]]
+  
+  replicate_fg_rli_plots <- list()
   
   for (j in seq_along(replicate_fg_rli)) {
 
@@ -1430,12 +1411,12 @@ for (i in seq_along(scenario_fg_rli_outputs)) {
                                       replicate_fg_rli[[j]],
                                       impact_start,
                                       impact_end,
-                                      ci = TRUE)
+                                      ci = FALSE)
 
   ggsave(file.path(rli_plots_folder, paste(today, scenarios[[i]], "replicate", j,
                 "RLI_by_functional_group.png",
                 sep = "_")),
-       replicate_fg_rli_plots[[i]],  device = "png")
+       replicate_fg_rli_plots[[j]],  device = "png")
 
   }
   
@@ -1443,18 +1424,19 @@ scenario_fg_rli_plots[[i]] <- replicate_fg_rli_plots
 
 }
 
-scenario_fg_rli_plots[[1]][[3]]
+scenario_fg_rli_plots[[3]][[15]]
 
 # RLI with all functional groups aggregated
 # i.e. mean of each 'taxa' RLI as per Butchart et al (2010) 'Indicators of
 # recent declines'
 
 scenario_rli_plots <- list()
-replicate_rli_plots <- list()
 
 for (i in seq_along(scenario_rli_outputs)) {
   
   replicate_rli <- scenario_rli_outputs[[i]]
+  
+  replicate_rli_plots <- list()
   
   for (j in seq_along(replicate_rli)) {
 
@@ -1468,7 +1450,7 @@ for (i in seq_along(scenario_rli_outputs)) {
                                              "replicate", j, 
                                              "RLI_aggregated.png",
                                              sep = "_")),
-           replicate_rli_plots[[i]],  device = "png")                                   
+           replicate_rli_plots[[j]],  device = "png")                                   
 
   }
   
@@ -1476,7 +1458,7 @@ for (i in seq_along(scenario_rli_outputs)) {
 
 }
 
-scenario_rli_plots[[1]][[1]]
+scenario_rli_plots[[4]][[30]]
 
 # * Plot all replicates together ----
 
