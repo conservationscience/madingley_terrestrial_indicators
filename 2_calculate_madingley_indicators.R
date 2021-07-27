@@ -38,6 +38,7 @@ rm(list = ls())
 
 library(tidyverse)
 library(rlist)
+library(zoo)
 
 # Functions ----
 
@@ -1158,66 +1159,6 @@ for (i in seq_along(scenario_ab_gl_formatted_not_clean)) {
   
 }
 
-#rm(scenario_ab_gl_formatted_not_clean)
-
-# Smooth abundance data
-
-library(mgcv)
-
-# i <- i + 1
-# testdf <- scenario_ab_gl_formatted[[3]][[i]] %>% 
-#           filter(group_id == "13.16.51")
-# 
-# ggplot(testdf) +
-#   geom_line(aes(x = annual_time_step, y = abundance))
-# 
-# mod <- gam(log10(abundance) ~ s(annual_time_step), sp = 0.001,  data = testdf, method = "REML")
-# plot(mod)
-# 
-# summary(mod)
-# gam.check(mod)
-# 
-# output <- predict(mod, annual_time_step = seq(1,300,1))
-# 
-# test <- as.data.frame(cbind(annual_time_step = testdf$annual_time_step,
-#                              abundance = testdf$abundance, output, transformed_abundance = exp(output)))
-# # 
-# ggplot(test) +
-#   geom_line(aes(x = annual_time_step, y = transformed_abundance)) +
-#   geom_line(aes(x = annual_time_step, y = abundance), col = "red")
-
-# Function to smooth time series
-
-
-smooth_gam <- function(input, smoothing_param) {
-  
-  input <- input %>% 
-           mutate(abundance = abundance +
-                     (mean(abundance)*0.01))
-  
-  # mod <- gam(log10(abundance) ~ s(annual_time_step), sp = smoothing_param,  
-  #            data = input, method = "REML")
-  
-  mod <- gam(log10(abundance) ~ s(annual_time_step, k = 4), sp = smoothing_param,  
-             data = input, method = "REML")
-  
-  # plot(mod)
-  # summary(mod)
-  # gam.check(mod)
-  
-  modelled_abundance <- predict(mod, pred_annual_time_step = unique(input$annual_time_step))
-  
-  modelled_abundance <- as.data.frame(cbind(annual_time_step =unique(input$annual_time_step),
-                                       transformed_abundance = exp(modelled_abundance)))
-  
-  newdata <- input %>% 
-             merge(modelled_abundance, by = "annual_time_step")
-  
-  return(newdata)
-  
-  
-}
-
 
 # Identify and deal with weird mass bins that blink in and out
 
@@ -1260,10 +1201,10 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
   
 }
 
+# * Smooth abundance ----
 
 # Test smoothing function parameters on group being harvested
 
-library(boomer)
 
 scenario_smoothed_abundance <- list()
 
@@ -1289,7 +1230,9 @@ for (i in seq_along(scenario_abundance_clean)) {
       
       group_df <- group_list[[k]]
       
-      group_smoothed_abundance[[k]] <- boom(smooth_gam(group_df, 0.01))
+      group_smoothed_abundance[[k]] <- group_df %>% 
+                                       mutate(ave_abundance = rollmean(abundance, 
+                                                              2, fill = NA))
       
       print(k)
       
@@ -1307,37 +1250,6 @@ for (i in seq_along(scenario_abundance_clean)) {
   print(i)
   
 }
-
-# * Sample data ----
-
-# scenario_red_list_inputs_annual <- list()
-# replicate_red_list_inputs_annual <- list()
-# 
-# for (i in seq_along(scenario_red_list_data)) {
-#   
-#   # Get replicate data for a single scenario
-#   
-#   replicate_red_list_data <- scenario_red_list_data[[i]]
-#   
-#   # For each individual replicate
-#   
-#   for (j in seq_along(replicate_red_list_data)) {
-#     
-#     replicate_red_list_inputs_annual[[j]] <-  replicate_red_list_data[[j]] %>%
-#       group_by(group_id) %>% 
-#       # select rows that are multiples of the specified interval 
-#       # (eg if interval is 12, it samples one month from every year)
-#       slice(which(row_number() %% interval == 0)) %>% 
-#       mutate(annual_time_step = seq(1,max_timestep,1)) #see if it works just hard coding in number of time steps
-#     
-#   }
-#   
-#   scenario_red_list_inputs_annual[[i]] <- replicate_red_list_inputs_annual
-#   
-# }
-# 
-# y <- scenario_red_list_data[[1]][[1]]
-# x <- scenario_red_list_inputs_annual[[1]][[1]]
 
 # * Assign Red List Categories ----
 
