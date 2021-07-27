@@ -37,6 +37,7 @@ rm(list = ls())
 ## Data wrangling
 
 library(tidyverse)
+library(rlist)
 
 # Functions ----
 
@@ -615,6 +616,10 @@ if (Sys.info()['nodename'] == "80VVPF0SSB53") {
 
 # Inputs ----
 
+# disable scientific notation
+
+options(scipen = 999)
+
 # Get date to label outputs
 
 today <- Sys.Date()
@@ -1034,8 +1039,8 @@ if( !dir.exists( file.path(rli_plots_folder) ) ) {
 
 # * Merge abundance and generation length data ----
 
-scenario_ab_gl_formatted <- list()
-scenario_ab_gl_removed <- list() # For replicates we removed from analysis
+scenario_ab_gl_formatted_not_clean <- list()
+#scenario_ab_gl_removed <- list() # For replicates we removed from analysis
 
 for (i in seq_along(scenario_abundance_long)) {
   
@@ -1045,14 +1050,15 @@ for (i in seq_along(scenario_abundance_long)) {
   # Make a list to catch the outputs
   
   replicate_ab_gl_formatted <- list()
-  
+ 
   # For each individual replicate
   
   for (j in seq_along(replicate_abundance)) {
     
     # Reduce size of the replicate generations dataframe or the merge won't work
     gen_length <- replicate_generations[[j]] %>% 
-                  dplyr::select(group_id, generation_length_yrs, functional_group_name) %>% 
+                  dplyr::select(group_id, generation_length_yrs, 
+                                functional_group_name) %>% 
                   distinct(.)
     
     # Add the generation length info to the abundance dataframe
@@ -1086,7 +1092,7 @@ for (i in seq_along(scenario_abundance_long)) {
            merge(temp2, by = c("group_id"), all = TRUE)
     
     
-    replicate_ab_gl_formatted[[j]] <- temp3 %>% 
+    data <- temp3 %>% 
                group_by(group_id) %>% 
                mutate(true_extinction = ifelse(abundance == 0 & 
                                                annual_time_step < last_abundance,
@@ -1104,47 +1110,203 @@ for (i in seq_along(scenario_abundance_long)) {
 
     # Check if there are any carnivorous endotherms
     
-    check <- replicate_ab_gl_formatted[[j]] %>% 
+    check <- data %>% 
              group_by(functional_group_name) %>% 
              summarise(present = sum(abundance)) %>% 
              filter(functional_group_name == "carnivore endotherm") %>% 
              dplyr::select(present) %>% 
              pull(.)
     
-    }
-    
-    # if they are present, keep the replicate
-    
-    if (length(check) != 0) {
-    
-    scenario_ab_gl_formatted[[i]] <- replicate_ab_gl_formatted
-    
-    print(paste("Replicate", j, 
+
+    print(paste("Replicate", j - 1, 
                 "formatting complete", 
                 sep = " "))
+    
+    # Replace data with 0 if no carnivores
+    
+    if(length(check) == 0) {
       
-   } else {
-      
-    # if they are not, remove that replicate
-     
-   scenario_ab_gl_removed[[i]] <- data.frame(scenario = scenarios[[i]],
-                                             replicate = j)
-      
-   rm(replicate_ab_gl_formatted[[j]])
-      
-   print(paste("Replicate", j, 
-               "removed because no carnivorous endotherms are present", 
-               sep = " "))
-   }
+    data <- NULL
+    
+    print(paste("Replicate", j - 1, 
+                "removed because no carnivorous endotherms are present", 
+                sep = " "))
+    
+    }
+    
+    replicate_ab_gl_formatted[[j]] <- data
+    
+  }
+    
+  print(scenario[[i]])
+  print(length(replicate_ab_gl_formatted))
+  
+  scenario_ab_gl_formatted_not_clean[[i]] <- replicate_ab_gl_formatted
+    
+}
+  
+
+# Remove empty replicates (couldn't get this to work in previous loop)
+
+scenario_ab_gl_formatted <- list()
+
+for (i in seq_along(scenario_ab_gl_formatted_not_clean)) {
+  
+  replicate_not_clean <- scenario_ab_gl_formatted_not_clean[[i]]
+  
+  scenario_ab_gl_formatted[[i]] <- list.clean(replicate_not_clean)
+  
+}
+
+#rm(scenario_ab_gl_formatted_not_clean)
+
+# Smooth abundance data
+
+library(mgcv)
+
+# i <- i + 1
+# testdf <- scenario_ab_gl_formatted[[3]][[i]] %>% 
+#           filter(group_id == "13.16.51")
+# 
+# ggplot(testdf) +
+#   geom_line(aes(x = annual_time_step, y = abundance))
+# 
+# mod <- gam(log10(abundance) ~ s(annual_time_step), sp = 0.001,  data = testdf, method = "REML")
+# plot(mod)
+# 
+# summary(mod)
+# gam.check(mod)
+# 
+# output <- predict(mod, annual_time_step = seq(1,300,1))
+# 
+# test <- as.data.frame(cbind(annual_time_step = testdf$annual_time_step,
+#                              abundance = testdf$abundance, output, transformed_abundance = exp(output)))
+# # 
+# ggplot(test) +
+#   geom_line(aes(x = annual_time_step, y = transformed_abundance)) +
+#   geom_line(aes(x = annual_time_step, y = abundance), col = "red")
+
+# Function to smooth time series
+
+
+smooth_gam <- function(input, smoothing_param) {
+  
+  input <- input %>% 
+           mutate(abundance = abundance +
+                     (mean(abundance)*0.01))
+  
+  # mod <- gam(log10(abundance) ~ s(annual_time_step), sp = smoothing_param,  
+  #            data = input, method = "REML")
+  
+  mod <- gam(log10(abundance) ~ s(annual_time_step, k = 4), sp = smoothing_param,  
+             data = input, method = "REML")
+  
+  # plot(mod)
+  # summary(mod)
+  # gam.check(mod)
+  
+  modelled_abundance <- predict(mod, pred_annual_time_step = unique(input$annual_time_step))
+  
+  modelled_abundance <- as.data.frame(cbind(annual_time_step =unique(input$annual_time_step),
+                                       transformed_abundance = exp(modelled_abundance)))
+  
+  newdata <- input %>% 
+             merge(modelled_abundance, by = "annual_time_step")
+  
+  return(newdata)
+  
   
 }
 
 
-head(scenario_ab_gl_formatted[[1]][[1]])
-dim(scenario_ab_gl_formatted[[1]][[1]])
-length(unique(scenario_ab_gl_formatted[[1]][[1]]$group_id))
+# Identify and deal with weird mass bins that blink in and out
 
-formatted <- scenario_ab_gl_formatted[[1]][[3]]
+scenario_abundance_clean <- list()
+
+for (i in seq_along(scenario_ab_gl_formatted)) {
+  
+  replicate_allgroups <- scenario_ab_gl_formatted[[i]]
+  replicate_gens <- scenario_generations_raw[[i]]
+  
+  reps_out <- list()
+  
+  for (j in seq_along(replicate_allgroups)) {
+    
+    data <- replicate_allgroups[[j]] 
+    
+    gen <- replicate_gens[[j]] %>% 
+           dplyr::select(group_id, mass_lower_g) %>% 
+           distinct(.)
+    
+   # Determine which groups were there at beginning (post burnin)
+    temp <- data %>% 
+      group_by(group_id) %>% 
+      filter(monthly_time_step == min(monthly_time_step)) %>% 
+      mutate(first_appearance = annual_time_step,
+             beginning = ifelse(first_appearance == 1,
+                                TRUE, FALSE)) %>% 
+      dplyr::select(group_id, first_appearance, beginning)
+     
+    reps_out[[j]] <- data %>% 
+        merge(temp, by = "group_id") %>% 
+        merge(gen, by = "group_id") %>% 
+        arrange(mass_lower_g) %>% 
+        tidylog::filter(beginning == TRUE) # Note 14% is highest percentage of data removed by this line
+    
+    rm(temp)
+  }
+  
+  scenario_abundance_clean[[i]] <- reps_out
+  
+}
+
+
+# Test smoothing function parameters on group being harvested
+
+library(boomer)
+
+scenario_smoothed_abundance <- list()
+
+for (i in seq_along(scenario_abundance_clean)) {
+  
+  # Get replicate data for a single scenario
+  
+  replicate_ab_gl <- scenario_abundance_clean[[i]]
+  
+  replicate_smoothed_abundance <- list()
+ 
+  # For each individual replicate
+  
+  for (j in seq_along(replicate_ab_gl)) {
+    
+    group_ab_gl <- replicate_ab_gl[[j]]
+    
+    group_list <- split(group_ab_gl, group_ab_gl$group_id)
+    
+    group_smoothed_abundance <- list()
+    
+    for (k in seq_along(group_list)) {
+      
+      group_df <- group_list[[k]]
+      
+      group_smoothed_abundance[[k]] <- boom(smooth_gam(group_df, 0.01))
+      
+      print(k)
+      
+    }
+    
+    all_groups_smooth <- do.call(rbind,group_smoothed_abundance)
+    
+    replicate_smoothed_abundance[[j]] <- all_groups_smooth
+    
+    print(j)
+  }
+  
+  scenario_smoothed_abundance[[i]] <- replicate_smoothed_abundance
+  
+  print(i)
+  
+}
 
 # * Sample data ----
 
@@ -1182,11 +1344,12 @@ formatted <- scenario_ab_gl_formatted[[1]][[3]]
 scenario_red_list_data <- list()
 
 
-for (i in seq_along(scenario_ab_gl_formatted)) {
+#for (i in seq_along(scenario_ab_gl_formatted)) {
+for (i in seq_along(scenario_smoothed_abundance)) {
   
   # Get replicate data for a single scenario
   
-  replicate_ab_gl <- scenario_ab_gl_formatted[[i]]
+  replicate_ab_gl <- scenario_smoothed_abundance[[i]]
   
   print(paste("Processing scenario", scenarios[[i]], sep = " "))
   
@@ -1221,9 +1384,11 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
       # (specified by 'timeframe' column). Its okay to take the first value of 
       # timeframe bc the dataframe is grouped by group_id, and timeframe only changes
       # between and not within group_ids
-      mutate(diff = (abundance - dplyr::lag(abundance, timeframe[1]))) %>%
+      # mutate(diff = (abundance - dplyr::lag(abundance, timeframe[1]))) %>%
+      mutate(diff = (transformed_abundance - dplyr::lag(transformed_abundance, timeframe[1]))) %>%
       # calculate the rate of change
-      mutate(decline = diff/dplyr::lag(abundance, timeframe[1])) %>% 
+      # mutate(decline = diff/dplyr::lag(abundance, timeframe[1])) %>% 
+      mutate(decline = diff/dplyr::lag(transformed_abundance, timeframe[1])) %>% 
       # assign red list risk status based on decline 
       mutate(rl_status = ifelse(decline > -0.40, "LC",
                                 ifelse(decline <= -0.40 & decline > -0.50, "NT", # Where did this and LC thresholds come from?
@@ -1424,7 +1589,7 @@ scenario_fg_rli_plots[[i]] <- replicate_fg_rli_plots
 
 }
 
-scenario_fg_rli_plots[[3]][[15]]
+scenario_fg_rli_plots[[3]][[2]]
 
 # RLI with all functional groups aggregated
 # i.e. mean of each 'taxa' RLI as per Butchart et al (2010) 'Indicators of
@@ -1703,7 +1868,7 @@ i <- 1
 scenario_lpi_plots[[1]][[i]]
 
 i <- i + 1
-scenario_lpi_plots[[4]][[i]]
+scenario_lpi_plots[[1]][[i]]
 
 # * Plot all replicates together ----
 
