@@ -979,60 +979,11 @@ head(scenario_abundance_long[[1]][[1]])
 test_group <- scenario_abundance_long[[1]][[1]] %>% filter(group_id == "10.42")
 head(test_group)
 
-#' # Mean generation length ----
-#' 
-#' #' TODO: Check this function doesn't exclude groups not present in all 
-#' #' replicates
-#' 
-#' mean_gen_lengths_scenarios <- list()
-#' 
-#' for (i in seq_along(generation)) {
-#'   
-#' 
-#'   # Select only group id and gen length, reduce rows (input has a
-#'   # new row for each cohort) for one scenario
-#'   
-#'    scenario_gen_lengths <- lapply(generation[[i]], function(x){
-#'        
-#'     x %>%
-#'     dplyr::select(group_id, generation_length_yrs) %>%
-#'       unique(.)}
-#'     )
-#'   
-#'   # Convert individual replicates into a single dataframe where each rep is 
-#'   # a column (suppress warning about duplicate column names bc we fix it 
-#'   # in next step)
-#'    
-#'   mean_gen_lengths <- suppressWarnings(Reduce(function(x, y) merge(x, y, by = "group_id"), 
-#'                              scenario_gen_lengths))
-#'   
-#'   # Fix up column names for each replicate so they're unique
-#'   all_reps <- colnames(mean_gen_lengths)
-#'   all_reps <- all_reps[!grepl('group_id', all_reps)]
-#'   all_reps_unique <- make.unique(all_reps)
-#'   names(mean_gen_lengths) <- c("group_id", all_reps_unique)
-#'   head(mean_gen_lengths)
-#'   
-#'   # Calculate the mean generation length for each group across replicates
-#'   
-#'   mean_gen_lengths_scenarios[[i]] <- mean_gen_lengths %>%
-#'                       mutate(mean_gen_length = 
-#'                                rowMeans(mean_gen_lengths[all_reps_unique])) %>%
-#'                       dplyr::select(group_id, mean_gen_length)
-#' }
-#' 
-#' rm(mean_gen_lengths, scenario_gen_lengths)
 
 # RED LIST INDEX ----
 
 # * Create folders ----
 
-# rli_inputs_folder <- file.path(indicator_inputs_folder, "RLI_inputs")
-# 
-# if( !dir.exists( file.path(rli_inputs_folder) ) ) {
-#   dir.create( file.path(rli_inputs_folder), recursive = TRUE )
-#   
-# }
 
 rli_inputs_folder <- file.path(indicator_inputs_folder, "RLI_inputs", today)
 
