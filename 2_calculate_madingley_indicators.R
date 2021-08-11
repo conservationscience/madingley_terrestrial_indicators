@@ -6409,3 +6409,727 @@ write.csv(all_indicators,
                     paste(today, "all_indicators_output_data__5yrs.csv",
                           sep = "_")))
 
+# ## AVERAGE REPLICATES ----
+# 
+# scenario_averaged_abundance_long <- list()
+# 
+# for ( i in seq_along(scenario_abundance_long)) {
+#   
+#   replicates <- scenario_abundance_long[[i]]
+#   
+#   replicates_named <- list()
+#   
+#   for (j in seq_along(replicates)) {
+#     
+#   replicates_named[[j]] <- replicates[[j]] %>% 
+#                            mutate(replicate = j - 1)
+#   }
+#   
+#   
+# }
+
+# Get generation length ----
+
+scenario_ab_gl_formatted_not_clean <- list()
+
+for (i in seq_along(scenario_abundance_long)) {
+  
+  replicate_abundance <- scenario_abundance_long[[i]]
+  replicate_generations <- scenario_generations_raw[[i]]
+  
+  # Make a list to catch the outputs
+  
+  replicate_ab_gl_formatted <- list()
+  
+  # For each individual replicate
+  
+  for (j in seq_along(replicate_abundance)) {
+    
+    # Reduce size of the replicate generations dataframe or the merge won't work
+    gen_length <- replicate_generations[[j]] %>% 
+      dplyr::select(group_id, generation_length_yrs, 
+                    functional_group_name) %>% 
+      distinct(.)
+    
+    # Add the generation length info to the abundance dataframe
+    replicate_ab_gl_formatted[[j]] <- replicate_abundance[[j]] %>%
+      merge(gen_length, by = "group_id") %>%
+      arrange(monthly_time_step, group_id) %>%
+      # Get the timeframe over which to assess decline (3 * gen length or 10 yrs,
+      # whichever is longer)
+      # Important - following lines assume an annual timeframe, will need to adjust if change interval
+      mutate(generation_by_three = generation_length_yrs * 3) %>% # Time over which to measure decline, 3 x gen length OR:
+      mutate(timeframe = generation_by_three) %>%
+      #round the time frame to whole years
+      mutate(timeframe = round(timeframe)) %>% 
+      dplyr::select(-generation_by_three) %>%
+      distinct(.) %>%
+      group_by(group_id) %>% 
+      # Add info about bodymass so can easily sort
+      merge(groups[c("group_id", "bodymass_index", "mass_lower")], 
+            by = "group_id") %>% 
+      arrange(monthly_time_step)
+    # select rows that are multiples of the specified interval 
+    # (eg if interval is 12, it samples one month from every 12 (yearly))
+    # slice(which(row_number() %% interval == 0)) %>% 
+    # mutate(annual_time_step = seq(1,max_timestep,1)) # %>% 
+    
+    
+    print(paste("Replicate", j - 1, 
+                "formatting complete", 
+                sep = " "))
+    
+  }
+  
+  print(scenario[[i]])
+  print(length(replicate_ab_gl_formatted))
+  
+  scenario_ab_gl_formatted_not_clean[[i]] <- replicate_ab_gl_formatted
+  
+}
+
+#today <- "2021-08-10"
+test <- scenario_ab_gl_formatted_not_clean[[1]][[1]]
+head(test)
+# Remove false extinctions ----
+
+scenario_false_extinctions_removed <- list()
+
+for (i in seq_along(scenario_ab_gl_formatted_not_clean)) {
+  
+  replicate_ab_gl <- scenario_ab_gl_formatted_not_clean[[i]]
+  
+  # Make a list to catch the outputs
+  
+  replicate_false_ex_removed <- list()
+  
+  # For each individual replicate
+  
+  for (j in seq_along(replicate_ab_gl)) {
+    
+    # Find the last time step where non-0 abundance occurred for each group
+    
+    temp2 <- replicate_ab_gl[[j]] %>% 
+      group_by(group_id) %>% 
+      filter(abundance > 0) %>% 
+      dplyr::select(group_id, monthly_time_step, abundance) %>% 
+      filter(monthly_time_step == max(monthly_time_step)) %>% 
+      dplyr::select(group_id, monthly_time_step) %>% 
+      rename(last_abundance = monthly_time_step)
+    
+    # Add the year of last positive abundance number as a column to the data    
+    temp3 <- replicate_ab_gl[[j]] %>% 
+      merge(temp2, by = c("group_id"), all = TRUE)
+    
+    # Use the last positive abundance year and current abundance value to determine
+    # if a zero abundance is a true extinction or just a missing value (false extinction)
+    data <- temp3 %>%
+      group_by(group_id) %>%
+      mutate(true_extinction = ifelse(abundance == 0 &
+                                        monthly_time_step < last_abundance,
+                                      "false extinction",
+                                      ifelse(abundance > 0 &
+                                               monthly_time_step < last_abundance,
+                                             "not extinct",
+                                             ifelse(abundance == 0 &
+                                                      monthly_time_step >= last_abundance,
+                                                    "true extinction", "not extinct")))) %>%
+      #filter(true_extinction != "false extinction") %>%
+      mutate(abundance = ifelse(true_extinction == "false extinction",
+                                NA, abundance)) %>%
+      group_by(group_id) %>%
+      arrange(group_id, monthly_time_step)
+    
+    # Check if there are any carnivorous endotherms
+    
+    check <- data %>% 
+      group_by(functional_group_name) %>% 
+      summarise(present = sum(abundance, na.rm = TRUE)) %>% 
+      filter(functional_group_name == "carnivore endotherm") %>% 
+      dplyr::select(present) %>% 
+      pull(.)
+    
+    
+    print(paste("Replicate", j - 1, 
+                "formatting complete", 
+                sep = " "))
+    
+    # Replace data with 0 if no carnivores
+    
+    if(check == 0) {
+      
+      data <- NULL
+      
+      print(paste("Replicate", j - 1, 
+                  "removed because no carnivorous endotherms are present", 
+                  sep = " "))
+      
+    }
+    
+    replicate_false_ex_removed[[j]] <- data
+    
+  }
+  
+  print(scenario[[i]])
+  print(length(replicate_ab_gl))
+  
+  scenario_false_extinctions_removed[[i]] <- replicate_false_ex_removed
+  
+}
+
+test <- scenario_false_extinctions_removed[[1]][[1]]
+head(test)
+
+# Remove replicates with no carnivorous endotherms ----
+
+scenario_ab_gl_formatted <- list()
+
+for (i in seq_along(scenario_false_extinctions_removed)) {
+  
+  replicate_not_clean <- scenario_false_extinctions_removed[[i]]
+  
+  scenario_ab_gl_formatted[[i]] <- list.clean(replicate_not_clean)
+  
+}
+
+test <- scenario_ab_gl_formatted[[1]][[1]]
+head(test)
+
+# AVERAGE REPLICATES ----
+
+scenario_averaged <- list()
+
+for (i in seq_along(scenario_ab_gl_formatted)) {
+  
+  replicates <- scenario_ab_gl_formatted[[i]]
+  
+  replicate_df <- do.call(rbind, replicates)
+  
+  scenario_averaged[[i]] <- replicate_df %>% 
+    group_by(group_id, monthly_time_step) %>% 
+    mutate(mean_abundance = mean(abundance, na.rm = TRUE),
+           mean_gen_length = mean(generation_length_yrs, na.rm = TRUE),
+           mean_timeframe = round(mean(timeframe, na.rm = TRUE))) %>%
+    dplyr::select(-abundance, -generation_length_yrs, -timeframe,
+                  -true_extinction, - replicate, - last_abundance) %>% 
+    rename(ave_abundance = mean_abundance,
+           generation_length_yrs = mean_gen_length,
+           timeframe = mean_timeframe) %>% 
+    distinct(.) %>% 
+    ungroup(.)
+  
+}
+
+head(scenario_averaged[[1]])
+
+test <- scenario_averaged[[1]] %>% filter(group_id == "10.33")
+
+# # Smooth abundance ----
+# 
+# scenario_abundance_clean <- scenario_ab_gl_formatted
+# 
+# ave_window <- 120
+# 
+# scenario_smoothed_abundance <- list()
+# 
+# for (i in seq_along(scenario_abundance_clean)) {
+#   
+#   # Get replicate data for a single scenario
+#   
+#   replicate_ab_gl <- scenario_abundance_clean[[i]]
+#   
+#   replicate_smoothed_abundance <- list()
+#   
+#   # For each individual replicate
+#   
+#   for (j in seq_along(replicate_ab_gl)) {
+#     
+#     group_ab_gl <- replicate_ab_gl[[j]]
+#     
+#     group_list <- split(group_ab_gl, group_ab_gl$group_id)
+#     
+#     group_smoothed_abundance <- list()
+#     
+#     for (k in seq_along(group_list)) {
+#       
+#       group_df <- group_list[[k]]
+#       
+#       # check if the group has any abundance values, make it null if not
+#       
+#       if (sum(group_df$abundance, na.rm = TRUE) == 0) {
+#         
+#         group_smoothed_abundance[[k]] <- NULL
+#         
+#       } else {
+#         
+#         group_smoothed_abundance[[k]] <- group_df %>%
+#           arrange(monthly_time_step) %>%
+#           mutate(ave_abundance = rollapply(abundance,
+#                                            ave_window,
+#                                            mean,
+#                                            na.rm = TRUE,
+#                                            partial = TRUE),
+#                  ave_abundance = ifelse(ave_abundance < 1,
+#                                         0, ave_abundance))
+#         
+#         print(k)
+#         
+#       }
+#     }
+#     
+#     all_groups_smooth <- do.call(rbind,group_smoothed_abundance)
+#     
+#     replicate_smoothed_abundance[[j]] <- all_groups_smooth
+#     
+#     print(j)
+#   }
+#   
+#   scenario_smoothed_abundance[[i]] <- replicate_smoothed_abundance
+#   
+#   print(i)
+#   
+# }
+# 
+# check <- scenario_smoothed_abundance[[1]][[1]]
+# head(check)
+# 
+# checkgroup <- check %>% filter(group_id == "13.16.27")
+
+# RED LIST INDEX ----
+
+# * Create folders ----
+
+
+rli_inputs_folder <- file.path(indicator_inputs_folder, "RLI_inputs", today)
+
+if( !dir.exists( file.path(rli_inputs_folder) ) ) {
+  dir.create( file.path(rli_inputs_folder), recursive = TRUE )
+  
+}
+
+rli_outputs_folder <- file.path(indicator_outputs_folder, "RLI_outputs", today)
+
+if( !dir.exists( file.path(rli_outputs_folder) ) ) {
+  dir.create( file.path(rli_outputs_folder), recursive = TRUE )
+  
+}
+
+rli_plots_folder <- file.path(indicator_plots_folder, "RLI_plots", today)
+
+if( !dir.exists( file.path(rli_plots_folder) ) ) {
+  dir.create( file.path(rli_plots_folder), recursive = TRUE )
+  
+}
+
+# * Take an annual sample ----
+
+scenario_annual <- list()
+
+for (i in seq_along(scenario_averaged)) {
+  
+  test <- split(scenario_averaged[[i]], scenario_averaged[[i]]$group_id)
+  
+  out <- list()
+  for (j in seq_along(test)) {
+    
+    out[[j]] <- test[[j]] %>% 
+      slice(which(row_number() %% interval == 0)) %>%
+      mutate(annual_time_step = seq(1,max_timestep,1))
+  }
+  df <- do.call(rbind, out)
+  
+  scenario_annual[[i]] <- df
+  
+}
+
+check <- scenario_annual[[1]]
+dim(check)
+
+## Referring to the thresholds quote under Criterion A, Reason 1 (declines
+## are the result of reversible pressures) according to:
+## https://portals.iucn.org/library/sites/library/files/documents/RL-2001-001-2nd.pdf
+
+
+# * Assign Red List Categories ----
+
+scenario_red_list_data <- list()
+
+#for (i in seq_along(scenario_ab_gl_formatted)) {
+for (i in seq_along(scenario_annual)) {
+  
+  # Get replicate data for a single scenario
+  
+  print(paste("Processing scenario", scenarios[[i]], sep = " "))
+  
+  # Split by functional group, because we calculate RLI for different
+  # functional groups then aggregate later (as per Butchart etal 2010),
+  # except we are using functional groups as proxies for taxa (eg mammals, birds, 
+  # reptiles) used in real world RLI calcs
+  
+  status_inputs <- split(scenario_annual[[i]], 
+                         scenario_annual[[i]]$group_id)
+  
+  # Make a list to hold output for each individual massbin-func-group (ie virtual spp)
+  
+  group_red_list_data <- list()
+  
+  for (j in seq_along(status_inputs)) {
+    
+    print(paste("Processing group", names(status_inputs)[[j]], sep = " "))
+    
+    group_red_list_data[[j]] <- status_inputs[[j]] %>%
+      group_by(group_id) %>%
+      arrange(monthly_time_step) %>%
+      # calculate the difference in abundance over 10 yrs or 3 generation lengths
+      # (specified by 'timeframe' column). Its okay to take the first value of 
+      # timeframe bc the dataframe is grouped by group_id, and timeframe only changes
+      # between and not within group_ids
+      # mutate(diff = (abundance - dplyr::lag(abundance, timeframe[1]))) %>%
+      mutate(diff = (ave_abundance - dplyr::lag(ave_abundance, 10))) %>%
+      # Using the formula from p 35 (Complex patterns of decline) Guidelines 
+      # for Using the IUCN Red List Categories and Criteria v14 August 2019 
+      mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, 10)) %>%
+      mutate(decline = ifelse(ave_abundance == 0, NA, decline)) %>% 
+      # calculate the rate of change
+      # mutate(decline = diff/dplyr::lag(abundance, timeframe[1])) %>% 
+      # mutate(decline = diff/dplyr::lag(ave_abundance, 10)) %>%
+      # mutate(prev = dplyr::lag(ave_abundance, 10)) %>% 
+      # assign red list risk status based on decline 
+      # Using the thresholds from p 16 Categories A2 - A4 Guidelines 
+      # for Using the IUCN Red List Categories and Criteria v14 August 2019
+      mutate(rl_status = ifelse(decline < 0.20, "LC",
+                                ifelse(decline >= 0.20 & decline < 0.30, "NT", # Where did this and LC thresholds come from?
+                                       ifelse(decline >= 0.30 & decline < 0.50, "VU",
+                                              ifelse(decline >= 0.50 & decline < 0.80, "EN",
+                                                     ifelse(decline >= 0.80, "CR",
+                                                            ifelse(decline == NA, "EX", "TBD"))))))) %>%
+      arrange(group_id, monthly_time_step) %>%
+      # Replace all non-ex status with ex after first occurrence 
+      # mutate(extinct = match("EX", rl_status)) %>%
+      mutate(extinct = ifelse(rl_status == "EX", 1, 0)) %>% 
+      # mutate(rl_status = with(., ave(rl_status, 
+      #                                         FUN=maintain_ex_status)))
+      #mutate(rl_status = rl_status) %>% 
+      group_by(group_id)
+    
+  }
+  
+  scenario_red_list_df <- do.call(rbind, group_red_list_data)
+  
+  scenario_red_list_data[[i]] <- scenario_red_list_df
+  
+  # Save the inputs
+  
+  # saveRDS(scenario_red_list_df,
+  #         file.path(rli_inputs_folder,
+  #                   paste(today, scenarios[[i]], "replicate", j,
+  #                         "RLI_input_data_monthly_smoothing.rds", sep = "_")))
+  # 
+  # write.csv(replicate_red_list_df,
+  #           file.path(rli_inputs_folder,
+  #                     paste(today, scenarios[[i]], "replicate", j,
+  #                           "RLI_input_data_monthly_smoothing.csv", sep = "_")))
+  
+}
+
+
+# Check we have correct structure still
+length(scenario_red_list_data) == length(scenario_ab_gl_formatted)
+length(scenario_red_list_data[[1]]) == length(scenario_ab_gl_formatted[[1]])
+
+# Have a quick look at the outputs
+
+rli_inputs <- scenario_red_list_data[[1]]
+tail(rli_inputs)
+
+write.csv(rli_inputs, file.path(indicator_outputs_folder, 
+                                "rli_input_example_averaged_reps.csv"))
+
+rli_inputs_group <- rli_inputs %>% filter(group_id == "13.16.27")
+
+ggplot(data = rli_inputs_group) +
+  geom_path(aes(x = annual_time_step, y = ave_abundance)) +
+  theme(legend.position = "none") +
+  geom_text(aes(x = annual_time_step, y = ave_abundance, label = rl_status))
+
+
+# * Take coarser sample ----
+
+sample_interval <- 1 # make a different number than 1 to actually sample
+sample_max_timestep <- 300/sample_interval
+
+scenario_redlist_data_sampled <- list()
+
+for (i in seq_along(scenario_red_list_data)) {
+  
+  scenario_redlist_data_sampled[[i]] <- scenario_red_list_data[[i]] %>% 
+    slice(which(row_number() %% sample_interval == 0)) %>% 
+    mutate(annual_time_step = seq(1,sample_max_timestep,1))
+  
+  
+}
+
+test <- scenario_redlist_data_sampled[[1]]
+test_group <- test %>% filter(group_id == "13.16.27")
+dim(test_group)
+
+# * Get harvested group only ----
+
+scenario_harvested_groups <- list()
+
+for (i in seq_along(scenario_redlist_data_sampled)) {
+  
+  if (scenarios[[i]] == "100_Land_Use") {
+    
+    scenario_harvested_groups[[i]]  <- scenario_redlist_data_sampled[[i]] %>% 
+      filter(functional_group_name == "herbivore endotherm"|
+               functional_group_name == "herbivore ectotherm") 
+    
+  } else if (scenarios[[i]] == "200_Harvesting_carnivores") {
+    
+    scenario_harvested_groups[[i]] <- scenario_redlist_data_sampled[[i]] %>% 
+      filter(functional_group_name == "carnivore endotherm"|
+               functional_group_name == "carnivore ectotherm") %>% 
+      filter(mass_lower == 1000)
+    
+  } else if (scenarios[[i]] == "300_Harvesting_herbivores") {
+    
+    scenario_harvested_groups[[i]] <- scenario_redlist_data_sampled[[i]] %>% 
+      filter(functional_group_name == "herbivore endotherm"|
+               functional_group_name == "herbivore ectotherm") %>% 
+      filter(mass_lower == 1000)
+    
+  } else if (scenarios[[i]] == "000_Baseline") {
+    
+    scenario_harvested_groups[[i]]  <- scenario_redlist_data_sampled[[i]] %>% 
+      filter(functional_group_name == "carnivore endotherm"|
+               functional_group_name == "carnivore ectotherm") %>% 
+      filter(mass_lower == 1000)
+    
+  }
+}
+
+harvested_rep <- scenario_harvested_groups[[3]]
+
+ggplot(data = harvested_rep) +
+  geom_line(aes(x = annual_time_step, y = ave_abundance, col = group_id)) +
+  theme(legend.position = "none") +
+  geom_text(aes(x = annual_time_step, y = ave_abundance, label = rl_status))
+
+# * Calculate RLI ----
+
+# RLI by individual functional groups
+
+scenario_fg_rli_outputs <- list()
+
+for (i in seq_along(scenario_redlist_data_sampled)) {
+  
+  scenario_fg_rli_outputs[[i]] <- calculate_red_list_index(
+    scenario_redlist_data_sampled[[i]], numboots, ci = FALSE) %>%
+    mutate(scenario = scenarios[[i]])
+  
+}
+
+x <- scenario_fg_rli_outputs[[1]]
+head(x)
+
+# Mean RLI aggregated across groups
+
+scenario_rli_outputs <- list()
+
+for (i in seq_along(scenario_fg_rli_outputs)) {
+  
+  if ("ci_lower" %in% names(scenario_fg_rli_outputs[[i]])) {
+    
+    scenario_rli_outputs[[i]] <- scenario_fg_rli_outputs[[i]] %>%
+      group_by(annual_time_step) %>%
+      summarise(indicator_score = mean(indicator_score),
+                ci_lower = mean(ci_lower),
+                ci_upper = mean(ci_upper)) %>%
+      mutate(indicator = "RLI",
+             replicate = j)
+  } else {
+    
+    scenario_rli_outputs[[i]] <- scenario_fg_rli_outputs[[i]] %>%
+      group_by(annual_time_step) %>%
+      summarise(indicator_score = mean(indicator_score)) %>%
+      mutate(indicator = "RLI",
+             replicate = j)
+  }
+  
+}
+
+head(scenario_rli_outputs)[[1]]
+
+# * Plot RLI ----
+
+## By functional group
+
+scenario_fg_rli_plots <- list()
+
+for (i in seq_along(scenario_fg_rli_outputs)) {
+  
+  scenario_fg_rli_plots[[i]] <-  plot_red_list_index_by_group(
+    scenario_fg_rli_outputs[[i]],
+    impact_start,
+    impact_end,
+    ci = FALSE)
+  
+  ggsave(file.path(rli_plots_folder, paste(today, scenarios[[i]], 
+                                           "RLI_by_functional_group_reps_averaged.png",
+                                           sep = "_")),
+         scenario_fg_rli_plots[[i]],  device = "png")
+  
+}
+
+scenario_fg_rli_plots[[4]]
+
+
+# Small test to see if averaging indicator scores after works better (it doesn't)
+x <- scenario_rli_outputs[[1]]
+x <- x[-1,]
+
+x <- x %>% 
+  mutate(x = rollmean(indicator_score, 10, na.pad = TRUE))
+
+ggplot(x, aes(x = annual_time_step, y = x))+
+  geom_line()
+
+# RLI with all functional groups aggregated
+# i.e. mean of each 'taxa' RLI as per Butchart et al (2010) 'Indicators of
+# recent declines'
+
+scenario_rli_plots <- list()
+
+for (i in seq_along(scenario_rli_outputs)) {
+  
+  
+  scenario_rli_plots[[i]] <- plot_red_list_index(scenario_rli_outputs[[i]],
+                                                 impact_start, 
+                                                 impact_end,
+                                                 ci = TRUE)
+  
+  ggsave(file.path(rli_plots_folder, paste(today, scenarios[[i]], 
+                                           "RLI_aggregated_averaged.png",
+                                           sep = "_")),
+         scenario_rli_plots[[i]],  device = "png")
+  
+}
+
+scenario_rli_plots[[1]]
+scenario_rli_plots[[2]]
+scenario_rli_plots[[3]]
+scenario_rli_plots[[4]]
+
+# LIVING PLANET INDEX ----
+
+# * Create folders ----
+
+lpi_inputs_folder <- file.path(indicator_inputs_folder, "LPI_inputs", today)
+
+if( !dir.exists( file.path(lpi_inputs_folder) ) ) {
+  dir.create( file.path(lpi_inputs_folder), recursive = TRUE )
+  
+}
+
+lpi_outputs_folder <- file.path(indicator_outputs_folder, "LPI_outputs", today)
+
+if( !dir.exists( file.path(lpi_outputs_folder) ) ) {
+  dir.create( file.path(lpi_outputs_folder), recursive = TRUE )
+  
+}
+
+lpi_plots_folder <- file.path(indicator_plots_folder, "LPI_plots", today)
+
+if( !dir.exists( file.path(lpi_plots_folder) ) ) {
+  dir.create( file.path(lpi_plots_folder), recursive = TRUE )
+  
+}
+
+# * Subset data ----
+
+scenario_lpi_inputs <- list()
+
+for (i in seq_along(scenario_redlist_data_sampled)) {
+  
+  scenario_lpi_inputs[[i]] <- scenario_redlist_data_sampled[[i]] %>% 
+    dplyr::select(group_id, annual_time_step, 
+                  ave_abundance)
+  
+  
+}
+
+# lpi_input <- scenario_lpi_inputs[[1]][[2]]
+# head(lpi_input)
+# write.csv(lpi_input, file.path(indicator_outputs_folder, "lpi_input_example_annual.csv"))
+
+# * Calculate LPI ----
+
+# Retain naming convention, the LPI just takes the abundance dataframes we
+# already formatted while making the RLI inputs
+
+# scenario_lpi_inputs <- scenario_abundance_long
+
+# Loop through each scenario and replicate and calculate the LPI per rep
+
+scenario_lpi_outputs <- list()
+
+for (i in seq_along(scenario_lpi_inputs)) {
+  
+  scenario_lpi_outputs[[i]] <- calculate_living_planet_index(
+    
+    scenario_lpi_inputs[[i]], start_time_step, ci = FALSE, numboots, j
+    
+  ) 
+  
+}
+
+head(scenario_lpi_outputs)[[1]]
+
+# * Plot LPI replicates individually ----
+
+scenario_lpi_plots <- list()
+
+for (i in seq_along(scenario_lpi_outputs)) {
+  
+  scenario_lpi_plots[[i]] <- plot_living_planet_index(scenario_lpi_outputs[[i]],
+                                                      ci = FALSE)
+  
+  
+  ggsave(file.path(lpi_plots_folder, paste(today, scenarios[[i]], 
+                                           "LPI_aggregated_reps_averaged.png",
+                                           sep = "_")),
+         scenario_lpi_plots[[i]],  device = "png")                                   
+  
+}
+
+scenario_lpi_plots[[1]]
+scenario_lpi_plots[[2]]
+scenario_lpi_plots[[3]]
+scenario_lpi_plots[[4]]
+
+
+# Combine indicators ----
+
+all_indicators_list <- list(scenario_rli_outputs,
+                            scenario_lpi_outputs)
+
+names(all_indicators_list) <- c("RLI", "LPI")
+
+saveRDS(all_indicators_list,
+        file.path(indicator_outputs_folder,
+                  paste(today, "all_indicators_output_data_list_reps_averaged.rds",
+                        sep = "_")))
+
+all_indicators <- rbind(all_lpi, all_rli)
+
+saveRDS(all_indicators,
+        file.path(indicator_outputs_folder,
+                  paste(today, "all_indicators_output_data_reps_averaged.rds",
+                        sep = "_")))
+
+write.csv(all_indicators,
+          file.path(indicator_outputs_folder,
+                    paste(today, "all_indicators_output_data_reps_averaged.csv",
+                          sep = "_")))
+
