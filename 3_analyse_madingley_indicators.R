@@ -45,7 +45,36 @@ function_name <- function(param){
 
 }
 
+input <- data
 
+smooth_gam <- function(input, smoothing_param) {
+  
+  input <- input %>% 
+    mutate(abundance = abundance +
+             (mean(abundance)*0.01))
+  
+  # mod <- gam(log10(abundance) ~ s(annual_time_step), sp = smoothing_param,  
+  #            data = input, method = "REML")
+  
+  mod <- gam(log10(abundance) ~ s(annual_time_step, k = 4), sp = smoothing_param,  
+             data = input, method = "REML")
+  
+  # plot(mod)
+  # summary(mod)
+  # gam.check(mod)
+  
+  modelled_abundance <- predict(mod, pred_annual_time_step = unique(input$annual_time_step))
+  
+  modelled_abundance <- as.data.frame(cbind(annual_time_step =unique(input$annual_time_step),
+                                            transformed_abundance = exp(modelled_abundance)))
+  
+  newdata <- input %>% 
+    merge(modelled_abundance, by = "annual_time_step")
+  
+  return(newdata)
+  
+  
+}
 # Set up paths ----
 
 if (Sys.info()['nodename'] == "SIMONE-PC") {
@@ -139,7 +168,7 @@ if( !dir.exists( file.path(analysis_plots_folder) ) ) {
   
 }
 
-# Load 1 yr data ----
+# Load scenario level data ----
 
 if (development_mode == TRUE) {
   
@@ -158,51 +187,141 @@ rli <- indicators_all[["RLI"]]
 
 lpi <- indicators_all[["LPI"]]
 
+# Generalised additive model ----
+
+input <- indicators_all[["LPI functional groups"]][[4]] %>%
+          filter(indicator == "herbivore endotherm LPI") %>% 
+        mutate(disturbance = ifelse(annual_time_step < 100, 0,
+                                    ifelse(annual_time_step > 99 & 
+                                             annual_time_step < 200, 1, 0)))
+head(input)
+
+# mod <- gam(log10(abundance) ~ s(annual_time_step), sp = smoothing_param,  
+#            data = input, method = "REML")
+
+mod <- gam(log10(indicator_score) ~ s(annual_time_step, k = 10) + disturbance, 
+           sp = 0.001,  
+           data = input, method = "REML")
+
+plot(mod)
+summary(mod)
+gam.check(mod)
+
+modelled_abundance <- predict(mod, pred_annual_time_step = unique(input$annual_time_step))
+
+modelled_abundance <- as.data.frame(cbind(annual_time_step =unique(input$annual_time_step),
+                                          transformed_abundance = exp(modelled_abundance)))
+
+newdata <- input %>% 
+  merge(modelled_abundance, by = "annual_time_step")
+
+head(newdata)
+
+ggplot(data = newdata) +
+  geom_line(aes(x = annual_time_step, y = transformed_abundance)) +
+  geom_line(aes(x = annual_time_step, y = indicator_score), col = "deep pink") 
+
+
+# CORRELATION ----
+
+lpi_landuse <- lpi[[2]]
+rli_landuse <- rli[[2]]
+
+head(lpi_landuse)
+dim(lpi_landuse)
+
+abundance_landuse <- indicators_all[["abundance harvested groups"]][[4]]
+
+abundance_landuse <- abundance_landuse 
+
+dim(abundance_landuse)
+
+cor(lpi_landuse$indicator_score, abundance_landuse$indicator_score, method = "spearman")
+
+# BREAK POINT ANALYSIS ----
+library(datasets)
+library(changepoint)
+load(Nile)
+
+# Using Nile dataset (should be one breakpoint)
+cpt2 <- cpt.mean(Nile, method = "PELT", penalty = "CROPS", pen.value = c(1,25))
+summary(cpt2)
+plot(cpt2, diagnostic = TRUE) # Gets it wrong
+
+# Using simulated dataset (should be three breakpoints)
+
+set.seed(2)
+# Normal distributed data with 3 change in mean (at x = 10/11, 25/26, 45/46)
+df <- data.frame(
+  x = 1:50,
+  z=c(rnorm(10, 1, sd = 0.5), rnorm(15, 0, sd = 0.5),
+      rnorm(20, 2, sd = 0.5), rnorm(5, 0.5 , sd = 0.5))
+)
+plot(df$x, df$z, type = 'l', xlab = '', ylab = '')
+lines(x = 1:10, y = rep(1,10), col = 'red', lwd = 3)
+lines(x = 11:25, y = rep(0,15), col = 'red', lwd = 3)
+lines(x = 26:45, y = rep(2,20), col = 'red', lwd = 3)
+lines(x = 46:50, y = rep(0.5,5), col = 'red', lwd = 3)
+head(df)
+
+z_ts <- as.ts(df$z)
+
+cpt3 <- cpt.mean(z_ts, method = "PELT", penalty = "AIC", pen.value = c(1,25))
+summary(cpt3)
+plot(cpt3, diagnostic = TRUE) # Gets it right
+
+# Using my data
+data<- indicators_all[["LPI"]][[4]] 
+
+
+data <- indicators_all[["abundance functional groups"]][[4]] %>%
+       filter(indicator == "omnivore ectotherm mean abundance")
+
+head(data)
+
+indicator_ts <- as.ts(data$indicator_score)
+
+cpt4 <- cpt.mean(indicator_ts, method = "PELT", penalty = "AIC", pen.value = c(1,25))
+summary(cpt4)
+plot(cpt4) # Gets it ??
+
+
+# DERIVATIVES ----
+
 # RED LIST INDEX ----
 
 # Create the spline functions and calculate derivatives (1 per replicate)
 
 rli_scenario_derivatives <- list()
-rli_replicate_derivatives <- list()
 
 for (i in seq_along(rli)) {
   
-  # Get the outputs for a single scenario
-  
-  scenario <- rli[[i]] 
-  
-  for (j in seq_along(scenario)) {
+  # Get the outputs for a single scenario and create a spline function
     
-    # Get the outputs for a single replicate and create a spline function
-    
-    rli_replicate_spline <- splinefun(x = scenario[[j]]$annual_time_step, 
-                                      y = scenario[[j]]$indicator_score)
+    rli_spline <- splinefun(x = rli[[i]]$annual_time_step, 
+                            y = rli[[i]]$indicator_score)
     
     # Use the spline function to calculate the first and second derivatives and
     # add them to our indicator score dataframes
     
-    rli_replicate_derivatives[[j]] <- scenario[[j]] %>% 
-         mutate(first_derivative = rli_replicate_spline(seq(1, 
-                                                              nrow(scenario[[j]]), 1), 
-                                                              deriv = 1),
-                second_derivative = rli_replicate_spline(seq(1, 
-                                                              nrow(scenario[[j]]), 1), 
-                                                              deriv = 2))
+    rli_scenario_derivatives[[i]] <- rli[[i]] %>% 
+         mutate(first_derivative = rli_spline(seq(1, nrow(rli[[i]]), 1), 
+                                              deriv = 1),
+                second_derivative = rli_spline(seq(1, nrow(rli[[i]]), 1), 
+                                               deriv = 2))
                                   
-    }
-  
-  rli_scenario_derivatives[[i]] <- rli_replicate_derivatives
-  
 }
 
-# Test plot LPI
+# Test plot RLI
 
-rli_test <- rli_scenario_derivatives[[1]][[1]]
+rli_test <- rli_scenario_derivatives[[2]]
 head(rli_test)
 
 rli_annual <- ggplot(data = rli_test) +
-  #geom_line(aes(x = annual_time_step, y = first_derivative)) +
-  geom_line(aes(x = annual_time_step, y = second_derivative), col = "hot pink")
+  geom_line(aes(x = annual_time_step, y = first_derivative)) 
+  #geom_line(aes(x = annual_time_step, y = second_derivative), col = "hot pink")
+
+rli_annual
 
 ggsave(file.path(analysis_outputs_folder, "rli_annual_2nd_dervs.png"),
        rli_annual,  device = "png")
