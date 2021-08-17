@@ -1,7 +1,6 @@
 
 ## REPOSITORY: https://github.com/conservationscience/madingley_terrestrial_indicators
 
-
 rm(list = ls())
 
 # Directory path to git repo
@@ -82,7 +81,7 @@ today <- Sys.Date()
 # Define mode (development == TRUE will only perform operations on a small subset
 # of folders, not all outputs)
 
-development_mode <- TRUE
+development_mode <- FALSE
 
 # Specify universal input arguments
 
@@ -140,24 +139,24 @@ if( !dir.exists( file.path(analysis_plots_folder) ) ) {
   
 }
 
-# Load data ----
+# Load 1 yr data ----
 
 if (development_mode == TRUE) {
   
-indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-07-12_all_indicators_output_data.rds")
-indicators_all_list <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-07-13_all_indicators_output_data_list.rds")
+#indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-07-12_all_indicators_output_data.rds")
+indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-07-13_all_indicators_output_data_list.rds")
 
 } else if (development_mode == FALSE) {
   
-indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-07-12_all_indicators_output_data.rds")
+indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-16_all_indicators_output_data_list_reps_averaged.rds")
 
 }
 
 # Split the list by indicators
 
-rli <- indicators_all_list[["RLI"]]
+rli <- indicators_all[["RLI"]]
 
-lpi <- indicators_all_list[["LPI"]]
+lpi <- indicators_all[["LPI"]]
 
 # RED LIST INDEX ----
 
@@ -176,7 +175,7 @@ for (i in seq_along(rli)) {
     
     # Get the outputs for a single replicate and create a spline function
     
-    rli_replicate_spline <- splinefun(x = scenario[[j]]$time_step, 
+    rli_replicate_spline <- splinefun(x = scenario[[j]]$annual_time_step, 
                                       y = scenario[[j]]$indicator_score)
     
     # Use the spline function to calculate the first and second derivatives and
@@ -195,6 +194,18 @@ for (i in seq_along(rli)) {
   rli_scenario_derivatives[[i]] <- rli_replicate_derivatives
   
 }
+
+# Test plot LPI
+
+rli_test <- rli_scenario_derivatives[[1]][[1]]
+head(rli_test)
+
+rli_annual <- ggplot(data = rli_test) +
+  #geom_line(aes(x = annual_time_step, y = first_derivative)) +
+  geom_line(aes(x = annual_time_step, y = second_derivative), col = "hot pink")
+
+ggsave(file.path(analysis_outputs_folder, "rli_annual_2nd_dervs.png"),
+       rli_annual,  device = "png")
 
 # LIVING PLANET INDEX ----
 
@@ -233,6 +244,132 @@ for (i in seq_along(lpi)) {
   
 }
 
+# Test plot LPI
+
+lpi_test <- lpi_scenario_derivatives[[1]][[1]]
+head(lpi_test)
+
+lpi_annual <- ggplot(data = lpi_test) +
+  #geom_line(aes(x = annual_time_step, y = first_derivative)) +
+  geom_line(aes(x = annual_time_step, y = second_derivative), col = "hot pink")
+
+ggsave(file.path(analysis_outputs_folder, "lpi_annual_2nd_dervs.png"),
+       lpi_annual,  device = "png")
+
+# Load  5 yr data ----
+
+if (development_mode == TRUE) {
+  
+  #indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-07-12_all_indicators_output_data.rds")
+  indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-07-13_all_indicators_output_data_list.rds")
+  
+} else if (development_mode == FALSE) {
+  
+  indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-04_all_indicators_output_data_list_5yr.rds")
+  
+}
+
+# Split the list by indicators
+
+rli <- indicators_all[["RLI"]]
+
+lpi <- indicators_all[["LPI"]]
+
+# RED LIST INDEX ----
+
+# Create the spline functions and calculate derivatives (1 per replicate)
+
+rli_scenario_derivatives <- list()
+rli_replicate_derivatives <- list()
+
+for (i in seq_along(rli)) {
+  
+  # Get the outputs for a single scenario
+  
+  scenario <- rli[[i]] 
+  
+  for (j in seq_along(scenario)) {
+    
+    # Get the outputs for a single replicate and create a spline function
+    
+    rli_replicate_spline <- splinefun(x = scenario[[j]]$annual_time_step, 
+                                      y = scenario[[j]]$indicator_score)
+    
+    # Use the spline function to calculate the first and second derivatives and
+    # add them to our indicator score dataframes
+    
+    rli_replicate_derivatives[[j]] <- scenario[[j]] %>% 
+      mutate(first_derivative = rli_replicate_spline(seq(1, 
+                                                         nrow(scenario[[j]]), 1), 
+                                                     deriv = 1),
+             second_derivative = rli_replicate_spline(seq(1, 
+                                                          nrow(scenario[[j]]), 1), 
+                                                      deriv = 2))
+    
+  }
+  
+  rli_scenario_derivatives[[i]] <- rli_replicate_derivatives
+  
+}
+
+# Test plot RLI
+
+rli_test <- rli_scenario_derivatives[[1]][[1]]
+head(rli_test)
+
+rli_5 <- ggplot(data = rli_test) +
+  #geom_line(aes(x = annual_time_step, y = first_derivative)) +
+  geom_line(aes(x = annual_time_step, y = second_derivative), col = "hot pink")
+
+ggsave(file.path(analysis_outputs_folder, "rli_5yr_2nd_dervs.png"),
+       rli_5,  device = "png")
+
+# LIVING PLANET INDEX ----
+
+# Create the spline functions and calculate derivatives (1 per replicate)
+
+lpi_scenario_derivatives <- list()
+lpi_replicate_derivatives <- list()
+
+for (i in seq_along(lpi)) {
+  
+  # Get the outputs for a single scenario
+  
+  scenario <- lpi[[i]] 
+  
+  for (j in seq_along(scenario)) {
+    
+    # Get the outputs for a single replicate and create a spline function
+    
+    lpi_replicate_spline <- splinefun(x = scenario[[j]]$annual_time_step, 
+                                      y = scenario[[j]]$indicator_score)
+    
+    # Use the spline function to calculate the first and second derivatives and
+    # add them to our indicator score dataframes
+    
+    lpi_replicate_derivatives[[j]] <- scenario[[j]] %>% 
+      mutate(first_derivative = lpi_replicate_spline(seq(1, 
+                                                         nrow(scenario[[j]]), 1), 
+                                                     deriv = 1),
+             second_derivative = lpi_replicate_spline(seq(1, 
+                                                          nrow(scenario[[j]]), 1), 
+                                                      deriv = 2))
+    
+  }
+  
+  lpi_scenario_derivatives[[i]] <- lpi_replicate_derivatives
+  
+}
+
+# Test plot LPI
+
+lpi_test <- lpi_scenario_derivatives[[1]][[1]]
+head(lpi_test)
+
+lpi_5 <- ggplot(data = lpi_test) +
+  #geom_line(aes(x = annual_time_step, y = first_derivative)) +
+  geom_line(aes(x = annual_time_step, y = second_derivative), col = "hot pink")
 
 
-
+ggsave(file.path(analysis_outputs_folder, "lpi_5yr_2nd_dervs.png"),
+       lpi_5,  device = "png")
