@@ -64,6 +64,10 @@ maintain_0_abundance <- function(vec) {
   else vec 
 }
 
+# Scale values between 0 and 1
+
+range01 <- function(x){(x-min(x, na.rm = TRUE))/(max(x, na.rm = TRUE)-min(x, na.rm = TRUE))}
+
 # data <- rli_inputs
 # numboots <- 5
 # Function to calculate RLI
@@ -5285,16 +5289,14 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
     } else if (scenarios[[i]] == "200_Harvesting_carnivores") {
       
       harvested[[j]] <- replicate_rl_data[[j]] %>% 
-        filter(functional_group_name == "carnivore endotherm"|
-                 functional_group_name == "carnivore ectotherm") %>% 
-        filter(mass_lower == 1000)
+        filter(functional_group_name == "carnivore endotherm" & mass_lower == 10000|
+                 functional_group_name == "carnivore ectotherm" & mass_lower == 10000) 
       
     } else if (scenarios[[i]] == "300_Harvesting_herbivores") {
       
       harvested[[j]]  <- replicate_rl_data[[j]] %>% 
-        filter(functional_group_name == "herbivore endotherm"|
-                 functional_group_name == "herbivore ectotherm") %>% 
-        filter(mass_lower == 1000)
+        filter(functional_group_name == "herbivore endotherm" & mass_lower == 10000|
+                 functional_group_name == "herbivore ectotherm" & mass_lower == 10000) 
       
     } else if (scenarios[[i]] == "000_Baseline") {
       
@@ -5317,6 +5319,46 @@ ggplot(data = harvested_rep) +
   geom_line(aes(x = annual_time_step, y = ave_abundance, col = group_id)) +
   theme(legend.position = "none") +
   geom_text(aes(x = annual_time_step, y = ave_abundance, label = rl_status))
+
+# * Plot harvested groups ----
+
+harvested_plots_folder <- file.path(indicator_plots_folder, "harvested_plots", today)
+
+if( !dir.exists( file.path(harvested_plots_folder) ) ) {
+  dir.create( file.path(harvested_plots_folder), recursive = TRUE )
+  
+}
+
+
+scenario_harvested_plots <- list()
+
+for ( i in seq_along(scenario_harvested_groups)) {
+  
+  replicate_harvest <- scenario_harvested_groups[[i]]
+  
+  replicate_harvested_plots <- list()
+  
+  # For each individual replicate
+  
+  for (j in seq_along(replicate_harvest)) {
+    
+    replicate_harvested_plots[[j]] <- ggplot(data = replicate_harvest[[j]]) +
+      geom_smooth(aes(x = annual_time_step, 
+                      y = abundance, 
+                      col = functional_group_name)) +
+      theme(legend.position = "bottom") +
+      labs(title = paste(scenarios[[i]], "harvested groups", sep = " "))
+    
+    ggsave(file.path(harvested_plots_folder, paste(today, scenarios[[i]], 
+                                                   "replicate", j - 1,
+                                                   "harvested_reps_averaged.png",
+                                                   sep = "_")),
+           replicate_harvested_plots[[j]],  device = "png")
+  }
+  
+  scenario_harvested_plots[[i]] <- replicate_harvested_plots 
+  
+}
 
 # Plot some results to check they're not completely whack
 
@@ -5791,7 +5833,7 @@ scenario_lpi_plots_aggregated[[1]]
 all_indicators_list <- list(scenario_rli_outputs,
                             scenario_lpi_outputs)
 
-names(all_indicators_list) <- c("RLI", "LPI")
+names(all_indicators_list) <- c("RLI", "LPI", "harvested")
 
 saveRDS(all_indicators_list,
         file.path(indicator_outputs_folder,
@@ -5878,16 +5920,14 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
     } else if (scenarios[[i]] == "200_Harvesting_carnivores") {
       
       harvested[[j]] <- replicate_rl_data[[j]] %>% 
-        filter(functional_group_name == "carnivore endotherm"|
-                 functional_group_name == "carnivore ectotherm") %>% 
-        filter(mass_lower == 1000)
+        filter(functional_group_name == "carnivore endotherm" & mass_lower == 10000|
+                 functional_group_name == "carnivore ectotherm" & mass_lower == 10000) 
       
     } else if (scenarios[[i]] == "300_Harvesting_herbivores") {
       
       harvested[[j]]  <- replicate_rl_data[[j]] %>% 
-        filter(functional_group_name == "herbivore endotherm"|
-                 functional_group_name == "herbivore ectotherm") %>% 
-        filter(mass_lower == 1000)
+        filter(functional_group_name == "herbivore endotherm" & mass_lower == 10000|
+                 functional_group_name == "herbivore ectotherm" & mass_lower == 10000) 
       
     } else if (scenarios[[i]] == "000_Baseline") {
       
@@ -5910,6 +5950,46 @@ ggplot(data = harvested_rep) +
   geom_line(aes(x = annual_time_step, y = ave_abundance, col = group_id)) +
   theme(legend.position = "none") +
   geom_text(aes(x = annual_time_step, y = ave_abundance, label = rl_status))
+
+# * Plot harvested groups ----
+
+harvested_plots_folder <- file.path(indicator_plots_folder, "harvested_plots", today)
+
+if( !dir.exists( file.path(harvested_plots_folder) ) ) {
+  dir.create( file.path(harvested_plots_folder), recursive = TRUE )
+  
+}
+
+
+scenario_harvested_plots <- list()
+
+for ( i in seq_along(scenario_harvested_groups)) {
+  
+  replicate_harvest <- scenario_harvested_groups[[i]]
+  
+  replicate_harvested_plots <- list()
+  
+  # For each individual replicate
+  
+  for (j in seq_along(replicate_harvest)) {
+  
+    replicate_harvested_plots[[j]] <- ggplot(data = replicate_harvest[[j]]) +
+    geom_smooth(aes(x = annual_time_step, 
+                    y = abundance, 
+                    col = functional_group_name)) +
+    theme(legend.position = "bottom") +
+    labs(title = paste(scenarios[[i]], "harvested groups", sep = " "))
+  
+  ggsave(file.path(harvested_plots_folder, paste(today, scenarios[[i]], 
+                                                 "replicate", j - 1,
+                                                 "harvested_reps_averaged.png",
+                                                 sep = "_")),
+         replicate_harvested_plots[[j]],  device = "png")
+  }
+
+  scenario_harvested_plots[[i]] <- replicate_harvested_plots 
+  
+}
 
 # Plot some results to check they're not completely whack
 
@@ -6410,23 +6490,6 @@ write.csv(all_indicators,
                           sep = "_")))
 
 # ## AVERAGE REPLICATES ----
-# 
-# scenario_averaged_abundance_long <- list()
-# 
-# for ( i in seq_along(scenario_abundance_long)) {
-#   
-#   replicates <- scenario_abundance_long[[i]]
-#   
-#   replicates_named <- list()
-#   
-#   for (j in seq_along(replicates)) {
-#     
-#   replicates_named[[j]] <- replicates[[j]] %>% 
-#                            mutate(replicate = j - 1)
-#   }
-#   
-#   
-# }
 
 # Get generation length ----
 
@@ -6544,6 +6607,7 @@ for (i in seq_along(scenario_ab_gl_formatted_not_clean)) {
     
     check <- data %>% 
       group_by(functional_group_name) %>% 
+      filter(monthly_time_step > 13200) %>% 
       summarise(present = sum(abundance, na.rm = TRUE)) %>% 
       filter(functional_group_name == "carnivore endotherm") %>% 
       dplyr::select(present) %>% 
@@ -6577,8 +6641,9 @@ for (i in seq_along(scenario_ab_gl_formatted_not_clean)) {
   
 }
 
-test <- scenario_false_extinctions_removed[[1]][[1]]
+test <- scenario_false_extinctions_removed[[1]][[2]]
 head(test)
+any(is.nan(test$abundance))
 
 # Remove replicates with no carnivorous endotherms ----
 
@@ -6594,111 +6659,227 @@ for (i in seq_along(scenario_false_extinctions_removed)) {
 
 test <- scenario_ab_gl_formatted[[1]][[1]]
 head(test)
+any(is.nan(test$abundance))
 
-# AVERAGE REPLICATES ----
 
-scenario_averaged <- list()
+# Take a random sample of 25 replicates ----
+
+scenario_ab_gl_formatted_25 <- list()
 
 for (i in seq_along(scenario_ab_gl_formatted)) {
   
+  if(scenarios[[i]] == "000_Baseline") {
+    
+  scenario_ab_gl_formatted_25[[i]] <- scenario_ab_gl_formatted[[i]]
+  
+  } else {
+    
   replicates <- scenario_ab_gl_formatted[[i]]
+  
+  set.seed(159)
+  
+  scenario_ab_gl_formatted_25[[i]] <- sample(scenario_ab_gl_formatted[[i]], 25)
+  
+  }
+
+}
+
+# Average across replicates ----
+
+scenario_averaged <- list()
+
+for (i in seq_along(scenario_ab_gl_formatted_25)) {
+  
+  replicates <- scenario_ab_gl_formatted_25[[i]]
+  
+  n <- length(replicates)
   
   replicate_df <- do.call(rbind, replicates)
   
   scenario_averaged[[i]] <- replicate_df %>% 
-    group_by(group_id, monthly_time_step) %>% 
-    mutate(mean_abundance = mean(abundance, na.rm = TRUE),
-           mean_gen_length = mean(generation_length_yrs, na.rm = TRUE),
-           mean_timeframe = round(mean(timeframe, na.rm = TRUE))) %>%
-    dplyr::select(-abundance, -generation_length_yrs, -timeframe,
-                  -true_extinction, - replicate, - last_abundance) %>% 
-    rename(ave_abundance = mean_abundance,
-           generation_length_yrs = mean_gen_length,
-           timeframe = mean_timeframe) %>% 
-    distinct(.) %>% 
-    ungroup(.)
+                            mutate(replicate = j - 1) %>% 
+                            group_by(group_id, monthly_time_step) %>% 
+                            mutate(mean_abundance = mean(abundance, na.rm = TRUE),
+                                   # 95% CIs using this info: https://www.cyclismo.org/tutorial/R/confidence.html
+                                   sd = sd(abundance, na.rm = TRUE),
+                                   error = qt(0.975, df = n - 1) * 
+                                              sd/sqrt(n),
+                                   lower_ci = mean_abundance - error, 
+                                   upper_ci = mean_abundance + error,  
+                                   mean_gen_length = mean(generation_length_yrs, na.rm = TRUE),
+                                   mean_timeframe = round(mean(timeframe, na.rm = TRUE))) %>%
+                            dplyr::select(-abundance, -generation_length_yrs, -timeframe,
+                                          -true_extinction, - replicate, - last_abundance) %>% 
+                            rename(abundance = mean_abundance,
+                                   generation_length_yrs = mean_gen_length,
+                                   timeframe = mean_timeframe) %>% 
+                            distinct(.) %>% 
+                            ungroup(.)
+  
+  print(paste(scenarios[[i]], "replicates averaged"))
   
 }
 
-head(scenario_averaged[[1]])
+test2 <- scenario_averaged[[4]]
+head(test2)
+any(is.nan(test2$abundance))
+group <- test2 %>%  filter(group_id == "15.18.10")
 
-test <- scenario_averaged[[1]] %>% filter(group_id == "10.33")
+# Remove blinking groups ----
+
+scenario_abundance_clean <- list()
+
+for (i in seq_along(scenario_averaged)) {
+  
+  
+    data <- scenario_averaged[[i]]
+    
+    # gen <- replicate_gens[[j]] %>%
+    #   dplyr::select(group_id, mass_lower_g) %>%
+    #   distinct(.)
+    
+    # data <- data %>% filter(group_id == "15.18.21") # For testing
+    
+    # Determine which groups were there at beginning (post burnin)
+    temp <- data %>%
+      group_by(group_id) %>%
+      filter(abundance != is.nan(abundance)) %>% 
+      filter(monthly_time_step == min(monthly_time_step)) %>%
+      mutate(first_appearance = monthly_time_step,
+             beginning = ifelse(first_appearance == 12000,
+                                TRUE, FALSE)) %>%
+      dplyr::select(group_id, first_appearance, beginning)
+    
+    scenario_abundance_clean[[i]] <- data %>%
+      merge(temp, by = "group_id") %>%
+            arrange(mass_lower) %>%
+      tidylog::filter(beginning == TRUE) # Note 14% is highest percentage of data removed by this line
+    
+    rm(temp)
+}
+
+# Plot average abundance ----
+
+scenario_abundance_line_plots <- list()
+scenario_abundance_smooth_plots <- list()
+
+for (i in seq_along(scenario_abundance_clean)) {
+  
+  plot_data <- scenario_abundance_clean[[i]] %>% 
+               group_by(monthly_time_step, functional_group_name) %>% 
+               mutate(total_abundance = mean(abundance, na.rm = TRUE),
+                      total_ci_lower = mean(lower_ci, na.rm = TRUE),
+                      total_ci_upper = mean(upper_ci, na.rm = TRUE)) %>% 
+               dplyr::select(monthly_time_step, total_abundance,
+                             total_ci_lower, total_ci_upper) %>% 
+               distinct(.) %>% 
+               ungroup(.) %>% 
+               slice(which(row_number() %% interval == 0))
+  
+  scenario_abundance_line_plots[[i]] <- ggplot(plot_data) +
+    geom_line(aes(x = monthly_time_step, y = total_abundance)) +
+    # geom_ribbon(aes(x = monthly_time_step, 
+    #                 ymin = total_ci_lower, 
+    #                 ymax = total_ci_upper,
+    #                 fill = "band"),
+    #             alpha = 0.8) +
+    theme(axis.text.y = element_blank()) +
+    labs(title = scenarios[[i]]) 
+  
+  scenario_abundance_smooth_plots[[i]] <- ggplot(plot_data) +
+    geom_smooth(aes(x = monthly_time_step, y = total_abundance)) +
+    theme(axis.text.y = element_blank()) +
+    labs(title = scenarios[[i]]) 
+    
+}
+
+scenario_abundance_line_plots[[1]]
+scenario_abundance_smooth_plots[[4]]
+
+# Plot functional group average abundance - doesn't work well yet
+
+scenario_fg_line_plots <- list()
+scenario_fg_smooth_plots <- list()
+
+for (i in seq_along(scenario_abundance_clean)) {
+  
+ plot_data <- scenario_abundance_clean[[i]] %>% 
+    group_by(functional_group_name, monthly_time_step) %>% 
+    mutate(total_abundance = sum(abundance, na.rm = TRUE)) %>%
+    dplyr::select(monthly_time_step, total_abundance) %>% 
+    distinct(.) %>% 
+    ungroup(.) %>% 
+    slice(which(row_number() %% interval == 0))
+ 
+  scenario_fg_line_plots[[i]] <- ggplot(plot_data) +
+    geom_line(aes(x = monthly_time_step, y = total_abundance)) +
+    labs(title = scenarios[[i]]) +
+    facet_wrap(~ functional_group_name)
+  
+  scenario_fg_smooth_plots[[i]] <- ggplot(plot_data) +
+    geom_smooth(aes(x = monthly_time_step, y = total_abundance)) +
+    theme(axis.text.y = element_blank()) +
+    labs(title = scenarios[[i]]) +
+    facet_wrap(~ functional_group_name)
+  
+}
+
+scenario_fg_line_plots[[1]]
+scenario_fg_smooth_plots[[4]]
 
 # # Smooth abundance ----
-# 
-# scenario_abundance_clean <- scenario_ab_gl_formatted
-# 
-# ave_window <- 120
-# 
-# scenario_smoothed_abundance <- list()
-# 
-# for (i in seq_along(scenario_abundance_clean)) {
-#   
-#   # Get replicate data for a single scenario
-#   
-#   replicate_ab_gl <- scenario_abundance_clean[[i]]
-#   
-#   replicate_smoothed_abundance <- list()
-#   
-#   # For each individual replicate
-#   
-#   for (j in seq_along(replicate_ab_gl)) {
-#     
-#     group_ab_gl <- replicate_ab_gl[[j]]
-#     
-#     group_list <- split(group_ab_gl, group_ab_gl$group_id)
-#     
-#     group_smoothed_abundance <- list()
-#     
-#     for (k in seq_along(group_list)) {
-#       
-#       group_df <- group_list[[k]]
-#       
-#       # check if the group has any abundance values, make it null if not
-#       
-#       if (sum(group_df$abundance, na.rm = TRUE) == 0) {
-#         
-#         group_smoothed_abundance[[k]] <- NULL
-#         
-#       } else {
-#         
-#         group_smoothed_abundance[[k]] <- group_df %>%
-#           arrange(monthly_time_step) %>%
-#           mutate(ave_abundance = rollapply(abundance,
-#                                            ave_window,
-#                                            mean,
-#                                            na.rm = TRUE,
-#                                            partial = TRUE),
-#                  ave_abundance = ifelse(ave_abundance < 1,
-#                                         0, ave_abundance))
-#         
-#         print(k)
-#         
-#       }
-#     }
-#     
-#     all_groups_smooth <- do.call(rbind,group_smoothed_abundance)
-#     
-#     replicate_smoothed_abundance[[j]] <- all_groups_smooth
-#     
-#     print(j)
-#   }
-#   
-#   scenario_smoothed_abundance[[i]] <- replicate_smoothed_abundance
-#   
-#   print(i)
-#   
-# }
-# 
-# check <- scenario_smoothed_abundance[[1]][[1]]
-# head(check)
-# 
-# checkgroup <- check %>% filter(group_id == "13.16.27")
+
+ave_window <- 12
+
+scenario_smoothed_abundance <- list()
+
+for (i in seq_along(scenario_abundance_clean)) {
+
+    group_list <- split(scenario_abundance_clean[[i]], 
+                        scenario_abundance_clean[[i]]$group_id)
+
+    group_smoothed_abundance <- list()
+
+    for (j in seq_along(group_list)) {
+
+      group_df <- group_list[[j]]
+
+      # check if the group has any abundance values, make it null if not
+
+      if (sum(group_df$abundance, na.rm = TRUE) == 0) {
+
+        group_smoothed_abundance[[j]] <- NULL
+
+      } else {
+
+        group_smoothed_abundance[[j]] <- group_df %>%
+          arrange(monthly_time_step) %>%
+          mutate(ave_abundance = rollapply(abundance,
+                                           ave_window,
+                                           mean,
+                                           na.rm = TRUE,
+                                           partial = TRUE,
+                                           align = "left"),
+                 ave_abundance = ifelse(ave_abundance < 1,
+                                        0, ave_abundance))
+
+        print(j)
+
+      }
+    }
+
+    scenario_smoothed_abundance[[i]]  <- do.call(rbind,
+                                                 group_smoothed_abundance)
+}
+
+check <- scenario_smoothed_abundance[[1]]
+head(check)
+
+checkgroup <- check %>% filter(group_id == "13.16.27")
 
 # RED LIST INDEX ----
 
 # * Create folders ----
-
 
 rli_inputs_folder <- file.path(indicator_inputs_folder, "RLI_inputs", today)
 
@@ -6723,26 +6904,33 @@ if( !dir.exists( file.path(rli_plots_folder) ) ) {
 
 # * Take an annual sample ----
 
+interval <- 12
+
 scenario_annual <- list()
 
-for (i in seq_along(scenario_averaged)) {
+for (i in seq_along(scenario_smoothed_abundance)) {
   
-  test <- split(scenario_averaged[[i]], scenario_averaged[[i]]$group_id)
+  scenario_groups <- split(scenario_smoothed_abundance[[i]], 
+                           scenario_smoothed_abundance[[i]]$group_id)
   
-  out <- list()
-  for (j in seq_along(test)) {
+  groups_annual <- list()
+  
+  for (j in seq_along(scenario_groups)) {
     
-    out[[j]] <- test[[j]] %>% 
+    groups_annual[[j]] <- scenario_groups[[j]] %>% 
       slice(which(row_number() %% interval == 0)) %>%
       mutate(annual_time_step = seq(1,max_timestep,1))
-  }
-  df <- do.call(rbind, out)
   
-  scenario_annual[[i]] <- df
+    }
+  
+  groups_annual_df <- do.call(rbind, groups_annual)
+  
+  scenario_annual[[i]] <- groups_annual_df
   
 }
 
 check <- scenario_annual[[1]]
+head(check)
 dim(check)
 
 ## Referring to the thresholds quote under Criterion A, Reason 1 (declines
@@ -6785,10 +6973,10 @@ for (i in seq_along(scenario_annual)) {
       # timeframe bc the dataframe is grouped by group_id, and timeframe only changes
       # between and not within group_ids
       # mutate(diff = (abundance - dplyr::lag(abundance, timeframe[1]))) %>%
-      mutate(diff = (ave_abundance - dplyr::lag(ave_abundance, 10))) %>%
+      mutate(diff = (ave_abundance - dplyr::lag(ave_abundance, 30))) %>%
       # Using the formula from p 35 (Complex patterns of decline) Guidelines 
       # for Using the IUCN Red List Categories and Criteria v14 August 2019 
-      mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, 10)) %>%
+      mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, 30)) %>%
       mutate(decline = ifelse(ave_abundance == 0, NA, decline)) %>% 
       # calculate the rate of change
       # mutate(decline = diff/dplyr::lag(abundance, timeframe[1])) %>% 
@@ -6798,14 +6986,15 @@ for (i in seq_along(scenario_annual)) {
       # Using the thresholds from p 16 Categories A2 - A4 Guidelines 
       # for Using the IUCN Red List Categories and Criteria v14 August 2019
       mutate(rl_status = ifelse(decline < 0.20, "LC",
-                                ifelse(decline >= 0.20 & decline < 0.30, "NT", # Where did this and LC thresholds come from?
-                                       ifelse(decline >= 0.30 & decline < 0.50, "VU",
-                                              ifelse(decline >= 0.50 & decline < 0.80, "EN",
-                                                     ifelse(decline >= 0.80, "CR",
-                                                            ifelse(decline == NA, "EX", "TBD"))))))) %>%
+                         ifelse(decline >= 0.20 & decline < 0.30, "NT", # Where did this and LC thresholds come from?
+                         ifelse(decline >= 0.30 & decline < 0.50, "VU",
+                         ifelse(decline >= 0.50 & decline < 0.80, "EN",
+                         ifelse(decline >= 0.80, "CR",
+                         ifelse(is.na(decline), "EX", "TBD"))))))) %>%
       arrange(group_id, monthly_time_step) %>%
       # Replace all non-ex status with ex after first occurrence 
       # mutate(extinct = match("EX", rl_status)) %>%
+      mutate(rl_status = ifelse(ave_abundance == 0, "EX", rl_status)) %>% 
       mutate(extinct = ifelse(rl_status == "EX", 1, 0)) %>% 
       # mutate(rl_status = with(., ave(rl_status, 
       #                                         FUN=maintain_ex_status)))
@@ -6833,10 +7022,6 @@ for (i in seq_along(scenario_annual)) {
 }
 
 
-# Check we have correct structure still
-length(scenario_red_list_data) == length(scenario_ab_gl_formatted)
-length(scenario_red_list_data[[1]]) == length(scenario_ab_gl_formatted[[1]])
-
 # Have a quick look at the outputs
 
 rli_inputs <- scenario_red_list_data[[1]]
@@ -6855,66 +7040,284 @@ ggplot(data = rli_inputs_group) +
 
 # * Take coarser sample ----
 
-sample_interval <- 1 # make a different number than 1 to actually sample
+sample_interval <- 1 # interval between samples in years
 sample_max_timestep <- 300/sample_interval
 
 scenario_redlist_data_sampled <- list()
 
 for (i in seq_along(scenario_red_list_data)) {
-  
-  scenario_redlist_data_sampled[[i]] <- scenario_red_list_data[[i]] %>% 
+    
+  # Sample
+   sampled <- scenario_red_list_data[[i]] %>% 
     slice(which(row_number() %% sample_interval == 0)) %>% 
     mutate(annual_time_step = seq(1,sample_max_timestep,1))
   
+  # Remove groups that have no biomass in sampled years or you get weird outputs
+   
+   scenario_redlist_data_sampled[[i]] <- sampled %>% 
+           group_by(group_id) %>% 
+           mutate(total_abundance = sum(abundance, na.rm = TRUE),
+                  exists = ifelse(total_abundance == 0 , FALSE, TRUE)) %>% 
+           filter(exists == TRUE)
   
 }
 
 test <- scenario_redlist_data_sampled[[1]]
 test_group <- test %>% filter(group_id == "13.16.27")
-dim(test_group)
+dim(test_group) # should have 300 rows
 
-# * Get harvested group only ----
+# * Get harvested groups only ----
 
 scenario_harvested_groups <- list()
 
 for (i in seq_along(scenario_redlist_data_sampled)) {
   
-  if (scenarios[[i]] == "100_Land_Use") {
+  scenario <- scenarios[[i]]
+  
+  if (scenario == "000_Baseline") {
     
-    scenario_harvested_groups[[i]]  <- scenario_redlist_data_sampled[[i]] %>% 
-      filter(functional_group_name == "herbivore endotherm"|
-               functional_group_name == "herbivore ectotherm") 
+    harvested <- scenario_redlist_data_sampled[[i]] %>% 
+                                      mutate(scenario = scenarios[[i]]) %>% 
+                                      group_by(monthly_time_step) %>% 
+                                      mutate(ab_scaled = range01(abundance),
+                                             indicator_score = sum(ab_scaled, na.rm = TRUE),
+                                             indicator = "total abundance harvested",
+                                             ci_lower = NA,
+                                             ci_upper = NA,
+                                             replicate = NA) %>% 
+                                      ungroup(.) %>%                                 
+                                      dplyr::select(annual_time_step, 
+                                                    indicator_score,
+                                                    ci_lower,
+                                                    ci_upper,
+                                                    indicator,
+                                                    replicate,
+                                                    scenario)%>% 
+      distinct(.)
     
-  } else if (scenarios[[i]] == "200_Harvesting_carnivores") {
+  } else if (scenario == "100_Land_use") {
     
-    scenario_harvested_groups[[i]] <- scenario_redlist_data_sampled[[i]] %>% 
-      filter(functional_group_name == "carnivore endotherm"|
-               functional_group_name == "carnivore ectotherm") %>% 
-      filter(mass_lower == 1000)
-    
-  } else if (scenarios[[i]] == "300_Harvesting_herbivores") {
-    
-    scenario_harvested_groups[[i]] <- scenario_redlist_data_sampled[[i]] %>% 
-      filter(functional_group_name == "herbivore endotherm"|
+    harvested <- scenario_redlist_data_sampled[[i]] %>% 
+        filter(functional_group_name == "herbivore endotherm"|
                functional_group_name == "herbivore ectotherm") %>% 
-      filter(mass_lower == 1000)
+      mutate(scenario = scenarios[[i]]) %>%
+      group_by(monthly_time_step) %>% 
+      mutate(ab_scaled = range01(abundance),
+             indicator_score = sum(ab_scaled, na.rm = TRUE),
+             indicator = "total abundance harvested",
+             ci_lower = NA,
+             ci_upper = NA,
+             replicate = NA) %>% 
+      ungroup(.) %>% 
+      dplyr::select(annual_time_step, 
+                    indicator_score,
+                    ci_lower,
+                    ci_upper,
+                    indicator,
+                    replicate,
+                    scenario) %>% 
+      distinct(.)
     
-  } else if (scenarios[[i]] == "000_Baseline") {
+  } else if (scenario == "200_Harvesting_carnivores") {
     
-    scenario_harvested_groups[[i]]  <- scenario_redlist_data_sampled[[i]] %>% 
-      filter(functional_group_name == "carnivore endotherm"|
-               functional_group_name == "carnivore ectotherm") %>% 
-      filter(mass_lower == 1000)
+
+    harvested <- scenario_redlist_data_sampled[[i]] %>% 
+      filter(functional_group_name == "carnivore endotherm" & mass_lower == 10000|
+             functional_group_name == "carnivore ectotherm" & mass_lower == 10000)  %>% 
+      mutate(scenario = scenarios[[i]]) %>% 
+      ungroup(.) %>% 
+      dplyr::select(annual_time_step, abundance, scenario) %>% 
+      distinct(.) %>% 
+      mutate(ab_scaled = range01(abundance)) %>% 
+      group_by(annual_time_step) %>% 
+      mutate(indicator_score = sum(ab_scaled, na.rm = TRUE),
+             indicator = "total abundance harvested",
+             ci_lower = NA,
+             ci_upper = NA,
+             replicate = NA) %>% 
+      ungroup(.) %>% 
+      dplyr::select(annual_time_step, 
+                    indicator_score,
+                    ci_lower,
+                    ci_upper,
+                    indicator,
+                    replicate,
+                    scenario) %>% 
+      distinct(.)
+     
     
-  }
+  } else if (scenario == "300_Harvesting_herbivores") {
+    
+    harvested <- scenario_redlist_data_sampled[[i]] %>% 
+      filter(functional_group_name == "herbivore endotherm" & mass_lower == 10000|
+             functional_group_name == "herbivore ectotherm" & mass_lower == 10000)  %>% 
+      mutate(scenario = scenarios[[i]]) %>% 
+      ungroup(.) %>% 
+      dplyr::select(annual_time_step, abundance, scenario) %>% 
+      distinct(.) %>% 
+      mutate(ab_scaled = range01(abundance)) %>% 
+      group_by(annual_time_step) %>% 
+      mutate(indicator_score = sum(ab_scaled, na.rm = TRUE),
+             indicator = "total abundance harvested",
+             ci_lower = NA,
+             ci_upper = NA,
+             replicate = NA) %>% 
+      ungroup(.) %>% 
+      dplyr::select(annual_time_step, 
+                    indicator_score,
+                    ci_lower,
+                    ci_upper,
+                    indicator,
+                    replicate,
+                    scenario) %>% 
+      distinct(.)
+
+  } 
+  
+  scenario_harvested_groups[[i]] <- harvested
 }
 
-harvested_rep <- scenario_harvested_groups[[3]]
+data <- scenario_harvested_groups[[1]]
+head(data)
+dim(data)
 
-ggplot(data = harvested_rep) +
-  geom_line(aes(x = annual_time_step, y = ave_abundance, col = group_id)) +
-  theme(legend.position = "none") +
-  geom_text(aes(x = annual_time_step, y = ave_abundance, label = rl_status))
+# * Plot harvested groups ----
+
+harvested_plots_folder <- file.path(indicator_plots_folder, "harvested_plots", today)
+
+if( !dir.exists( file.path(harvested_plots_folder) ) ) {
+  dir.create( file.path(harvested_plots_folder), recursive = TRUE )
+  
+}
+
+harvested_plots <- list()
+
+for ( i in seq_along(scenario_harvested_groups)) {
+  
+harvested_plots[[i]] <- ggplot(data = scenario_harvested_groups[[i]]) +
+  geom_line(aes(x = annual_time_step, 
+                y = indicator_score)) +
+  theme(legend.position = "bottom") +
+  labs(title = paste(scenarios[[i]], "harvested groups", sep = " "))
+  
+ggsave(file.path(harvested_plots_folder, paste(today, scenarios[[i]], 
+                                         "harvested_reps_averaged.png",
+                                         sep = "_")),
+       harvested_plots[[i]],  device = "png")
+
+}
+
+harvested_plots[[1]]
+harvested_plots[[2]]
+harvested_plots[[3]]
+harvested_plots[[4]]
+
+# * Get abundance of functional groups ----
+
+scenario_fg_abundance <- list()
+
+for (i in seq_along(scenario_redlist_data_sampled)) {
+  
+  scenario_fg_abundance[[i]] <- scenario_redlist_data_sampled[[i]] %>% 
+          mutate(scenario = scenarios[[i]]) %>% 
+          ungroup(.) %>% 
+          dplyr::select(annual_time_step, functional_group_name, 
+                        abundance, scenario) %>% 
+          distinct(.) %>% 
+          mutate(ab_scaled = range01(abundance)) %>% 
+          group_by(annual_time_step, functional_group_name) %>% 
+          mutate(indicator_score = mean(ab_scaled, na.rm = TRUE),
+                 indicator = paste(functional_group_name, "mean abundance", sep = " "),
+                 ci_lower = NA,
+                 ci_upper = NA,
+                 replicate = NA) %>% 
+          ungroup(.) %>% 
+          dplyr::select(annual_time_step, 
+                        indicator_score,
+                        ci_lower,
+                        ci_upper,
+                        indicator,
+                        replicate,
+                        scenario) %>% 
+          distinct(.)
+    
+}
+
+fg <- scenario_fg_abundance[[2]]
+head(fg)
+
+# Plot abundance of functional groups
+
+scenario_fg_abundance_plots <- list()
+
+for ( i in seq_along(scenario_fg_abundance)) {
+  
+  groups <- split(scenario_fg_abundance[[i]], scenario_fg_abundance[[i]]$indicator)
+  
+  group_plots <- list()
+  
+  for ( j in seq_along(groups)) {
+    
+    group_plots[[j]] <- ggplot(data = groups[[j]]) +
+    geom_line(aes(x = annual_time_step, 
+                  y = indicator_score)) +
+    theme(legend.position = "bottom") +
+    labs(title = paste(scenarios[[i]], "functional groups", sep = " ")) +
+    facet_wrap(~ indicator)
+  
+  # ggsave(file.path(harvested_plots_folder, paste(today, scenarios[[i]], 
+  #                                                "harvested_reps_averaged.png",
+  #                                                sep = "_")),
+  #        harvested_plots[[i]],  device = "png")
+  }
+  
+  scenario_fg_abundance_plots[[i]] <- group_plots
+  
+}
+
+scenario_fg_abundance_plots[[1]]
+
+i <- 1
+scenario_fg_abundance_plots[[2]][[i]]
+i <- i + 1
+scenario_fg_abundance_plots[[2]][[i]]
+
+i <- 1
+scenario_fg_abundance_plots[[3]][[i]]
+
+i <- i + 1
+scenario_fg_abundance_plots[[3]][[i]]
+
+i <- 1
+scenario_fg_abundance_plots[[4]][[i]]
+
+i <- i + 1
+scenario_fg_abundance_plots[[4]][[i]]
+
+# * Get proportion extinct ----
+
+scenario_extinctions <- list()
+scenario_rl_status_plots <- list()
+
+for (i in seq_along(scenario_redlist_data_sampled)) {
+  
+  scenario_extinctions[[i]] <- scenario_redlist_data_sampled[[i]] %>% 
+          group_by(annual_time_step, rl_status) %>% 
+          filter(rl_status != is.na(rl_status)) %>% 
+          summarise(test = n())
+  
+  scenario_rl_status_plots[[i]] <- ggplot(scenario_extinctions[[i]], 
+                                          aes(x = annual_time_step, 
+                                              y = test, 
+                                              fill = rl_status)) +
+    geom_bar(position = "stack", stat = "identity") +
+    scale_fill_viridis_d()
+}
+
+scenario_rl_status_plots[[1]]
+scenario_rl_status_plots[[2]]
+scenario_rl_status_plots[[3]]
+scenario_rl_status_plots[[4]]
 
 # * Calculate RLI ----
 
@@ -6926,7 +7329,7 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
   
   scenario_fg_rli_outputs[[i]] <- calculate_red_list_index(
     scenario_redlist_data_sampled[[i]], numboots, ci = FALSE) %>%
-    mutate(scenario = scenarios[[i]])
+    mutate(scenario = scenarios[[i]]) 
   
 }
 
@@ -6984,16 +7387,6 @@ for (i in seq_along(scenario_fg_rli_outputs)) {
 
 scenario_fg_rli_plots[[4]]
 
-
-# Small test to see if averaging indicator scores after works better (it doesn't)
-x <- scenario_rli_outputs[[1]]
-x <- x[-1,]
-
-x <- x %>% 
-  mutate(x = rollmean(indicator_score, 10, na.pad = TRUE))
-
-ggplot(x, aes(x = annual_time_step, y = x))+
-  geom_line()
 
 # RLI with all functional groups aggregated
 # i.e. mean of each 'taxa' RLI as per Butchart et al (2010) 'Indicators of
@@ -7054,12 +7447,14 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
   
   scenario_lpi_inputs[[i]] <- scenario_redlist_data_sampled[[i]] %>% 
     dplyr::select(group_id, annual_time_step, 
-                  ave_abundance)
+                  ave_abundance, functional_group_name) # %>% 
+    # note - the carnivorous endotherms cause the time series to look like they're declining even before impact
+    # filter(functional_group_name != "carnivore endotherm")
   
   
 }
 
-# lpi_input <- scenario_lpi_inputs[[1]][[2]]
+# lpi_input <- scenario_lpi_inputs[[1]]
 # head(lpi_input)
 # write.csv(lpi_input, file.path(indicator_outputs_folder, "lpi_input_example_annual.csv"))
 
@@ -7071,6 +7466,8 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
 # scenario_lpi_inputs <- scenario_abundance_long
 
 # Loop through each scenario and replicate and calculate the LPI per rep
+
+# ** All groups ----
 
 scenario_lpi_outputs <- list()
 
@@ -7108,20 +7505,231 @@ scenario_lpi_plots[[2]]
 scenario_lpi_plots[[3]]
 scenario_lpi_plots[[4]]
 
+# ** Functional groups ----
+
+scenario_lpi_fg_outputs <- list()
+
+for (i in seq_along(scenario_lpi_inputs)) {
+  
+  fg_data <- split(scenario_lpi_inputs[[i]], 
+                   scenario_lpi_inputs[[i]]$functional_group_name)
+
+  fg_lpi_outputs <- list()
+  
+  for ( j in seq_along(fg_data)) {
+  
+    fg_lpi_outputs[[j]] <- calculate_living_planet_index(
+      
+      fg_data[[j]], start_time_step, ci = FALSE, numboots, 
+      fg_data[[j]]$functional_group_name[1])
+  }
+  
+  scenario_lpi_fg_outputs[[i]] <- do.call(rbind,fg_lpi_outputs)
+  
+}
+
+head(scenario_lpi_fg_outputs[[1]])
+
+# Plot fg
+
+scenario_fg_lpi_plots <- list()
+
+for (i in seq_along(scenario_lpi_fg_outputs)) {
+  
+  scenario_fg_lpi_plots[[i]] <- ggplot(data = scenario_lpi_fg_outputs[[i]],
+                                       aes(x = annual_time_step, 
+                                           y = indicator_score,
+                                           col = replicate)) +
+                                geom_line() +
+                                facet_wrap( ~ replicate)
+  
+  ggsave(file.path(lpi_plots_folder, paste(today, scenarios[[i]], 
+                                           "LPI_func_groups_reps_averaged.png",
+                                           sep = "_")),
+         scenario_fg_lpi_plots[[i]],  device = "png")   
+  
+}
+
+scenario_fg_lpi_plots[[1]]
+scenario_fg_lpi_plots[[2]]
+scenario_fg_lpi_plots[[3]]
+scenario_fg_lpi_plots[[4]]
+
+
+# ** Trophic groups ----
+
+scenario_lpi_tg_outputs <- list()
+
+for (i in seq_along(scenario_lpi_inputs)) {
+  
+  data <- scenario_lpi_inputs[[i]] %>% 
+          mutate(trophic_group = word(functional_group_name, 1))
+  
+  head(data)
+  
+  tg_data <- split(data, data$trophic_group)
+  
+  tg_lpi_outputs <- list()
+  
+  for ( j in seq_along(tg_data)) {
+    
+    tg_lpi_outputs[[j]] <- calculate_living_planet_index(
+      
+      tg_data[[j]], start_time_step, ci = FALSE, numboots, 
+      tg_data[[j]]$trophic_group[1])
+  }
+  
+  scenario_lpi_tg_outputs[[i]] <- do.call(rbind,tg_lpi_outputs)
+  
+}
+
+head(scenario_lpi_tg_outputs[[1]])
+
+# Plot trophic groups
+
+scenario_tg_lpi_plots <- list()
+
+for (i in seq_along(scenario_lpi_tg_outputs)) {
+  
+  scenario_tg_lpi_plots[[i]] <- ggplot(data = scenario_lpi_tg_outputs[[i]],
+                                       aes(x = annual_time_step, 
+                                           y = indicator_score,
+                                           col = replicate)) +
+    geom_line() +
+    facet_wrap( ~ replicate)
+  
+  ggsave(file.path(lpi_plots_folder, paste(today, scenarios[[i]], 
+                                           "LPI_troph_groups_reps_averaged.png",
+                                           sep = "_")),
+         scenario_tg_lpi_plots[[i]],  device = "png")   
+  
+}
+
+scenario_tg_lpi_plots[[1]]
+scenario_tg_lpi_plots[[2]]
+scenario_tg_lpi_plots[[3]]
+scenario_tg_lpi_plots[[4]]
 
 # Combine indicators ----
 
-all_indicators_list <- list(scenario_rli_outputs,
-                            scenario_lpi_outputs)
+## Standardise outputs
 
-names(all_indicators_list) <- c("RLI", "LPI")
+for ( i in seq_along(scenario_rli_outputs)) {
+  
+  scenario_rli_outputs[[i]] <- scenario_rli_outputs[[i]] %>% 
+                               mutate(scenario = scenarios[[i]]) %>%
+    ungroup(.) %>% 
+    dplyr::select(annual_time_step, indicator_score, ci_lower, ci_upper,
+                  indicator, scenario)
+}
+
+head(scenario_rli_outputs[[2]])
+
+for ( i in seq_along(scenario_fg_rli_outputs)) {
+  
+  scenario_fg_rli_outputs[[i]] <- scenario_fg_rli_outputs[[i]] %>% 
+    mutate(scenario = scenarios[[i]],
+           indicator = paste(functional_group_name, "RLI", sep = " ")) %>%
+    ungroup(.) %>% 
+    dplyr::select(annual_time_step, indicator_score, ci_lower, ci_upper,
+                  indicator, scenario)
+}
+
+head(scenario_fg_rli_outputs[[2]])
+
+for ( i in seq_along(scenario_lpi_outputs)) {
+  
+  scenario_lpi_outputs[[i]] <- scenario_lpi_outputs[[i]] %>% 
+    mutate(scenario = scenarios[[i]],
+           indicator = "LPI") %>% 
+    dplyr::select(annual_time_step, indicator_score, ci_lower, ci_upper,
+                  indicator, scenario)
+}
+
+head(scenario_lpi_outputs[[2]])
+
+for ( i in seq_along(scenario_lpi_fg_outputs)) {
+  
+  scenario_lpi_fg_outputs[[i]] <- scenario_lpi_fg_outputs[[i]] %>% 
+    mutate(scenario = scenarios[[i]],
+           indicator = paste(replicate, "LPI", sep = " ")) %>% 
+    dplyr::select(annual_time_step, indicator_score, ci_lower, ci_upper,
+                  indicator, scenario)
+}
+
+head(scenario_lpi_fg_outputs[[2]])
+
+for ( i in seq_along(scenario_lpi_tg_outputs)) {
+  
+  scenario_lpi_tg_outputs[[i]] <- scenario_lpi_tg_outputs[[i]] %>% 
+    mutate(scenario = scenarios[[i]],
+           indicator = paste(replicate, "LPI", sep = " ")) %>% 
+    dplyr::select(annual_time_step, indicator_score, ci_lower, ci_upper,
+                  indicator, scenario)
+}
+
+head(scenario_lpi_tg_outputs[[2]])
+
+head(scenario_fg_abundance[[2]])
+
+for ( i in seq_along(scenario_fg_abundance)) {
+  
+  scenario_fg_abundance[[i]] <- scenario_fg_abundance[[i]] %>% 
+        dplyr::select(annual_time_step, indicator_score, ci_lower, ci_upper,
+                  indicator, scenario)
+}
+
+head(scenario_fg_abundance[[2]])
+
+head(scenario_harvested_groups[[2]])
+
+for ( i in seq_along(scenario_harvested_groups)) {
+  
+  scenario_harvested_groups[[i]] <- scenario_harvested_groups[[i]] %>% 
+    dplyr::select(annual_time_step, indicator_score, ci_lower, ci_upper,
+                  indicator, scenario)
+}
+
+head(scenario_harvested_groups[[2]])
+
+
+names(scenario_rli_outputs[[1]]) == names(scenario_fg_rli_outputs[[1]])
+
+names(scenario_fg_rli_outputs[[1]]) == names(scenario_lpi_outputs[[1]])
+
+names(scenario_lpi_outputs[[1]]) == names(scenario_lpi_fg_outputs[[1]])
+
+names(scenario_lpi_fg_outputs[[1]]) == names(scenario_lpi_tg_outputs[[1]])
+
+names(scenario_lpi_tg_outputs[[1]]) == names(scenario_fg_abundance[[1]])
+
+names(scenario_fg_abundance[[1]]) == names(scenario_harvested_groups[[1]])
+
+# Save outputs
+
+all_indicators_list <- list(scenario_rli_outputs,
+                            scenario_fg_rli_outputs,
+                            scenario_lpi_outputs,
+                            scenario_lpi_fg_outputs,
+                            scenario_lpi_tg_outputs,
+                            scenario_fg_abundance,
+                            scenario_harvested_groups)
+
+names(all_indicators_list) <- c("RLI",
+                                "RLI functional groups",
+                                "LPI",
+                                "LPI functional groups",
+                                "LPI trophic groups",
+                                "abundance functional groups",
+                                "abundance harvested groups")
 
 saveRDS(all_indicators_list,
         file.path(indicator_outputs_folder,
                   paste(today, "all_indicators_output_data_list_reps_averaged.rds",
                         sep = "_")))
 
-all_indicators <- rbind(all_lpi, all_rli)
+all_indicators_all_scenarios <- flatten(all_indicators_list)
+all_indicators <- do.call(rbind, all_indicators_all_scenarios)
 
 saveRDS(all_indicators,
         file.path(indicator_outputs_folder,
