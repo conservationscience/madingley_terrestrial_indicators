@@ -31,6 +31,7 @@ rm(list = ls())
 
 library(tidyverse)
 library(tidylog)
+library(mgcv)
 
 # Functions ----
 
@@ -142,6 +143,10 @@ indicators_project <- IndicatorsProject # File path for entire project directory
 
 location <- 'Serengeti'
 
+scenarios <- list("baseline", "land use", 
+                  "carnivore harvesting", 
+                  "herbivore harvesting")
+
 # Set up output folders
 
 analysis_inputs_folder <- file.path(indicators_project, 
@@ -177,7 +182,7 @@ indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/
 
 } else if (development_mode == FALSE) {
   
-indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-16_all_indicators_output_data_list_reps_averaged.rds")
+indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-17 2_all_indicators_output_data_list_reps_averaged.rds")
 
 }
 
@@ -189,8 +194,8 @@ lpi <- indicators_all[["LPI"]]
 
 # Generalised additive model ----
 
-input <- indicators_all[["LPI functional groups"]][[4]] %>%
-          filter(indicator == "herbivore endotherm LPI") %>% 
+input <- indicators_all[["LPI"]][[4]] %>%
+         #filter(indicator == "herbivore endotherm LPI") %>% 
         mutate(disturbance = ifelse(annual_time_step < 100, 0,
                                     ifelse(annual_time_step > 99 & 
                                              annual_time_step < 200, 1, 0)))
@@ -271,20 +276,58 @@ summary(cpt3)
 plot(cpt3, diagnostic = TRUE) # Gets it right
 
 # Using my data
-data<- indicators_all[["LPI"]][[4]] 
+# data <- indicators_all[["LPI"]][[2]] 
 
 
-data <- indicators_all[["abundance functional groups"]][[4]] %>%
-       filter(indicator == "omnivore ectotherm mean abundance")
+data <- indicators_all[["RLI functional groups"]][[2]] %>%
+       filter(indicator == "herbivore endotherm RLI")
 
 head(data)
 
-indicator_ts <- as.ts(data$indicator_score)
+scenario_indicators <- list(rli, lpi)
+scenario_indicator_names <- list("RLI", "LPI")
 
-cpt4 <- cpt.mean(indicator_ts, method = "PELT", penalty = "AIC", pen.value = c(1,25))
-summary(cpt4)
-plot(cpt4) # Gets it ??
+scenario_changepoint_summaries <- list()
 
+for (i in seq_along(scenario_indicators)) {
+
+# Get a single indicator data
+  
+single_indicator <- scenario_indicators[[i]]
+
+indicator_changepoint_summaries <- list()
+
+  for (j in seq_along(single_indicator)) {
+
+  # Get a single scenario for the indicator
+    
+  data <- single_indicator[[j]]
+    
+  # Convert into a time series
+  
+  indicator_ts <- as.ts(data$indicator_score)
+  
+  # Calculate change points
+  
+  cpt <- cpt.mean(indicator_ts, method = "PELT", 
+                   penalty = "AIC", 
+                   pen.value = c(1,25))
+  
+  # Save break points
+  
+  indicator_changepoint_summaries[[j]] <- cpt
+  
+  # Print the plots
+  plot(cpt, main = paste(scenario_indicator_names[[i]],
+                         scenarios[[j]],
+                         sep = " "))
+  }
+
+scenario_changepoint_summaries[[i]] <- indicator_changepoint_summaries
+
+}
+
+scenario_changepoint_plots[[1]][1]
 
 # DERIVATIVES ----
 
