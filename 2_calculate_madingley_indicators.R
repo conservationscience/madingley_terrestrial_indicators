@@ -831,6 +831,7 @@ groups <- readRDS(file.path(processed_simulation_paths[[1]][1], "groups.rds"))
 
 scenario_generations_raw <- list()
 scenario_abundance_raw <- list()
+scenario_autotroph_raw <- list()
 
 for (i in seq_along(scenario_replicate_paths)) {
   
@@ -848,6 +849,10 @@ abundance_files <- str_subset(scenario, "abundance")
 abundance_files <- abundance_files[!str_detect(abundance_files, ".png")]
 abundance_files <- abundance_files[!str_detect(abundance_files, ".csv")]
 
+autotroph_files <- str_subset(scenario, "autotroph")
+autotroph_files <- autotroph_files[str_detect(autotroph_files, ".rds")]
+
+
 # Check we've got the correct number of files for each (should match)
 
 if (length(abundance_files) != length(generation_files)) {
@@ -861,9 +866,10 @@ if (length(abundance_files) != length(generation_files)) {
 # Note, generation lengths are different sizes bc each replicate has slightly different number of groups present
 scenario_generations_raw[[i]] <- lapply(generation_files, readRDS) 
 scenario_abundance_raw[[i]] <- lapply(abundance_files, readRDS)
+scenario_autotroph_raw[[i]] <- lapply(autotroph_files, readRDS)
 
 }
-
+scenario_autotroph_raw[[1]][[1]][1:5,1:5]
 # scenario_generations_raw_all <- scenario_generations_raw
 # scenario_abundance_raw_all <- scenario_abundance_raw
 # 
@@ -885,17 +891,17 @@ for (i in seq_along(scenario_abundance_raw)) {
   
   # Get all replicates for one scenario
   abundance_reps <- scenario_abundance_raw[[i]]
-  
+
   # Make a list to capture the outputs
   
   replicate_abundance_formatted <- list()
-  
+
   # For each individual replicate
   
   for (j in seq_along(abundance_reps)) {
     
     rep <- abundance_reps[[j]]
-    
+      
     # Make correct numeric column names now
     
     col_names <- seq(1,ncol(rep),1)
@@ -918,13 +924,77 @@ for (i in seq_along(scenario_abundance_raw)) {
     
     replicate_abundance_formatted[[j]] <- abundance_temp
     
-  }
+   }
   
   scenario_abundance_formatted[[i]] <- replicate_abundance_formatted
-
+  
 }
 
 scenario_abundance_formatted[[1]][[1]][1:20,1:20]
+
+
+scenario_auto_long <- list()
+
+for (i in seq_along(scenario_autotroph_raw)) {
+  
+  # Get all replicates for one scenario
+  auto_reps <- scenario_autotroph_raw[[i]]
+  
+  # Make a list to capture the outputs
+  
+  replicate_auto_formatted <- list()
+  
+  # For each individual replicate
+  
+  for (j in seq_along(auto_reps)) {
+    
+    rep <- auto_reps[[j]]
+    
+    # Make correct numeric column names now
+    
+    col_names <- seq(1,ncol(rep),1)
+    
+    colnames(rep) <- col_names
+    
+    # Remove the burnin period 
+    
+    auto_temp <- rep[,burnin_months:ncol(rep)]
+    
+    # Replace all -9999 (NA values) values with 0 because in this case we 
+    # know that an NA is a true 0 (no abundance at that time step)
+    
+    auto_temp <- na_if(auto_temp, 0)
+    
+    # Convert to long format
+    
+    new_names <- colnames(auto_temp)
+   
+    # Convert from wide to long
+    
+    long <- auto_temp %>% 
+      rownames_to_column(.) %>%
+      pivot_longer(all_of(new_names)) %>%
+      rename(monthly_time_step = name,
+             abundance = value,
+             group_id = rowname) %>%
+      # mutate(abundance = 10 ^ abundance) %>% 
+      mutate(monthly_time_step = as.numeric(monthly_time_step),
+             abundance = as.numeric(abundance),
+             replicate = j - 1,
+             scenario = scenarios[[i]])  
+      
+    
+     replicate_auto_formatted[[j]] <- long
+    
+  }
+  
+  scenario_auto_long[[i]] <- replicate_auto_formatted
+  
+}
+
+
+
+head(scenario_auto_long[[1]][[1]])
 
 # rm(abundance_reps, abundance_temp, replicate_abundance_formatted, rep)
 
@@ -985,6 +1055,28 @@ head(scenario_abundance_long[[1]][[1]])
 test_group <- scenario_abundance_long[[1]][[1]] %>% filter(group_id == "10.42")
 head(test_group)
 
+# TEST CODE removing problematic carnivore reps ----
+
+carnivore_scenario <- scenario_abundance_long[[3]]
+
+carnivore_scenario_2 <- carnivore_scenario[1:30]
+
+carnivore_scenario_3 <- carnivore_scenario_2[- c(21:26)]
+
+scenario_abundance_long_og <- scenario_abundance_long
+
+scenario_abundance_long[[3]] <- carnivore_scenario_3
+
+# Take a small representative sample
+
+landuse_herbs <- scenario_abundance_long[[2]][[1]] %>% 
+                 filter(group_id == "10.38") %>% 
+                 mutate(abundance = ifelse(abundance == 0, NA, abundance))
+
+write.csv(landuse_herbs, file.path(indicator_outputs_folder, "210817_example_time_series.csv"))
+
+ggplot(data = landuse_herbs, aes(x = monthly_time_step, y = abundance)) +
+  geom_line()
 
 ## ANNUAL SAMPLING ### ----
 
@@ -6664,25 +6756,27 @@ any(is.nan(test$abundance))
 
 # Take a random sample of 25 replicates ----
 
-scenario_ab_gl_formatted_25 <- list()
+# scenario_ab_gl_formatted_25 <- list()
+# 
+# for (i in seq_along(scenario_ab_gl_formatted)) {
+#   
+#   if(scenarios[[i]] == "000_Baseline") {
+#     
+#   scenario_ab_gl_formatted_25[[i]] <- scenario_ab_gl_formatted[[i]]
+#   
+#   } else {
+#     
+#   replicates <- scenario_ab_gl_formatted[[i]]
+#   
+#   set.seed(159)
+#   
+#   scenario_ab_gl_formatted_25[[i]] <- sample(scenario_ab_gl_formatted[[i]], 25)
+#   
+#   }
+# 
+# }
 
-for (i in seq_along(scenario_ab_gl_formatted)) {
-  
-  if(scenarios[[i]] == "000_Baseline") {
-    
-  scenario_ab_gl_formatted_25[[i]] <- scenario_ab_gl_formatted[[i]]
-  
-  } else {
-    
-  replicates <- scenario_ab_gl_formatted[[i]]
-  
-  set.seed(159)
-  
-  scenario_ab_gl_formatted_25[[i]] <- sample(scenario_ab_gl_formatted[[i]], 25)
-  
-  }
-
-}
+scenario_ab_gl_formatted_25 <- scenario_ab_gl_formatted
 
 # Average across replicates ----
 
@@ -6973,10 +7067,10 @@ for (i in seq_along(scenario_annual)) {
       # timeframe bc the dataframe is grouped by group_id, and timeframe only changes
       # between and not within group_ids
       # mutate(diff = (abundance - dplyr::lag(abundance, timeframe[1]))) %>%
-      mutate(diff = (ave_abundance - dplyr::lag(ave_abundance, 30))) %>%
+      mutate(diff = (ave_abundance - dplyr::lag(ave_abundance, timeframe[1]))) %>%
       # Using the formula from p 35 (Complex patterns of decline) Guidelines 
       # for Using the IUCN Red List Categories and Criteria v14 August 2019 
-      mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, 30)) %>%
+      mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, timeframe[1])) %>%
       mutate(decline = ifelse(ave_abundance == 0, NA, decline)) %>% 
       # calculate the rate of change
       # mutate(decline = diff/dplyr::lag(abundance, timeframe[1])) %>% 
@@ -7246,6 +7340,14 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
 fg <- scenario_fg_abundance[[2]]
 head(fg)
 
+data <- scenario_fg_abundance[[4]]
+head(data)
+
+ggplot(data = data) +
+  geom_line(aes(x = annual_time_step, 
+                y = log(indicator_score),
+                col = indicator)) 
+
 # Plot abundance of functional groups
 
 scenario_fg_abundance_plots <- list()
@@ -7294,6 +7396,54 @@ scenario_fg_abundance_plots[[4]][[i]]
 i <- i + 1
 scenario_fg_abundance_plots[[4]][[i]]
 
+
+head(scenario_redlist_data_sampled)
+
+# Plot the individual groups in each functional group
+
+scenario_biomass_plots <- list()
+
+for ( i in seq_along(scenario_redlist_data_sampled)) {
+
+data <- scenario_redlist_data_sampled[[i]] %>% 
+        filter(bodymass_index > 60)
+
+fg_data <- split(data, data$functional_group_name)
+
+fg_biomass_plots <- list()
+
+for (j in seq_along (fg_data)) {
+  
+  fg <- fg_data[[j]]$functional_group_name[1]
+  
+fg_biomass_plots[[j]] <- ggplot(data = fg_data[[j]]) +
+  geom_smooth(aes(x = annual_time_step, 
+                y = log(abundance),
+                col = group_id)) +
+  geom_text(data = subset(fg_data[[j]], annual_time_step == 300),
+              aes(x = annual_time_step,
+                y = log(abundance),
+                label = group_id, colour = group_id)) +
+  theme(legend.position = "none") +
+  #facet_wrap( ~ functional_group_name) +
+  labs(title = paste(fg, scenarios[[i]]), sep = " ")
+
+ggsave(file.path(harvested_plots_folder, paste(today, scenarios[[i]], fg,
+                                         "log_abundance_all_groups.png",
+                                         sep = "_")),
+       fg_biomass_plots[[j]],  device = "png")  
+
+  }
+
+scenario_biomass_plots[[i]] <- fg_biomass_plots
+
+}
+
+scenario_biomass_plots[[1]]
+scenario_biomass_plots[[2]]
+scenario_biomass_plots[[3]]
+scenario_biomass_plots[[4]]
+            
 # * Get proportion extinct ----
 
 scenario_extinctions <- list()
