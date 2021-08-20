@@ -28,10 +28,12 @@ rm(list = ls())
 # Libraries ----
 
 ## Data wrangling
-
 library(tidyverse)
 library(tidylog)
+
+## Analysis
 library(mgcv)
+library(changepoint)
 
 # Functions ----
 
@@ -182,7 +184,7 @@ indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/
 
 } else if (development_mode == FALSE) {
   
-indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-17 2_all_indicators_output_data_list_reps_averaged.rds")
+indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-19_all_indicators_output_data_reps_averaged_list2.rds")
 
 }
 
@@ -192,108 +194,85 @@ rli <- indicators_all[["RLI"]]
 
 lpi <- indicators_all[["LPI"]]
 
-# Generalised additive model ----
-
-input <- indicators_all[["LPI"]][[4]] %>%
-         #filter(indicator == "herbivore endotherm LPI") %>% 
-        mutate(disturbance = ifelse(annual_time_step < 100, 0,
-                                    ifelse(annual_time_step > 99 & 
-                                             annual_time_step < 200, 1, 0)))
-head(input)
-
-# mod <- gam(log10(abundance) ~ s(annual_time_step), sp = smoothing_param,  
-#            data = input, method = "REML")
-
-mod <- gam(log10(indicator_score) ~ s(annual_time_step, k = 10) + disturbance, 
-           sp = 0.001,  
-           data = input, method = "REML")
-
-plot(mod)
-summary(mod)
-gam.check(mod)
-
-modelled_abundance <- predict(mod, pred_annual_time_step = unique(input$annual_time_step))
-
-modelled_abundance <- as.data.frame(cbind(annual_time_step =unique(input$annual_time_step),
-                                          transformed_abundance = exp(modelled_abundance)))
-
-newdata <- input %>% 
-  merge(modelled_abundance, by = "annual_time_step")
-
-head(newdata)
-
-ggplot(data = newdata) +
-  geom_line(aes(x = annual_time_step, y = transformed_abundance)) +
-  geom_line(aes(x = annual_time_step, y = indicator_score), col = "deep pink") 
+harvested <- indicators_all[["total abundance harvested"]]
 
 
 # CORRELATION ----
 
 lpi_landuse <- lpi[[2]]
 rli_landuse <- rli[[2]]
+harvested_landuse <- harvested[[2]]
 
 head(lpi_landuse)
 dim(lpi_landuse)
 
-abundance_landuse <- indicators_all[["abundance harvested groups"]][[4]]
+cor(lpi_landuse$indicator_score, 
+    harvested_landuse$indicator_score, method = "spearman")
 
-abundance_landuse <- abundance_landuse 
+cor(rli_landuse$indicator_score, harvested_landuse$indicator_score, 
+    method = "spearman")
 
-dim(abundance_landuse)
+indicator_cor_scores <- list()
 
-cor(lpi_landuse$indicator_score, abundance_landuse$indicator_score, method = "spearman")
+for (i in seq_along(indicators_all)) {
+  
+  # Get the indicator (all scenarios)
+  
+  indicator_scenarios <- indicators_all[[i]]
+  
+  print(indicator_scenarios[[1]]$indicator[1])
+  
+  harvested_scenarios <- indicators_all[["total abundance harvested"]]
+  
+  # Make a list to hold scenario correlation coefficients
+  
+  scenario_cor_scores <- list()
+  
+  for (j in seq_along(indicator_scenarios)) {
+    
+  print(scenarios[i])
+    
+  indicator <- indicator_scenarios[[j]] %>% 
+               dplyr::select(annual_time_step, indicator_score) %>% 
+               rename(indicator = indicator_score)
+  
+  harvested<- harvested_scenarios[[j]] %>% 
+              dplyr::select(annual_time_step, indicator_score) %>% 
+              rename(harvested = indicator_score)
+  
+  comparison <- indicator %>% 
+                merge(harvested, by = "annual_time_step")
+    
+  cor <- cor(comparison$indicator, 
+             comparison$harvested, method = "spearman")
+  
+  scenario_cor_scores[[j]] <- data.frame(indicator = indicator_scenarios[[j]]$indicator[1],
+                                         correlation = cor,
+                                         scenario = scenarios[[j]])
+  
+  }
+  
+  scenario_cor_df <- do.call(rbind, scenario_cor_scores)
+  
+  indicator_cor_scores[[i]] <- scenario_cor_df
+
+}
+
+correlation_dataframe <- do.call(rbind, indicator_cor_scores) %>% 
+                         arrange(cor)
 
 # BREAK POINT ANALYSIS ----
-library(datasets)
-library(changepoint)
-load(Nile)
-
-# Using Nile dataset (should be one breakpoint)
-cpt2 <- cpt.mean(Nile, method = "PELT", penalty = "CROPS", pen.value = c(1,25))
-summary(cpt2)
-plot(cpt2, diagnostic = TRUE) # Gets it wrong
-
-# Using simulated dataset (should be three breakpoints)
-
-set.seed(2)
-# Normal distributed data with 3 change in mean (at x = 10/11, 25/26, 45/46)
-df <- data.frame(
-  x = 1:50,
-  z=c(rnorm(10, 1, sd = 0.5), rnorm(15, 0, sd = 0.5),
-      rnorm(20, 2, sd = 0.5), rnorm(5, 0.5 , sd = 0.5))
-)
-plot(df$x, df$z, type = 'l', xlab = '', ylab = '')
-lines(x = 1:10, y = rep(1,10), col = 'red', lwd = 3)
-lines(x = 11:25, y = rep(0,15), col = 'red', lwd = 3)
-lines(x = 26:45, y = rep(2,20), col = 'red', lwd = 3)
-lines(x = 46:50, y = rep(0.5,5), col = 'red', lwd = 3)
-head(df)
-
-z_ts <- as.ts(df$z)
-
-cpt3 <- cpt.mean(z_ts, method = "PELT", penalty = "AIC", pen.value = c(1,25))
-summary(cpt3)
-plot(cpt3, diagnostic = TRUE) # Gets it right
-
-# Using my data
-# data <- indicators_all[["LPI"]][[2]] 
 
 
-data <- indicators_all[["RLI functional groups"]][[2]] %>%
-       filter(indicator == "herbivore endotherm RLI")
-
-head(data)
-
-scenario_indicators <- list(rli, lpi)
-scenario_indicator_names <- list("RLI", "LPI")
+scenario_indicator_names <- names(indicators_all)
 
 scenario_changepoint_summaries <- list()
 
-for (i in seq_along(scenario_indicators)) {
+for (i in seq_along(indicators_all)) {
 
 # Get a single indicator data
   
-single_indicator <- scenario_indicators[[i]]
+single_indicator <- indicators_all[[i]]
 
 indicator_changepoint_summaries <- list()
 
@@ -317,17 +296,62 @@ indicator_changepoint_summaries <- list()
   
   indicator_changepoint_summaries[[j]] <- cpt
   
-  # Print the plots
-  plot(cpt, main = paste(scenario_indicator_names[[i]],
-                         scenarios[[j]],
-                         sep = " "))
   }
 
 scenario_changepoint_summaries[[i]] <- indicator_changepoint_summaries
 
 }
 
-scenario_changepoint_plots[[1]][1]
+plot(scenario_changepoint_summaries[[23]][[3]])
+summary(scenario_changepoint_summaries[[23]][[3]])
+
+
+# GAM ----
+
+# Prepare a GAM for one indicator, for the land use scenario
+
+harvested <- indicators_all[[23]][[2]] %>% 
+              rename(autotrophs = indicator_score)
+
+head(harvested)
+
+input <- indicators_all[["LPI"]][[2]] %>%
+         # Add a disturbance variable
+         mutate(disturbance = ifelse(annual_time_step < 100, 0,
+                              ifelse(annual_time_step > 99 & 
+                                       annual_time_step < 200, 1, 0))) %>% 
+         merge(harvested[c("annual_time_step", "autotrophs")], 
+              by = "annual_time_step") %>% 
+         mutate(auto_scaled = scale(autotrophs),
+                lpi_scaled = scale(indicator_score))
+head(input)
+
+# mod <- gam(log10(abundance) ~ s(annual_time_step), sp = smoothing_param,  
+#            data = input, method = "REML")
+
+mod <- gam(lpi_scaled ~ s(auto_scaled, k = 20) + disturbance, 
+           sp = 0.001,  
+           data = input, method = "REML")
+
+plot(mod)
+summary(mod)
+gam.check(mod)
+
+modelled_abundance <- predict(mod, pred_annual_time_step = unique(input$annual_time_step))
+head(modelled_abundance)
+
+modelled_abundance <- as.data.frame(cbind(annual_time_step =unique(input$annual_time_step),
+                                          transformed_abundance = modelled_abundance))
+
+newdata <- input %>% 
+  merge(modelled_abundance, by = "annual_time_step")
+
+head(newdata)
+
+ggplot(data = newdata) +
+  geom_line(aes(x = annual_time_step, y = transformed_abundance)) +
+  geom_line(aes(x = annual_time_step, y = lpi_scaled), col = "deep pink") 
+
 
 # DERIVATIVES ----
 
