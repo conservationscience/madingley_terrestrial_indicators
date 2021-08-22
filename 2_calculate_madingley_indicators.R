@@ -7176,10 +7176,10 @@ for (i in seq_along(scenario_annual)) {
       # timeframe bc the dataframe is grouped by group_id, and timeframe only changes
       # between and not within group_ids
       # mutate(diff = (abundance - dplyr::lag(abundance, timeframe[1]))) %>%
-      mutate(diff = (ave_abundance - dplyr::lag(ave_abundance, timeframe[1]))) %>%
+      mutate(diff = (ave_abundance - dplyr::lag(ave_abundance, 30))) %>%
       # Using the formula from p 35 (Complex patterns of decline) Guidelines 
       # for Using the IUCN Red List Categories and Criteria v14 August 2019 
-      mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, timeframe[1])) %>%
+      mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, 30)) %>%
       mutate(decline = ifelse(ave_abundance == 0, NA, decline)) %>% 
       # calculate the rate of change
       # mutate(decline = diff/dplyr::lag(abundance, timeframe[1])) %>% 
@@ -8003,8 +8003,6 @@ names(scenario_lpi_tg_outputs[[1]]) == names(scenario_fg_abundance[[1]])
 
 names(scenario_fg_abundance[[1]]) == names(scenario_harvested_groups[[1]])
 
-test <- split(scenario_fg_rli_outputs, scenario_fg_rli_outputs$indicator)
-
 # Save outputs
 
 all_indicators_list <- list(scenario_rli_outputs,
@@ -8052,7 +8050,7 @@ for (i in seq_along(new_split)) {
   
   indicator_data <- new_split[[i]]
   
-  new_indicator_list[[i]] <- split(indicator_data, indicator$scenario)
+  new_indicator_list[[i]] <- split(indicator_data, indicator_data$scenario)
   
   indicator_names[i] <- indicator_data$indicator[1]
 
