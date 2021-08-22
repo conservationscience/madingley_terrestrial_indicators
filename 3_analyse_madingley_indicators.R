@@ -85,74 +85,26 @@ smooth_gam <- function(input, smoothing_param) {
 }
 # Set up paths ----
 
-if (Sys.info()['nodename'] == "SIMONE-PC") {
+indicators_project <- "N:/Quantitative-Ecology/Indicators-Project"
   
-   IndicatorsProject <- "N:/Quantitative-Ecology/Indicators-Project"
-  
-}  
-
-if (Sys.info()['nodename'] == "ANALYTIX2") {
-  
-  SourceToModels <- "C:/Users/ssteven/Desktop/Serengeti-analysis"
-  IndicatorsProject <- "N:/Quantitative-Ecology/Indicators-Project"
-}
-
-if (Sys.info()['nodename'] == "20FMPC0C6GH9") {
-  
-  SourceToModels <- "C:/Users/ssteven/Dropbox/Deakin/Serengeti-analysis"
-  IndicatorsProject <- "N:/Quantitative-Ecology/Indicators-Project"
-}
-
-if (Sys.info()['nodename'] == "80VVPF0SSB53") {
-  
-  SourceToModels <- 'K:/BiodiversityIndicators/serengeti'
-  IndicatorsProject <- "N:/Quantitative-Ecology/Indicators-Project"
-}
-
 # Inputs ----
 
 # Get date to label outputs
 
 today <- Sys.Date()
 
-# Define mode (development == TRUE will only perform operations on a small subset
-# of folders, not all outputs)
-
-development_mode <- FALSE
-
-# Specify universal input arguments
-
-if (development_mode == FALSE) {
-  
-  impact_start <- 1100
-  impact_end <- 1200
-  burnin_months <- 1000*12 # in months
-  n <- 12
-  numboots <- 1000 # Rowland et al 2021 (uncertainty)
-  start_time_step <- 1
-  gen_timeframe <- 10 * 12
-  interval <- 12
-  
-} else {
-  
-  impact_start <- 10
-  impact_end <- 20
-  burnin_months <- 1*12 # in months
-  n <- 1 
-  numboots <- 1000
-  start_time_step <- 1
-  gen_timeframe <- 10
-  interval <- 2
-  
-}
-
-indicators_project <- IndicatorsProject # File path for entire project directory
-
 location <- 'Serengeti'
 
 scenarios <- list("baseline", "land use", 
                   "carnivore harvesting", 
                   "herbivore harvesting")
+
+disturbance_string <- c("pre-disturbance", "disturbance", "post-disturbance")
+
+disturbance_factor <- factor(dist, ordered = TRUE, 
+                             levels = c("pre-disturbance", 
+                                        "disturbance", 
+                                        "post-disturbance"))
 
 # Set up output folders
 
@@ -173,25 +125,17 @@ if( !dir.exists( file.path(analysis_outputs_folder) ) ) {
 }
 
 analysis_plots_folder <- file.path(indicators_project, 
-                                     "/Serengeti/Outputs_from_analysis_code/Analysis_")
+                                     "/Serengeti/Outputs_from_analysis_code/Analysis_plots_folder")
 
 if( !dir.exists( file.path(analysis_plots_folder) ) ) {
   dir.create( file.path(analysis_plots_folder), recursive = TRUE )
   
 }
 
-# Load scenario level data ----
+# Load indicator > scenario level data ----
 
-if (development_mode == TRUE) {
-  
-#indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-07-12_all_indicators_output_data.rds")
-indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-07-13_all_indicators_output_data_list.rds")
-
-} else if (development_mode == FALSE) {
-  
 indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-20_all_indicators_output_data_reps_averaged_list2.rds")
 
-}
 
 # Split the list by indicators
 
@@ -215,46 +159,75 @@ write.csv(example_indicators, file.path(analysis_outputs_folder,
 
 # CORRELATION ----
 
-lpi_landuse <- lpi[[2]]
-rli_landuse <- rli[[2]]
+## *  Make correlation scatterplots ----
 
-harvested_landuse <- harvested[[2]]
+indicator_scatterplots <- list()
 
-head(lpi_landuse)
-dim(lpi_landuse)
+for (i in seq_along(indicators_all)) {
+  
+  single_indicator <- indicators_all[[i]]
+  harvest_indicator <- indicators_all[[24]]
+  
+  scenario_scatterplots <- list()
+  
+  for (j in seq_along(single_indicator)) {
+    
+    scenario_name <- str_to_title(scenarios[[j]])
+    
+    indicator_name <- single_indicator[[j]]$indicator[1]
+    harvest_name <- "Harvested group abundance"
+    
+    scatterplot_data <- single_indicator[[j]][c("annual_time_step",
+                                      "indicator_score")] %>% 
+                        rename(indicator = indicator_score) %>% 
+                        merge(harvest_indicator[[j]][c("annual_time_step",
+                                "indicator_score")],
+                        by = "annual_time_step") %>% 
+                        rename(harvested = indicator_score) %>% 
+                        mutate(disturbance = ifelse(annual_time_step < 100, 
+                                  "pre-disturbance",
+                                  ifelse(annual_time_step >= 100 &
+                                         annual_time_step < 200, 
+                                         "disturbance", 
+                                         "post-disturbance"))) 
+    head(scatterplot_data)
+                      
+    
+    scenario_scatterplots[[j]] <- ggplot(scatterplot_data, 
+                                         aes(x = range01(harvested), 
+                                             y = range01(indicator),
+                           col = disturbance)) +
+      geom_point() +
+      labs(x = harvest_name,
+           y = indicator_name,
+           title = paste(indicator_name, scenario_name, sep = " ")) + 
+      stat_cor(method = "spearman")
+    
+    ggsave(file.path(analysis_plots_folder, today, 
+                     paste(indicator_name,"_", scenario_name, ".png", sep = "")),
+                     scenario_scatterplots[[j]],  device = "png")
+    
+  }
+  
+  names(scenario_scatterplots) <- scenarios
+  
+  indicator_scatterplots[[i]] <- scenario_scatterplots
+  
+}
 
-cor(lpi_landuse$indicator_score, 
-    harvested_landuse$indicator_score, method = "spearman")
+names(indicator_scatterplots) <- names(indicators_all)
 
-cor(rli_landuse$indicator_score, harvested_landuse$indicator_score, 
-    method = "spearman")
+indicator_scatterplots[["LPI"]][[1]]
+indicator_scatterplots[["LPI"]][[2]]
+indicator_scatterplots[["LPI"]][[3]]
+indicator_scatterplots[["LPI"]][[4]]
 
-dist <- c("pre-disturbance", "disturbance", "post-disturbance")
+indicator_scatterplots[["RLI"]][[1]]
+indicator_scatterplots[["RLI"]][[2]]
+indicator_scatterplots[["RLI"]][[3]]
+indicator_scatterplots[["RLI"]][[4]]
 
-disturbance <- factor(dist, ordered = TRUE, 
-                      levels = c("pre-disturbance", 
-                                 "disturbance", 
-                                 "post-disturbance"))
-
-test_cordf <- lpi_landuse[c("annual_time_step",
-                                  "indicator_score")] %>% 
-                    merge(harvested_landuse[c("annual_time_step",
-                                              "indicator_score")],
-                          by = "annual_time_step") %>% 
-              mutate(disturbance = ifelse(annual_time_step < 100, 
-                                          "pre-disturbance",
-                                          ifelse(annual_time_step >= 100 &
-                                                   annual_time_step < 200, 
-                                                 "disturbance", 
-                                                 "post-disturbance")))
-
-ggplot(test_cordf, aes(x = indicator_score.x, y = range01(indicator_score.y),
-                       col = disturbance)) +
-  geom_point() +
-  labs(x = "RLI",
-       y = "Autotroph abundance",
-       title = "test") + 
-  stat_cor(method = "spearman") 
+## * Calculate correlation coefficients ----
 
 indicator_cor_scores <- list()
 
