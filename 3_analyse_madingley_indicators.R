@@ -35,6 +35,9 @@ library(tidylog)
 library(mgcv)
 library(changepoint)
 
+## Viz
+library(ggpubr)
+
 # Functions ----
 
 #' Description
@@ -47,6 +50,8 @@ library(changepoint)
 function_name <- function(param){
 
 }
+
+range01 <- function(x){(x-min(x))/(max(x)-min(x))}
 
 input <- data
 
@@ -184,7 +189,7 @@ indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/
 
 } else if (development_mode == FALSE) {
   
-indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-19_all_indicators_output_data_reps_averaged_list2.rds")
+indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-20_all_indicators_output_data_reps_averaged_list2.rds")
 
 }
 
@@ -196,11 +201,23 @@ lpi <- indicators_all[["LPI"]]
 
 harvested <- indicators_all[["total abundance harvested"]]
 
+rli_df <- do.call(rbind, rli)
+lpi_df <- do.call(rbind, lpi)
+harvested_df <- do.call(rbind, harvested)
+
+example_indicators <- rbind(rli_df, lpi_df, harvested_df) %>% 
+                        filter(scenario == "200_Harvesting_carnivores",
+                               indicator == "RLI"|
+                                 indicator == "total abundance harvested")
+
+write.csv(example_indicators, file.path(analysis_outputs_folder, 
+                                     "21-08-22_draft_example_indicator_data.csv"))
 
 # CORRELATION ----
 
 lpi_landuse <- lpi[[2]]
 rli_landuse <- rli[[2]]
+
 harvested_landuse <- harvested[[2]]
 
 head(lpi_landuse)
@@ -211,6 +228,33 @@ cor(lpi_landuse$indicator_score,
 
 cor(rli_landuse$indicator_score, harvested_landuse$indicator_score, 
     method = "spearman")
+
+dist <- c("pre-disturbance", "disturbance", "post-disturbance")
+
+disturbance <- factor(dist, ordered = TRUE, 
+                      levels = c("pre-disturbance", 
+                                 "disturbance", 
+                                 "post-disturbance"))
+
+test_cordf <- lpi_landuse[c("annual_time_step",
+                                  "indicator_score")] %>% 
+                    merge(harvested_landuse[c("annual_time_step",
+                                              "indicator_score")],
+                          by = "annual_time_step") %>% 
+              mutate(disturbance = ifelse(annual_time_step < 100, 
+                                          "pre-disturbance",
+                                          ifelse(annual_time_step >= 100 &
+                                                   annual_time_step < 200, 
+                                                 "disturbance", 
+                                                 "post-disturbance")))
+
+ggplot(test_cordf, aes(x = indicator_score.x, y = range01(indicator_score.y),
+                       col = disturbance)) +
+  geom_point() +
+  labs(x = "RLI",
+       y = "Autotroph abundance",
+       title = "test") + 
+  stat_cor(method = "spearman") 
 
 indicator_cor_scores <- list()
 
@@ -267,6 +311,7 @@ correlation_dataframe <- do.call(rbind, indicator_cor_scores) %>%
 scenario_indicator_names <- names(indicators_all)
 
 scenario_changepoint_summaries <- list()
+scenario_variance_summaries <- list()
 
 for (i in seq_along(indicators_all)) {
 
@@ -275,6 +320,7 @@ for (i in seq_along(indicators_all)) {
 single_indicator <- indicators_all[[i]]
 
 indicator_changepoint_summaries <- list()
+indicator_variance_summaries <- list()
 
   for (j in seq_along(single_indicator)) {
 
@@ -292,25 +338,54 @@ indicator_changepoint_summaries <- list()
                    penalty = "AIC", 
                    pen.value = c(1,25))
   
+  cptvar <- cpt.var(indicator_ts, method = "PELT", 
+                  penalty = "AIC", 
+                  pen.value = c(1,25))
+  
   # Save break points
   
   indicator_changepoint_summaries[[j]] <- cpt
   
+  indicator_variance_summaries[[j]] <- cptvar
+  
   }
 
 scenario_changepoint_summaries[[i]] <- indicator_changepoint_summaries
+scenario_variance_summaries[[i]] <- indicator_variance_summaries
 
 }
 
-plot(scenario_changepoint_summaries[[23]][[3]])
-summary(scenario_changepoint_summaries[[23]][[3]])
+# Harvested groups
+
+i <- 1
+plot(scenario_changepoint_summaries[[24]][[i]])
+summary(scenario_changepoint_summaries[[24]][[i]])
+plot(scenario_variance_summaries[[24]][[i]])
+summary(scenario_variance_summaries[[24]][[i]])
+
+# LPI
+plot(scenario_changepoint_summaries[[15]][[i]])
+summary(scenario_changepoint_summaries[[15]][[i]])
+plot(scenario_variance_summaries[[15]][[i]])
+summary(scenario_variance_summaries[[15]][[i]])
+
+# RLI
+
+i <- i + 1
+plot(scenario_changepoint_summaries[[23]][[i]])
+summary(scenario_changepoint_summaries[[23]][[i]])
+plot(scenario_variance_summaries[[23]][[i]])
+summary(scenario_variance_summaries[[23]][[i]])
+
 
 
 # GAM ----
 
+## This tutorial includes how to extract smooth functions http://environmentalcomputing.net/intro-to-gams/
+
 # Prepare a GAM for one indicator, for the land use scenario
 
-harvested <- indicators_all[[23]][[2]] %>% 
+harvested <- indicators_all[[24]][[2]] %>% 
               rename(autotrophs = indicator_score)
 
 head(harvested)
@@ -319,19 +394,24 @@ input <- indicators_all[["LPI"]][[2]] %>%
          # Add a disturbance variable
          mutate(disturbance = ifelse(annual_time_step < 100, 0,
                               ifelse(annual_time_step > 99 & 
-                                       annual_time_step < 200, 1, 0))) %>% 
+                                     annual_time_step < 200, 1, 0))) %>% 
          merge(harvested[c("annual_time_step", "autotrophs")], 
               by = "annual_time_step") %>% 
          mutate(auto_scaled = scale(autotrophs),
                 lpi_scaled = scale(indicator_score))
 head(input)
 
-# mod <- gam(log10(abundance) ~ s(annual_time_step), sp = smoothing_param,  
-#            data = input, method = "REML")
+# Check the distribution of our variables
 
-mod <- gam(lpi_scaled ~ s(auto_scaled, k = 20) + disturbance, 
-           sp = 0.001,  
+hist(input$lpi_scaled)
+hist(input$auto_scaled)
+
+mod <- gam(log10(indicator_score) ~ s(annual_time_step, bs = 'cc', k = 12), sp = 0.001,
            data = input, method = "REML")
+
+# mod <- gam(lpi_scaled ~ s(auto_scaled, k = 5), 
+#            sp = 0.001,  
+#            data = input, method = "REML")
 
 plot(mod)
 summary(mod)
