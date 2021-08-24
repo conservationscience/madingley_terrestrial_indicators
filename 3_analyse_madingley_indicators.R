@@ -33,7 +33,10 @@ library(tidylog)
 
 ## Analysis
 library(mgcv)
+library(nlme)
 library(changepoint)
+library(MASS)
+library(strucchange)
 
 ## Viz
 library(ggpubr)
@@ -83,6 +86,180 @@ smooth_gam <- function(input, smoothing_param) {
   
   
 }
+
+## Model Checking function
+# https://raw.githubusercontent.com/gavinsimpson/random_code/master/tsDiagGamm.R
+
+tsDiagGamm <- function(x, timevar, observed, f = 0.3, type = "normalized") {
+  resi <- resid(x$lme, type = type)
+  fits <- fitted(x$lme)
+  on.exit(layout(1))
+  layout(matrix(1:6, ncol = 3, byrow = TRUE))
+  plot(resi ~ fits, ylab = "Normalized Residuals",
+       xlab = "Fitted Values", main = "Fitted vs. Residuals")
+  lines(lowess(x = fits, y = resi, f = f), col = "blue",
+        lwd = 2)
+  plot(resi ~ timevar, ylab = "Normalized Residuals",
+       xlab = "Time", main = "Time series of residuals")
+  lines(lowess(x = timevar, y = resi, f = f), col = "blue", lwd = 2)
+  plot(observed ~ fits, ylab = "Observed",
+       xlab = "Fitted Values", main = "Fitted vs. Observed",
+       type = "n")
+  abline(a = 0, b = 1, col = "red")
+  points(observed ~ fits)
+  lines(lowess(x = fits, y = observed, f = f), col = "blue",
+        lwd = 2)
+  hist(resi, freq = FALSE, xlab = "Normalized Residuals")
+  qqnorm(resi)
+  qqline(resi)
+  acf(resi, main = "ACF of Residuals")
+}
+
+# Derivative gam functions
+
+# https://raw.githubusercontent.com/gavinsimpson/random_code/master/derivFun.R
+
+Deriv <- function(mod, n = 300, eps = 1e-7, newdata) {
+  
+    #if(isTRUE(all.equal(class(mod), "list")))
+    mod <- mod$gam
+    m.terms <- attr(terms(mod), "term.labels")
+  
+    if(missing(newdata)) {
+    newD <- sapply(model.frame(mod)[, m.terms, drop = FALSE],
+                   function(x) seq(min(x), max(x), length = n))
+    names(newD) <- m.terms
+  
+    } else {
+    newD <- newdata
+  }
+  X0 <- predict(mod, data.frame(newD), type = "lpmatrix")
+  newD <- newD + eps
+  X1 <- predict(mod, data.frame(newD), type = "lpmatrix")
+  Xp <- (X1 - X0) / eps
+  Xp.r <- NROW(Xp)
+  Xp.c <- NCOL(Xp)
+  ## dims of bs
+  bs.dims <- sapply(mod$smooth, "[[", "bs.dim") - 1
+  # number of smooth terms
+  t.labs <- attr(mod$terms, "term.labels")
+  nt <- length(t.labs)
+  ## list to hold the derivatives
+  lD <- vector(mode = "list", length = nt)
+  names(lD) <- t.labs
+  for(i in seq_len(nt)) {
+    Xi <- Xp * 0
+    want <- grep(t.labs[i], colnames(X1))
+    Xi[, want] <- Xp[, want]
+    df <- Xi %*% coef(mod)
+    df.sd <- rowSums(Xi %*% mod$Vp * Xi)^.5
+    lD[[i]] <- list(deriv = df, se.deriv = df.sd)
+    ## Xi <- Xp * 0 ##matrix(0, nrow = Xp.r, ncol = Xp.c)
+    ## J <- bs.dims[i]
+    ## Xi[,(i-1) * J + 1:J + 1] <- Xp[,(i-1) * J + 1:J +1]
+    ## df <- Xi %*% coef(mod)
+    ## df.sd <- rowSums(Xi %*% mod$Vp * Xi)^.5
+    ## lD[[i]] <- list(deriv = df, se.deriv = df.sd)
+  }
+  class(lD) <- "Deriv"
+  lD$gamModel <- mod
+  lD$eps <- eps
+  lD$eval <- newD - eps
+  return(lD)
+}
+
+confint.Deriv <- function(object, term, alpha = 0.05, ...) {
+  l <- length(object) - 3
+  term.labs <- names(object[seq_len(l)])
+  if(missing(term))
+    term <- term.labs
+  Term <- match(term, term.labs)
+  ##term <- term[match(term, term.labs)]
+  if(any(miss <- is.na(Term)))
+    stop(paste("'term'", term[miss], "not a valid model term."))
+  ## if(is.na(term))
+  ##     stop("'term' not a valid model term.")
+  res <- vector(mode = "list", length = length(term))
+  names(res) <- term
+  residual.df <- length(object$gamModel$y) - sum(object$gamModel$edf)
+  tVal <- qt(1 - (alpha/2), residual.df)
+  ## tVal <- qt(1 - (alpha/2), object$gamModel$df.residual)
+  for(i in seq_along(term)) {
+    upr <- object[[term[i]]]$deriv + tVal * object[[term[i]]]$se.deriv
+    lwr <- object[[term[i]]]$deriv - tVal * object[[term[i]]]$se.deriv
+    res[[term[i]]] <- list(upper = drop(upr), lower = drop(lwr))
+  }
+  res$alpha = alpha
+  res
+}
+
+signifD <- function(x, d, upper, lower, eval = 0) {
+  miss <- upper > eval & lower < eval
+  incr <- decr <- x
+  want <- d > eval
+  incr[!want | miss] <- NA
+  want <- d < eval
+  decr[!want | miss] <- NA
+  list(incr = incr, decr = decr)
+}
+
+plot.Deriv <- function(x, alpha = 0.05, polygon = TRUE,
+                       sizer = FALSE, term, eval = 0, lwd = 3,
+                       col = "lightgrey", border = col,
+                       ylab, xlab, ...) {
+  l <- length(x) - 3
+  ## get terms and check specified (if any) are in model
+  term.labs <- names(x[seq_len(l)])
+  if(missing(term))
+    term <- term.labs
+  Term <- match(term, term.labs)
+  if(any(miss <- is.na(Term)))
+    stop(paste("'term'", term[miss], "not a valid model term."))
+  if(all(is.na(Term)))
+    stop("All terms in 'term' not found in model.")
+  l <- sum(!miss)
+  nplt <- n2mfrow(l)
+  ## tVal <- qt(1 - (alpha/2), x$gamModel$df.residual)
+  residual.df <- length(x$gamModel$y) - sum(x$gamModel$edf)
+  tVal <- qt(1 - (alpha/2), residual.df)
+  if(missing(ylab))
+    ylab <- expression(italic(hat(f)*"'"*(x)))
+  if(missing(xlab)) {
+    xlab <- attr(terms(x$gamModel), "term.labels")[Term]
+    names(xlab) <- xlab
+  }
+  layout(matrix(seq_len(l), nrow = nplt[1], ncol = nplt[2]))
+  CI <- confint(x, term = term, alpha = alpha)
+  for(i in seq_along(term)) {
+    ## for(i in seq_len(l)) {
+    upr <- CI[[term[i]]]$upper
+    lwr <- CI[[term[i]]]$lower
+    ylim <- range(upr, lwr)
+    plot(x$eval[,term[i]], x[[term[i]]]$deriv, type = "n",
+         ylim = ylim, ylab = ylab, xlab = xlab[term[i]], ...)
+    if(isTRUE(polygon)) {
+      polygon(c(x$eval[,term[i]], rev(x$eval[,term[i]])),
+              c(upr, rev(lwr)), col = col, border = border)
+    } else {
+      lines(x$eval[,term[i]], upr, lty = "dashed")
+      lines(x$eval[,term[i]], lwr, lty = "dashed")
+    }
+    abline(h = 0, ...)
+    if(isTRUE(sizer)) {
+      lines(x$eval[,term[i]], x[[term[i]]]$deriv, lwd = 1)
+      S <- signifD(x[[term[i]]]$deriv, x[[term[i]]]$deriv, upr, lwr,
+                   eval = eval)
+      lines(x$eval[,term[i]], S$incr, lwd = lwd, col = "blue")
+      lines(x$eval[,term[i]], S$decr, lwd = lwd, col = "red")
+    } else {
+      lines(x$eval[,term[i]], x[[term[i]]]$deriv, lwd = 2)
+    }
+  }
+  layout(1)
+  invisible(x)
+}
+
+
 # Set up paths ----
 
 indicators_project <- "N:/Quantitative-Ecology/Indicators-Project"
@@ -108,8 +285,9 @@ disturbance_factor <- factor(dist, ordered = TRUE,
 
 # Set up output folders
 
-analysis_inputs_folder <- file.path(indicators_project, 
-                           "/Serengeti/Outputs_from_analysis_code/Analysis_inputs")
+analysis_inputs_folder <- file.path(indicators_project,  
+                           "/Serengeti/Outputs_from_analysis_code/Analysis_inputs",
+                           today)
 
 if( !dir.exists( file.path(analysis_inputs_folder) ) ) {
   dir.create( file.path(analysis_inputs_folder), recursive = TRUE )
@@ -117,7 +295,8 @@ if( !dir.exists( file.path(analysis_inputs_folder) ) ) {
 }
 
 analysis_outputs_folder <- file.path(indicators_project, 
-                                     "/Serengeti/Outputs_from_analysis_code/Analysis_outputs")
+                                     "/Serengeti/Outputs_from_analysis_code/Analysis_outputs",
+                                     today)
 
 if( !dir.exists( file.path(analysis_outputs_folder) ) ) {
   dir.create( file.path(analysis_outputs_folder), recursive = TRUE )
@@ -125,7 +304,8 @@ if( !dir.exists( file.path(analysis_outputs_folder) ) ) {
 }
 
 analysis_plots_folder <- file.path(indicators_project, 
-                                     "/Serengeti/Outputs_from_analysis_code/Analysis_plots_folder")
+                                     "/Serengeti/Outputs_from_analysis_code/Analysis_plots_folder",
+                                   today)
 
 if( !dir.exists( file.path(analysis_plots_folder) ) ) {
   dir.create( file.path(analysis_plots_folder), recursive = TRUE )
@@ -134,30 +314,9 @@ if( !dir.exists( file.path(analysis_plots_folder) ) ) {
 
 # Load indicator > scenario level data ----
 
-indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-20_all_indicators_output_data_reps_averaged_list2.rds")
+indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-19_all_indicators_output_data_reps_averaged.rds")
 
-
-# Split the list by indicators
-
-rli <- indicators_all[["RLI"]]
-
-lpi <- indicators_all[["LPI"]]
-
-harvested <- indicators_all[["total abundance harvested"]]
-
-rli_df <- do.call(rbind, rli)
-lpi_df <- do.call(rbind, lpi)
-harvested_df <- do.call(rbind, harvested)
-
-example_indicators <- rbind(rli_df, lpi_df, harvested_df) %>% 
-                        filter(scenario == "200_Harvesting_carnivores",
-                               indicator == "RLI"|
-                                 indicator == "total abundance harvested")
-
-write.csv(example_indicators, file.path(analysis_outputs_folder, 
-                                     "21-08-22_draft_example_indicator_data.csv"))
-
-# CORRELATION ----
+# Correlation ----
 
 ## *  Make correlation scatterplots ----
 
@@ -203,7 +362,7 @@ for (i in seq_along(indicators_all)) {
            title = paste(indicator_name, scenario_name, sep = " ")) + 
       stat_cor(method = "spearman")
     
-    ggsave(file.path(analysis_plots_folder, today, 
+    ggsave(file.path(analysis_plots_folder,
                      paste(indicator_name,"_", scenario_name, ".png", sep = "")),
                      scenario_scatterplots[[j]],  device = "png")
     
@@ -278,7 +437,7 @@ for (i in seq_along(indicators_all)) {
 correlation_dataframe <- do.call(rbind, indicator_cor_scores) %>% 
                          arrange(cor)
 
-# BREAK POINT ANALYSIS ----
+# Breakpoint analyais ----
 
 
 scenario_indicator_names <- names(indicators_all)
@@ -350,265 +509,1144 @@ summary(scenario_changepoint_summaries[[23]][[i]])
 plot(scenario_variance_summaries[[23]][[i]])
 summary(scenario_variance_summaries[[23]][[i]])
 
+# Test strucchange ----
+library(strucchange) # Seems to only find first breakpoint?
+
+lpi_landuse <- indicators_all %>% 
+  #filter(indicator == "total abundance harvested") %>% 
+  filter(indicator == "RLI") %>%
+  filter(scenario == "100_Land_use") 
+
+dat <- tibble(ylag0 = lpi_landuse$indicator_score,
+              ylag1 = lag(lpi_landuse$indicator_score)
+) %>%
+  drop_na()
+
+qlr <- Fstats(ylag0 ~ ylag1, data = dat)
+
+breakpoints(ylag0 ~ ylag1, data = dat, breaks = 2)
+
+plot.ts(lpi_landuse$indicator_score)
+
+lpi_landuse_ts <- as.ts(lpi_landuse$indicator_score)
+
+m_binseg <- cpt.mean(lpi_landuse_ts, penalty = "BIC", method = "PELT", Q = 5)
+plot(m_binseg, type = "l", xlab = "Index", cpt.width = 4)
+
+# Generalise additive models ----
+
+## Following this tutorial https://fromthebottomoftheheap.net/2011/06/12/additive-modelling-and-the-hadcrut3v-global-mean-temperature-series/
+## And this: https://www.youtube.com/watch?v=sgw4cu8hrZM&ab_channel=BottomoftheHeap
+## (this might also be useful https://fromthebottomoftheheap.net/2014/05/15/identifying-periods-of-change-with-gams/)
+
+# * HARVESTED ABUNDANCE ----
+
+# ** Land use scenario ----
+
+gam_inputs <- indicators_all %>% 
+              filter(indicator == "total abundance harvested") %>% 
+              filter(scenario == "100_Land_use") 
+
+ylabel <- gam_inputs$indicator[1]
+timesteps <- max(gam_inputs$annual_time_step)
+
+row.names(gam_inputs) <- gam_inputs$annual_time_step
+head(gam_inputs)
+
+plot(indicator_score ~ annual_time_step, 
+     data = gam_inputs, type = "o", ylab = ylabel)
+
+# *** Fit a few different models ----
+
+term <- 200
+## Fit a smoother for Year to the data
+m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
+summary(m1$gam)
+
+## look at autocorrelation in residuals:
+acf(resid(m1$lme, type = "normalized"))
+## ...wait... look at the plot, only then do...
+pacf(resid(m1$lme, type = "normalized"))
+## seems like like sharp cut-off in ACF and PACF - AR terms probably best
+
+## ...so fit the AR1
+m2 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 1))
+## ...and fit the AR2
+m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 2))
+
+# *** Model selection ----
+
+anova(m1$lme, m2$lme, m3$lme)
+
+# m2 looks best for our data too, lets have a look ...
+selected_mod <- m2
+
+plot(selected_mod$gam, residuals = TRUE, pch = 19, cex = 0.75)
+
+summary(selected_mod$gam)
 
 
-# GAM ----
+# *** Plot the fitted trend ----
 
-## This tutorial includes how to extract smooth functions http://environmentalcomputing.net/intro-to-gams/
+with(gam_inputs, tsDiagGamm(selected_mod, timevar = annual_time_step, 
+                       observed = indicator_score))
 
-# Prepare a GAM for one indicator, for the land use scenario
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, 
+     type = "p", ylab = ylabel)
 
-harvested <- indicators_all[[24]][[2]] %>% 
-              rename(autotrophs = indicator_score)
+pdat <- with(gam_inputs,
+             data.frame(annual_time_step = seq(min(annual_time_step), 
+                                               max(annual_time_step),
+                                   length = 300)))
 
-head(harvested)
+p1 <- predict(m1$gam, newdata = pdat)
+p2 <- predict(selected_mod$gam, newdata = pdat)
+lines(p1 ~ annual_time_step, data = pdat, col = "red")
+lines(p2 ~ annual_time_step, data = pdat, col = "blue")
+legend("topleft",
+       legend = c("Uncorrelated Errors","AR(1) Errors"),
+       bty = "n", col = c("red","blue"), lty = 1)
 
-input <- indicators_all[["LPI"]][[2]] %>%
-         # Add a disturbance variable
-         mutate(disturbance = ifelse(annual_time_step < 100, 0,
-                              ifelse(annual_time_step > 99 & 
-                                     annual_time_step < 200, 1, 0))) %>% 
-         merge(harvested[c("annual_time_step", "autotrophs")], 
-              by = "annual_time_step") %>% 
-         mutate(auto_scaled = scale(autotrophs),
-                lpi_scaled = scale(indicator_score))
-head(input)
+# *** Plot the derivatives and periods of change ----
 
-# Check the distribution of our variables
+selected_mod.d <- Deriv(selected_mod, n = timesteps)
+plot(selected_mod.d, sizer = TRUE, alpha = 0.01)
 
-hist(input$lpi_scaled)
-hist(input$auto_scaled)
+# Add periods of change to time series
 
-mod <- gam(log10(indicator_score) ~ s(annual_time_step, bs = 'cc', k = 12), sp = 0.001,
-           data = input, method = "REML")
+plot(log(indicator_score) ~ annual_time_step, 
+     data = gam_inputs, type = "p", ylab = ylabel) 
 
-# mod <- gam(lpi_scaled ~ s(auto_scaled, k = 5), 
-#            sp = 0.001,  
-#            data = input, method = "REML")
+lines(p2 ~ annual_time_step, data = pdat) 
+CI <- confint(selected_mod.d, alpha = 0.01)
+S <- signifD(p2, selected_mod.d$annual_time_step$deriv, 
+             CI$annual_time_step$upper, 
+             CI$annual_time_step$lower,
+             eval = 0)
+lines(S$incr ~ annual_time_step, data = pdat, lwd = 3, col = "blue")
+lines(S$decr ~ annual_time_step, data = pdat, lwd = 3, col = "red")
 
-plot(mod)
-summary(mod)
-gam.check(mod)
+# Recreate with ggplot
 
-modelled_abundance <- predict(mod, pred_annual_time_step = unique(input$annual_time_step))
-head(modelled_abundance)
+deriv_plot <- ggplot() +
+  geom_point(data = gam_inputs,
+             aes(x = annual_time_step, y = log(indicator_score)),
+             alpha = 0.3) +
+  geom_line(aes(x = gam_inputs$annual_time_step,
+                y = p2)) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$incr), col = "blue", size = 2) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$decr), col = "red", size = 2) +
+  labs(title = paste(gam_inputs$scenario[1],
+                     gam_inputs$indicator[1], sep = " "))
 
-modelled_abundance <- as.data.frame(cbind(annual_time_step =unique(input$annual_time_step),
-                                          transformed_abundance = modelled_abundance))
+deriv_plot
 
-newdata <- input %>% 
-  merge(modelled_abundance, by = "annual_time_step")
+ggsave(file.path(analysis_plots_folder,
+                 paste(gam_inputs$indicator[1],"_", gam_inputs$scenario[1], 
+                       "derivative_plot.png", sep = "")),
+       deriv_plot,  device = "png")
 
-head(newdata)
+# *** Plot uncertainty ----
 
-ggplot(data = newdata) +
-  geom_line(aes(x = annual_time_step, y = transformed_abundance)) +
-  geom_line(aes(x = annual_time_step, y = lpi_scaled), col = "deep pink") 
+## simulate from posterior distribution of beta
+Rbeta <- mvrnorm(n = 1000, coef(m2$gam), vcov(m2$gam))
+Xp <- predict(m2$gam, newdata = pdat, type = "lpmatrix")
+sim1 <- Xp %*% t(Rbeta)
 
+# plot the observation and 25 of the 1000 trends
+set.seed(321)
+want <- sample(1000, 25)
+# ylim <- range(sim1[,want], gam_inputs$annual_time_step)
+ylim <- c(-1.2,1.2)
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, 
+     ylim = ylim, ylab = ylabel)
+matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
 
-# DERIVATIVES ----
+# ** Carnivore harvesting scenario ----
 
-# RED LIST INDEX ----
+gam_inputs <- indicators_all %>% 
+  filter(indicator == "total abundance harvested") %>% 
+  filter(scenario == "200_Harvesting_carnivores") 
 
-# Create the spline functions and calculate derivatives (1 per replicate)
+ylabel <- gam_inputs$indicator[1]
+timesteps <- max(gam_inputs$annual_time_step)
 
-rli_scenario_derivatives <- list()
+row.names(gam_inputs) <- gam_inputs$annual_time_step
+head(gam_inputs)
 
-for (i in seq_along(rli)) {
-  
-  # Get the outputs for a single scenario and create a spline function
-    
-    rli_spline <- splinefun(x = rli[[i]]$annual_time_step, 
-                            y = rli[[i]]$indicator_score)
-    
-    # Use the spline function to calculate the first and second derivatives and
-    # add them to our indicator score dataframes
-    
-    rli_scenario_derivatives[[i]] <- rli[[i]] %>% 
-         mutate(first_derivative = rli_spline(seq(1, nrow(rli[[i]]), 1), 
-                                              deriv = 1),
-                second_derivative = rli_spline(seq(1, nrow(rli[[i]]), 1), 
-                                               deriv = 2))
-                                  
-}
+plot(indicator_score ~ annual_time_step, 
+     data = gam_inputs, type = "o", ylab = ylabel)
 
-# Test plot RLI
+# *** Fit a few different models ----
 
-rli_test <- rli_scenario_derivatives[[2]]
-head(rli_test)
+term <- 100
+## Fit a smoother for Year to the data
+m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
+summary(m1$gam)
 
-rli_annual <- ggplot(data = rli_test) +
-  geom_line(aes(x = annual_time_step, y = first_derivative)) 
-  #geom_line(aes(x = annual_time_step, y = second_derivative), col = "hot pink")
+## look at autocorrelation in residuals:
+acf(resid(m1$lme, type = "normalized"))
+## ...wait... look at the plot, only then do...
+pacf(resid(m1$lme, type = "normalized"))
+## seems like like sharp cut-off in ACF and PACF - AR terms probably best
 
-rli_annual
+## ...so fit the AR1
+m2 <- gamm(indicator_score ~ s(annual_time_step, k = term), data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 1))
+## ...and fit the AR2
+m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 2))
 
-ggsave(file.path(analysis_outputs_folder, "rli_annual_2nd_dervs.png"),
-       rli_annual,  device = "png")
+# *** Model selection ----
 
-# LIVING PLANET INDEX ----
+anova(m1$lme, m2$lme, m3$lme)
 
-# Create the spline functions and calculate derivatives (1 per replicate)
+# m2 looks best for our data too, lets have a look ...
 
-lpi_scenario_derivatives <- list()
-lpi_replicate_derivatives <- list()
+plot(m2$gam, residuals = TRUE, pch = 19, cex = 0.75)
 
-for (i in seq_along(lpi)) {
-  
-  # Get the outputs for a single scenario
-  
-  scenario <- lpi[[i]] 
-  
-  for (j in seq_along(scenario)) {
-    
-    # Get the outputs for a single replicate and create a spline function
-    
-    lpi_replicate_spline <- splinefun(x = scenario[[j]]$annual_time_step, 
-                                      y = scenario[[j]]$indicator_score)
-    
-    # Use the spline function to calculate the first and second derivatives and
-    # add them to our indicator score dataframes
-    
-    lpi_replicate_derivatives[[j]] <- scenario[[j]] %>% 
-      mutate(first_derivative = lpi_replicate_spline(seq(1, 
-                                                         nrow(scenario[[j]]), 1), 
-                                                     deriv = 1),
-             second_derivative = lpi_replicate_spline(seq(1, 
-                                                          nrow(scenario[[j]]), 1), 
-                                                      deriv = 2))
-    
-  }
-  
-  lpi_scenario_derivatives[[i]] <- lpi_replicate_derivatives
-  
-}
-
-# Test plot LPI
-
-lpi_test <- lpi_scenario_derivatives[[1]][[1]]
-head(lpi_test)
-
-lpi_annual <- ggplot(data = lpi_test) +
-  #geom_line(aes(x = annual_time_step, y = first_derivative)) +
-  geom_line(aes(x = annual_time_step, y = second_derivative), col = "hot pink")
-
-ggsave(file.path(analysis_outputs_folder, "lpi_annual_2nd_dervs.png"),
-       lpi_annual,  device = "png")
-
-# Load  5 yr data ----
-
-if (development_mode == TRUE) {
-  
-  #indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-07-12_all_indicators_output_data.rds")
-  indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-07-13_all_indicators_output_data_list.rds")
-  
-} else if (development_mode == FALSE) {
-  
-  indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-04_all_indicators_output_data_list_5yr.rds")
-  
-}
-
-# Split the list by indicators
-
-rli <- indicators_all[["RLI"]]
-
-lpi <- indicators_all[["LPI"]]
-
-# RED LIST INDEX ----
-
-# Create the spline functions and calculate derivatives (1 per replicate)
-
-rli_scenario_derivatives <- list()
-rli_replicate_derivatives <- list()
-
-for (i in seq_along(rli)) {
-  
-  # Get the outputs for a single scenario
-  
-  scenario <- rli[[i]] 
-  
-  for (j in seq_along(scenario)) {
-    
-    # Get the outputs for a single replicate and create a spline function
-    
-    rli_replicate_spline <- splinefun(x = scenario[[j]]$annual_time_step, 
-                                      y = scenario[[j]]$indicator_score)
-    
-    # Use the spline function to calculate the first and second derivatives and
-    # add them to our indicator score dataframes
-    
-    rli_replicate_derivatives[[j]] <- scenario[[j]] %>% 
-      mutate(first_derivative = rli_replicate_spline(seq(1, 
-                                                         nrow(scenario[[j]]), 1), 
-                                                     deriv = 1),
-             second_derivative = rli_replicate_spline(seq(1, 
-                                                          nrow(scenario[[j]]), 1), 
-                                                      deriv = 2))
-    
-  }
-  
-  rli_scenario_derivatives[[i]] <- rli_replicate_derivatives
-  
-}
-
-# Test plot RLI
-
-rli_test <- rli_scenario_derivatives[[1]][[1]]
-head(rli_test)
-
-rli_5 <- ggplot(data = rli_test) +
-  #geom_line(aes(x = annual_time_step, y = first_derivative)) +
-  geom_line(aes(x = annual_time_step, y = second_derivative), col = "hot pink")
-
-ggsave(file.path(analysis_outputs_folder, "rli_5yr_2nd_dervs.png"),
-       rli_5,  device = "png")
-
-# LIVING PLANET INDEX ----
-
-# Create the spline functions and calculate derivatives (1 per replicate)
-
-lpi_scenario_derivatives <- list()
-lpi_replicate_derivatives <- list()
-
-for (i in seq_along(lpi)) {
-  
-  # Get the outputs for a single scenario
-  
-  scenario <- lpi[[i]] 
-  
-  for (j in seq_along(scenario)) {
-    
-    # Get the outputs for a single replicate and create a spline function
-    
-    lpi_replicate_spline <- splinefun(x = scenario[[j]]$annual_time_step, 
-                                      y = scenario[[j]]$indicator_score)
-    
-    # Use the spline function to calculate the first and second derivatives and
-    # add them to our indicator score dataframes
-    
-    lpi_replicate_derivatives[[j]] <- scenario[[j]] %>% 
-      mutate(first_derivative = lpi_replicate_spline(seq(1, 
-                                                         nrow(scenario[[j]]), 1), 
-                                                     deriv = 1),
-             second_derivative = lpi_replicate_spline(seq(1, 
-                                                          nrow(scenario[[j]]), 1), 
-                                                      deriv = 2))
-    
-  }
-  
-  lpi_scenario_derivatives[[i]] <- lpi_replicate_derivatives
-  
-}
-
-# Test plot LPI
-
-lpi_test <- lpi_scenario_derivatives[[1]][[1]]
-head(lpi_test)
-
-lpi_5 <- ggplot(data = lpi_test) +
-  #geom_line(aes(x = annual_time_step, y = first_derivative)) +
-  geom_line(aes(x = annual_time_step, y = second_derivative), col = "hot pink")
+summary(m2$gam)
 
 
-ggsave(file.path(analysis_outputs_folder, "lpi_5yr_2nd_dervs.png"),
-       lpi_5,  device = "png")
+# *** Plot the fitted trend ----
+
+with(gam_inputs, tsDiagGamm(m2, timevar = annual_time_step, 
+                            observed = indicator_score))
+
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, 
+     type = "p", ylab = ylabel)
+
+pdat <- with(gam_inputs,
+             data.frame(annual_time_step = seq(min(annual_time_step), 
+                                               max(annual_time_step),
+                                               length = 300)))
+
+p1 <- predict(m1$gam, newdata = pdat)
+p2 <- predict(m2$gam, newdata = pdat)
+lines(p1 ~ annual_time_step, data = pdat, col = "red")
+lines(p2 ~ annual_time_step, data = pdat, col = "blue")
+legend("topleft",
+       legend = c("Uncorrelated Errors","AR(1) Errors"),
+       bty = "n", col = c("red","blue"), lty = 1)
+
+# *** Plot the derivatives and periods of change ----
+
+m2.d <- Deriv(m2, n = timesteps)
+plot(m2.d, sizer = TRUE, alpha = 0.01)
+
+# Add periods of change to time series
+
+plot(log(indicator_score) ~ annual_time_step, 
+     data = gam_inputs, type = "p", ylab = ylabel)
+
+lines(p2 ~ annual_time_step, data = pdat)
+CI <- confint(m2.d, alpha = 0.01)
+S <- signifD(p2, m2.d$annual_time_step$deriv, 
+             CI$annual_time_step$upper, 
+             CI$annual_time_step$lower,
+             eval = 0)
+lines(S$incr ~ annual_time_step, data = pdat, lwd = 3, col = "blue")
+lines(S$decr ~ annual_time_step, data = pdat, lwd = 3, col = "red")
+
+# Recreate with ggplot
+
+deriv_plot <- ggplot() +
+  geom_point(data = gam_inputs,
+             aes(x = annual_time_step, y = log(indicator_score)),
+             alpha = 0.3) +
+  geom_line(aes(x = gam_inputs$annual_time_step,
+                y = p2)) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$incr), col = "blue", size = 2) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$decr), col = "red", size = 2) +
+  labs(title = paste(gam_inputs$scenario[1],
+                     gam_inputs$indicator[1], sep = " "))
+
+deriv_plot
+
+ggsave(file.path(analysis_plots_folder,
+                 paste(gam_inputs$indicator[1],"_", gam_inputs$scenario[1], 
+                       "derivative_plot.png", sep = "")),
+       deriv_plot,  device = "png")
+
+
+# *** Plot uncertainty ----
+
+## simulate from posterior distribution of beta
+Rbeta <- mvrnorm(n = 1000, coef(m2$gam), vcov(m2$gam))
+Xp <- predict(m2$gam, newdata = pdat, type = "lpmatrix")
+sim1 <- Xp %*% t(Rbeta)
+
+# plot the observation and 25 of the 1000 trends
+set.seed(321)
+want <- sample(1000, 25)
+# ylim <- range(sim1[,want], gam_inputs$annual_time_step)
+ylim <- c(-1.2,1.2)
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, ylim = ylim, ylab = ylabel)
+matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
+
+# ** Herbivore harvesting scenario ----
+
+gam_inputs <- indicators_all %>% 
+  filter(indicator == "total abundance harvested") %>% 
+  filter(scenario == "300_Harvesting_herbivores") 
+
+ylabel <- gam_inputs$indicator[1]
+timesteps <- max(gam_inputs$annual_time_step)
+
+row.names(gam_inputs) <- gam_inputs$annual_time_step
+head(gam_inputs)
+
+plot(indicator_score ~ annual_time_step, 
+     data = gam_inputs, type = "o", ylab = ylabel)
+
+# *** Fit a few different models ----
+
+term <- 20
+## Fit a smoother for Year to the data
+m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
+summary(m1$gam)
+
+## look at autocorrelation in residuals:
+acf(resid(m1$lme, type = "normalized"))
+## ...wait... look at the plot, only then do...
+pacf(resid(m1$lme, type = "normalized"))
+## seems like like sharp cut-off in ACF and PACF - AR terms probably best
+
+## ...so fit the AR1
+m2 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 1))
+## ...and fit the AR2
+m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 2))
+
+# *** Model selection ----
+
+anova(m1$lme, m2$lme, m3$lme)
+
+# m2 best?
+
+plot(m2$gam, residuals = TRUE, pch = 19, cex = 0.75)
+
+summary(m2$gam)
+
+
+# *** Plot the fitted trend ----
+
+with(gam_inputs, tsDiagGamm(m2, timevar = annual_time_step, 
+                            observed = indicator_score))
+
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, 
+     type = "p", ylab = ylabel)
+
+pdat <- with(gam_inputs,
+             data.frame(annual_time_step = seq(min(annual_time_step), 
+                                               max(annual_time_step),
+                                               length = 300)))
+
+p1 <- predict(m1$gam, newdata = pdat)
+p2 <- predict(m2$gam, newdata = pdat)
+lines(p1 ~ annual_time_step, data = pdat, col = "red")
+lines(p2 ~ annual_time_step, data = pdat, col = "blue")
+legend("topleft",
+       legend = c("Uncorrelated Errors","AR(1) Errors"),
+       bty = "n", col = c("red","blue"), lty = 1)
+
+# *** Plot the derivatives and periods of change ----
+
+m2.d <- Deriv(m2, n = 300)
+plot(m2.d, sizer = TRUE, alpha = 0.01)
+
+# Add periods of change to time series
+
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, 
+     type = "p", ylab = ylabel)
+lines(p2 ~ annual_time_step, data = pdat)
+CI <- confint(m2.d, alpha = 0.01)
+S <- signifD(p2, m2.d$annual_time_step$deriv, 
+             CI$annual_time_step$upper, 
+             CI$annual_time_step$lower,
+             eval = 0)
+lines(S$incr ~ annual_time_step, data = pdat, lwd = 3, col = "blue")
+lines(S$decr ~ annual_time_step, data = pdat, lwd = 3, col = "red")
+
+# Recreate with ggplot
+
+deriv_plot <- ggplot() +
+  geom_point(data = gam_inputs,
+             aes(x = annual_time_step, y = log(indicator_score)),
+             alpha = 0.3) +
+  geom_line(aes(x = gam_inputs$annual_time_step,
+                y = p2)) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$incr), col = "blue", size = 2) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$decr), col = "red", size = 2) +
+  labs(title = paste(gam_inputs$scenario[1],
+                     gam_inputs$indicator[1], sep = " "))
+
+deriv_plot
+
+ggsave(file.path(analysis_plots_folder,
+                 paste(gam_inputs$indicator[1],"_", gam_inputs$scenario[1], 
+                       "derivative_plot.png", sep = "")),
+       deriv_plot,  device = "png")
+
+# *** Plot uncertainty ----
+
+## simulate from posterior distribution of beta
+Rbeta <- mvrnorm(n = 1000, coef(m2$gam), vcov(m2$gam))
+Xp <- predict(m2$gam, newdata = pdat, type = "lpmatrix")
+sim1 <- Xp %*% t(Rbeta)
+
+# plot the observation and 25 of the 1000 trends
+set.seed(321)
+want <- sample(1000, 25)
+# ylim <- range(sim1[,want], gam_inputs$annual_time_step)
+ylim <- c(-1.2,1.2)
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, ylim = ylim, ylab = ylabel)
+matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
+
+# * RED LIST INDEX ----
+
+# ** Land use scenario ----
+
+gam_inputs <- indicators_all %>% 
+  filter(indicator == "RLI") %>% 
+  filter(scenario == "100_Land_use") 
+
+ylabel <- gam_inputs$indicator[1]
+timesteps <- max(gam_inputs$annual_time_step)
+
+row.names(gam_inputs) <- gam_inputs$annual_time_step
+head(gam_inputs)
+
+plot(indicator_score ~ annual_time_step, 
+     data = gam_inputs, type = "o", ylab = ylabel)
+
+# *** Fit a few different models ----
+
+term <- 20
+## Fit a smoother for Year to the data
+m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
+summary(m1$gam)
+
+## look at autocorrelation in residuals:
+acf(resid(m1$lme, type = "normalized"))
+## ...wait... look at the plot, only then do...
+pacf(resid(m1$lme, type = "normalized"))
+## seems like like sharp cut-off in ACF and PACF - AR terms probably best
+
+## ...so fit the AR1
+m2 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 1))
+## ...and fit the AR2
+m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 2))
+
+# *** Model selection ----
+
+anova(m1$lme, m2$lme, m3$lme)
+
+# m2 looks best for our data too, lets have a look ...
+
+plot(m2$gam, residuals = TRUE, pch = 19, cex = 0.75)
+
+summary(m2$gam)
+
+
+# *** Plot the fitted trend ----
+
+with(gam_inputs, tsDiagGamm(m2, timevar = annual_time_step, 
+                            observed = indicator_score))
+
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, 
+     type = "p", ylab = ylabel)
+
+pdat <- with(gam_inputs,
+             data.frame(annual_time_step = seq(min(annual_time_step), 
+                                               max(annual_time_step),
+                                               length = 300)))
+
+p1 <- predict(m1$gam, newdata = pdat)
+p2 <- predict(m2$gam, newdata = pdat)
+lines(p1 ~ annual_time_step, data = pdat, col = "red")
+lines(p2 ~ annual_time_step, data = pdat, col = "blue")
+legend("topleft",
+       legend = c("Uncorrelated Errors","AR(1) Errors"),
+       bty = "n", col = c("red","blue"), lty = 1)
+
+# *** Plot the derivatives and periods of change ----
+
+m2.d <- Deriv(m2, n = 300)
+plot(m2.d, sizer = TRUE, alpha = 0.01)
+
+# Add periods of change to time series
+
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, type = "p", ylab = ylabel)
+lines(p2 ~ annual_time_step, data = pdat)
+CI <- confint(m2.d, alpha = 0.01)
+S <- signifD(p2, m2.d$annual_time_step$deriv, 
+             CI$annual_time_step$upper, 
+             CI$annual_time_step$lower,
+             eval = 0)
+lines(S$incr ~ annual_time_step, data = pdat, lwd = 3, col = "blue")
+lines(S$decr ~ annual_time_step, data = pdat, lwd = 3, col = "red")
+# Recreate with ggplot
+
+deriv_plot <- ggplot() +
+  geom_point(data = gam_inputs,
+             aes(x = annual_time_step, y = log(indicator_score)),
+             alpha = 0.3) +
+  geom_line(aes(x = gam_inputs$annual_time_step,
+                y = p2)) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$incr), col = "blue", size = 2) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$decr), col = "red", size = 2) +
+  labs(title = paste(gam_inputs$scenario[1],
+                     gam_inputs$indicator[1], sep = " "))
+
+deriv_plot
+
+ggsave(file.path(analysis_plots_folder,
+                 paste(gam_inputs$indicator[1],"_", gam_inputs$scenario[1], 
+                       "derivative_plot.png", sep = "")),
+       deriv_plot,  device = "png")
+
+# *** Plot uncertainty ----
+
+## simulate from posterior distribution of beta
+Rbeta <- mvrnorm(n = 1000, coef(m2$gam), vcov(m2$gam))
+Xp <- predict(m2$gam, newdata = pdat, type = "lpmatrix")
+sim1 <- Xp %*% t(Rbeta)
+
+# plot the observation and 25 of the 1000 trends
+set.seed(321)
+want <- sample(1000, 25)
+# ylim <- range(sim1[,want], gam_inputs$annual_time_step)
+ylim <- c(-1.2,1.2)
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, ylim = ylim, ylab = ylabel)
+matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
+
+# ** Carnivore harvesting scenario ----
+
+gam_inputs <- indicators_all %>% 
+  filter(indicator == "total abundance harvested") %>% 
+  filter(scenario == "200_Harvesting_carnivores") 
+
+ylabel <- gam_inputs$indicator[1]
+timesteps <- max(gam_inputs$annual_time_step)
+
+row.names(gam_inputs) <- gam_inputs$annual_time_step
+head(gam_inputs)
+
+plot(indicator_score ~ annual_time_step, 
+     data = gam_inputs, type = "o", ylab = ylabel)
+
+# *** Fit a few different models ----
+
+term <- 20
+## Fit a smoother for Year to the data
+m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
+summary(m1$gam)
+
+## look at autocorrelation in residuals:
+acf(resid(m1$lme, type = "normalized"))
+## ...wait... look at the plot, only then do...
+pacf(resid(m1$lme, type = "normalized"))
+## seems like like sharp cut-off in ACF and PACF - AR terms probably best
+
+## ...so fit the AR1
+m2 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), 
+           data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 1))
+## ...and fit the AR2
+m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term),
+           data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 2))
+
+# *** Model selection ----
+
+anova(m1$lme, m2$lme, m3$lme)
+
+# m2 looks best for our data too, lets have a look ...
+m2 <- m3
+
+plot(m2$gam, residuals = TRUE, pch = 19, cex = 0.75)
+
+summary(m2$gam)
+
+# *** Plot the fitted trend ----
+
+with(gam_inputs, tsDiagGamm(m2, timevar = annual_time_step, 
+                            observed = indicator_score))
+
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, 
+     type = "p", ylab = ylabel)
+
+pdat <- with(gam_inputs,
+             data.frame(annual_time_step = seq(min(annual_time_step), 
+                                               max(annual_time_step),
+                                               length = 300)))
+
+p1 <- predict(m1$gam, newdata = pdat)
+p2 <- predict(m2$gam, newdata = pdat)
+lines(p1 ~ annual_time_step, data = pdat, col = "red")
+lines(p2 ~ annual_time_step, data = pdat, col = "blue")
+legend("topleft",
+       legend = c("Uncorrelated Errors","AR(1) Errors"),
+       bty = "n", col = c("red","blue"), lty = 1)
+
+# *** Plot the derivatives and periods of change ----
+
+m2.d <- Deriv(m2, n = 300)
+plot(m2.d, sizer = TRUE, alpha = 0.01)
+
+# Add periods of change to time series
+
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, type = "p", ylab = ylabel)
+lines(p2 ~ annual_time_step, data = pdat)
+CI <- confint(m2.d, alpha = 0.01)
+S <- signifD(p2, m2.d$annual_time_step$deriv, 
+             CI$annual_time_step$upper, 
+             CI$annual_time_step$lower,
+             eval = 0)
+lines(S$incr ~ annual_time_step, data = pdat, lwd = 3, col = "blue")
+lines(S$decr ~ annual_time_step, data = pdat, lwd = 3, col = "red")
+
+# Recreate with ggplot
+
+deriv_plot <- ggplot() +
+  geom_point(data = gam_inputs,
+             aes(x = annual_time_step, y = log(indicator_score)),
+             alpha = 0.3) +
+  geom_line(aes(x = gam_inputs$annual_time_step,
+                y = p2)) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$incr), col = "blue", size = 2) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$decr), col = "red", size = 2) +
+  labs(title = paste(gam_inputs$scenario[1],
+                     gam_inputs$indicator[1], sep = " "))
+
+deriv_plot
+
+ggsave(file.path(analysis_plots_folder,
+                 paste(gam_inputs$indicator[1],"_", gam_inputs$scenario[1], 
+                       "derivative_plot.png", sep = "")),
+       deriv_plot,  device = "png")
+
+# *** Plot uncertainty ----
+
+## simulate from posterior distribution of beta
+Rbeta <- mvrnorm(n = 1000, coef(m2$gam), vcov(m2$gam))
+Xp <- predict(m2$gam, newdata = pdat, type = "lpmatrix")
+sim1 <- Xp %*% t(Rbeta)
+
+# plot the observation and 25 of the 1000 trends
+set.seed(321)
+want <- sample(1000, 25)
+# ylim <- range(sim1[,want], gam_inputs$annual_time_step)
+ylim <- c(-1.2,1.2)
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, ylim = ylim, ylab = ylabel)
+matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
+
+# ** Herbivore harvesting scenario ----
+
+gam_inputs <- indicators_all %>% 
+  filter(indicator == "total abundance harvested") %>% 
+  filter(scenario == "300_Harvesting_herbivores") 
+
+ylabel <- gam_inputs$indicator[1]
+timesteps <- max(gam_inputs$annual_time_step)
+
+row.names(gam_inputs) <- gam_inputs$annual_time_step
+head(gam_inputs)
+
+plot(indicator_score ~ annual_time_step, 
+     data = gam_inputs, type = "o", ylab = ylabel)
+
+# *** Fit a few different models ----
+
+term <- 20
+## Fit a smoother for Year to the data
+m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
+summary(m1$gam)
+
+## look at autocorrelation in residuals:
+acf(resid(m1$lme, type = "normalized"))
+## ...wait... look at the plot, only then do...
+pacf(resid(m1$lme, type = "normalized"))
+## seems like like sharp cut-off in ACF and PACF - AR terms probably best
+
+## ...so fit the AR1
+m2 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 1))
+## ...and fit the AR2
+m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 2))
+
+# *** Model selection ----
+
+anova(m1$lme, m2$lme, m3$lme)
+
+# m2 looks best for our data too, lets have a look ...
+m2 <- m3
+
+plot(m2$gam, residuals = TRUE, pch = 19, cex = 0.75)
+
+summary(m2$gam)
+
+
+# *** Plot the fitted trend ----
+
+with(gam_inputs, tsDiagGamm(m2, timevar = annual_time_step, 
+                            observed = indicator_score))
+
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, 
+     type = "p", ylab = ylabel)
+
+pdat <- with(gam_inputs,
+             data.frame(annual_time_step = seq(min(annual_time_step), 
+                                               max(annual_time_step),
+                                               length = 300)))
+
+p1 <- predict(m1$gam, newdata = pdat)
+p2 <- predict(m2$gam, newdata = pdat)
+lines(p1 ~ annual_time_step, data = pdat, col = "red")
+lines(p2 ~ annual_time_step, data = pdat, col = "blue")
+legend("topleft",
+       legend = c("Uncorrelated Errors","AR(1) Errors"),
+       bty = "n", col = c("red","blue"), lty = 1)
+
+# *** Plot the derivatives and periods of change ----
+
+m2.d <- Deriv(m2, n = 300)
+plot(m2.d, sizer = TRUE, alpha = 0.01)
+
+# Add periods of change to time series
+
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, type = "p", ylab = ylabel)
+lines(p2 ~ annual_time_step, data = pdat)
+CI <- confint(m2.d, alpha = 0.01)
+S <- signifD(p2, m2.d$annual_time_step$deriv, 
+             CI$annual_time_step$upper, 
+             CI$annual_time_step$lower,
+             eval = 0)
+lines(S$incr ~ annual_time_step, data = pdat, lwd = 3, col = "blue")
+lines(S$decr ~ annual_time_step, data = pdat, lwd = 3, col = "red")
+
+# Recreate with ggplot
+
+deriv_plot <- ggplot() +
+  geom_point(data = gam_inputs,
+             aes(x = annual_time_step, y = log(indicator_score)),
+             alpha = 0.3) +
+  geom_line(aes(x = gam_inputs$annual_time_step,
+                y = p2)) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$incr), col = "blue", size = 2) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$decr), col = "red", size = 2) +
+  labs(title = paste(gam_inputs$scenario[1],
+                     gam_inputs$indicator[1], sep = " "))
+
+deriv_plot
+
+ggsave(file.path(analysis_plots_folder,
+                 paste(gam_inputs$indicator[1],"_", gam_inputs$scenario[1], 
+                       "derivative_plot.png", sep = "")),
+       deriv_plot,  device = "png")
+
+# *** Plot uncertainty ----
+
+## simulate from posterior distribution of beta
+Rbeta <- mvrnorm(n = 1000, coef(m2$gam), vcov(m2$gam))
+Xp <- predict(m2$gam, newdata = pdat, type = "lpmatrix")
+sim1 <- Xp %*% t(Rbeta)
+
+# plot the observation and 25 of the 1000 trends
+set.seed(321)
+want <- sample(1000, 25)
+# ylim <- range(sim1[,want], gam_inputs$annual_time_step)
+ylim <- c(-1.2,1.2)
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, ylim = ylim, ylab = ylabel)
+matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
+
+# * LIVING PLANET INDEX ----
+
+# ** Land use scenario ----
+
+gam_inputs <- indicators_all %>% 
+  filter(indicator == "LPI") %>% 
+  filter(scenario == "100_Land_use") 
+
+ylabel <- gam_inputs$indicator[1]
+timesteps <- max(gam_inputs$annual_time_step)
+
+row.names(gam_inputs) <- gam_inputs$annual_time_step
+head(gam_inputs)
+
+plot(indicator_score ~ annual_time_step, 
+     data = gam_inputs, type = "o", ylab = ylabel)
+
+# *** Fit a few different models ----
+
+term <- 20
+## Fit a smoother for Year to the data
+m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
+summary(m1$gam)
+
+## look at autocorrelation in residuals:
+acf(resid(m1$lme, type = "normalized"))
+## ...wait... look at the plot, only then do...
+pacf(resid(m1$lme, type = "normalized"))
+## seems like like sharp cut-off in ACF and PACF - AR terms probably best
+
+## ...so fit the AR1
+m2 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), 
+           data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 1))
+## ...and fit the AR2
+m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), 
+           data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 2))
+
+# *** Model selection ----
+
+anova(m1$lme, m2$lme, m3$lme)
+
+# m2 looks best for our data too, lets have a look ...
+m2 <- m3
+
+plot(m2$gam, residuals = TRUE, pch = 19, cex = 0.75)
+
+summary(m2$gam)
+
+# *** Plot the fitted trend ----
+
+with(gam_inputs, tsDiagGamm(m2, timevar = annual_time_step, 
+                            observed = indicator_score))
+
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, 
+     type = "p", ylab = ylabel)
+
+pdat <- with(gam_inputs,
+             data.frame(annual_time_step = seq(min(annual_time_step), 
+                                               max(annual_time_step),
+                                               length = 300)))
+
+p1 <- predict(m1$gam, newdata = pdat)
+p2 <- predict(m2$gam, newdata = pdat)
+lines(p1 ~ annual_time_step, data = pdat, col = "red")
+lines(p2 ~ annual_time_step, data = pdat, col = "blue")
+legend("topleft",
+       legend = c("Uncorrelated Errors","AR(1) Errors"),
+       bty = "n", col = c("red","blue"), lty = 1)
+
+# *** Plot the derivatives and periods of change ----
+
+m2.d <- Deriv(m2, n = 300)
+plot(m2.d, sizer = TRUE, alpha = 0.01)
+
+# Add periods of change to time series
+
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, type = "p", ylab = ylabel)
+lines(p2 ~ annual_time_step, data = pdat)
+CI <- confint(m2.d, alpha = 0.01)
+S <- signifD(p2, m2.d$annual_time_step$deriv, 
+             CI$annual_time_step$upper, 
+             CI$annual_time_step$lower,
+             eval = 0)
+lines(S$incr ~ annual_time_step, data = pdat, lwd = 3, col = "blue")
+lines(S$decr ~ annual_time_step, data = pdat, lwd = 3, col = "red")
+
+# Recreate with ggplot
+
+deriv_plot <- ggplot() +
+  geom_point(data = gam_inputs,
+             aes(x = annual_time_step, y = log(indicator_score)),
+             alpha = 0.3) +
+  geom_line(aes(x = gam_inputs$annual_time_step,
+                y = p2)) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$incr), col = "blue", size = 2) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$decr), col = "red", size = 2) +
+  labs(title = paste(gam_inputs$scenario[1],
+                     gam_inputs$indicator[1], sep = " "))
+
+deriv_plot
+
+ggsave(file.path(analysis_plots_folder,
+                 paste(gam_inputs$indicator[1],"_", gam_inputs$scenario[1], 
+                       "derivative_plot.png", sep = "")),
+       deriv_plot,  device = "png")
+
+# *** Plot uncertainty ----
+
+## simulate from posterior distribution of beta
+Rbeta <- mvrnorm(n = 1000, coef(m2$gam), vcov(m2$gam))
+Xp <- predict(m2$gam, newdata = pdat, type = "lpmatrix")
+sim1 <- Xp %*% t(Rbeta)
+
+# plot the observation and 25 of the 1000 trends
+set.seed(321)
+want <- sample(1000, 25)
+# ylim <- range(sim1[,want], gam_inputs$annual_time_step)
+ylim <- c(-2,0.5)
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, 
+     ylim = ylim, ylab = ylabel)
+matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
+
+# ** Carnivore harvesting scenario ----
+
+gam_inputs <- indicators_all %>% 
+  filter(indicator == "total abundance harvested") %>% 
+  filter(scenario == "200_Harvesting_carnivores") 
+
+ylabel <- gam_inputs$indicator[1]
+timesteps <- max(gam_inputs$annual_time_step)
+
+row.names(gam_inputs) <- gam_inputs$annual_time_step
+head(gam_inputs)
+
+plot(indicator_score ~ annual_time_step, 
+     data = gam_inputs, type = "o", ylab = ylabel)
+
+# *** Fit a few different models ----
+
+term <- 20
+## Fit a smoother for Year to the data
+m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
+summary(m1$gam)
+
+## look at autocorrelation in residuals:
+acf(resid(m1$lme, type = "normalized"))
+## ...wait... look at the plot, only then do...
+pacf(resid(m1$lme, type = "normalized"))
+## seems like like sharp cut-off in ACF and PACF - AR terms probably best
+
+## ...so fit the AR1
+m2 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 1))
+## ...and fit the AR2
+m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 2))
+
+# *** Model selection ----
+
+anova(m1$lme, m2$lme, m3$lme)
+
+# m2 looks best for our data too, lets have a look ...
+m2 <- m3
+
+plot(m2$gam, residuals = TRUE, pch = 19, cex = 0.75)
+
+summary(m2$gam)
+
+# *** Plot the fitted trend ----
+
+with(gam_inputs, tsDiagGamm(m2, timevar = annual_time_step, 
+                            observed = indicator_score))
+
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, 
+     type = "p", ylab = ylabel)
+
+pdat <- with(gam_inputs,
+             data.frame(annual_time_step = seq(min(annual_time_step), 
+                                               max(annual_time_step),
+                                               length = 300)))
+
+p1 <- predict(m1$gam, newdata = pdat)
+p2 <- predict(m2$gam, newdata = pdat)
+lines(p1 ~ annual_time_step, data = pdat, col = "red")
+lines(p2 ~ annual_time_step, data = pdat, col = "blue")
+legend("topleft",
+       legend = c("Uncorrelated Errors","AR(1) Errors"),
+       bty = "n", col = c("red","blue"), lty = 1)
+
+# *** Plot the derivatives and periods of change ----
+
+m2.d <- Deriv(m2, n = 300)
+plot(m2.d, sizer = TRUE, alpha = 0.01)
+
+# Add periods of change to time series
+
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, type = "p", ylab = ylabel)
+lines(p2 ~ annual_time_step, data = pdat)
+CI <- confint(m2.d, alpha = 0.01)
+S <- signifD(p2, m2.d$annual_time_step$deriv, 
+             CI$annual_time_step$upper, 
+             CI$annual_time_step$lower,
+             eval = 0)
+lines(S$incr ~ annual_time_step, data = pdat, lwd = 3, col = "blue")
+lines(S$decr ~ annual_time_step, data = pdat, lwd = 3, col = "red")
+
+# Recreate with ggplot
+
+deriv_plot <- ggplot() +
+  geom_point(data = gam_inputs,
+             aes(x = annual_time_step, y = log(indicator_score)),
+             alpha = 0.3) +
+  geom_line(aes(x = gam_inputs$annual_time_step,
+                y = p2)) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$incr), col = "blue", size = 2) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$decr), col = "red", size = 2) +
+  labs(title = paste(gam_inputs$scenario[1],
+                     gam_inputs$indicator[1], sep = " "))
+
+deriv_plot
+
+ggsave(file.path(analysis_plots_folder,
+                 paste(gam_inputs$indicator[1],"_", gam_inputs$scenario[1], 
+                       "derivative_plot.png", sep = "")),
+       deriv_plot,  device = "png")
+
+# *** Plot uncertainty ----
+
+## simulate from posterior distribution of beta
+Rbeta <- mvrnorm(n = 1000, coef(m2$gam), vcov(m2$gam))
+Xp <- predict(m2$gam, newdata = pdat, type = "lpmatrix")
+sim1 <- Xp %*% t(Rbeta)
+
+# plot the observation and 25 of the 1000 trends
+set.seed(321)
+want <- sample(1000, 25)
+# ylim <- range(sim1[,want], gam_inputs$annual_time_step)
+ylim <- c(-4,4)
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, ylim = ylim, ylab = ylabel)
+matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
+
+# ** Herbivore harvesting scenario ----
+
+gam_inputs <- indicators_all %>% 
+  filter(indicator == "total abundance harvested") %>% 
+  filter(scenario == "300_Harvesting_herbivores") 
+
+ylabel <- gam_inputs$indicator[1]
+timesteps <- max(gam_inputs$annual_time_step)
+
+row.names(gam_inputs) <- gam_inputs$annual_time_step
+head(gam_inputs)
+
+plot(indicator_score ~ annual_time_step, 
+     data = gam_inputs, type = "o", ylab = ylabel)
+
+# *** Fit a few different models ----
+
+term <- 20
+## Fit a smoother for Year to the data
+m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
+summary(m1$gam)
+
+## look at autocorrelation in residuals:
+acf(resid(m1$lme, type = "normalized"))
+## ...wait... look at the plot, only then do...
+pacf(resid(m1$lme, type = "normalized"))
+## seems like like sharp cut-off in ACF and PACF - AR terms probably best
+
+## ...so fit the AR1
+m2 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 1))
+## ...and fit the AR2
+m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 2))
+
+# *** Model selection ----
+
+anova(m1$lme, m2$lme, m3$lme)
+
+# m2 looks best for our data too, lets have a look ...
+m2 <- m1
+
+plot(m2$gam, residuals = TRUE, pch = 19, cex = 0.75)
+
+summary(m2$gam)
+
+# *** Plot the fitted trend ----
+
+with(gam_inputs, tsDiagGamm(m2, timevar = annual_time_step, 
+                            observed = indicator_score))
+
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, 
+     type = "p", ylab = ylabel)
+
+pdat <- with(gam_inputs,
+             data.frame(annual_time_step = seq(min(annual_time_step), 
+                                               max(annual_time_step),
+                                               length = 300)))
+
+p1 <- predict(m1$gam, newdata = pdat)
+p2 <- predict(m2$gam, newdata = pdat)
+lines(p1 ~ annual_time_step, data = pdat, col = "red")
+lines(p2 ~ annual_time_step, data = pdat, col = "blue")
+legend("topleft",
+       legend = c("Uncorrelated Errors","AR(1) Errors"),
+       bty = "n", col = c("red","blue"), lty = 1)
+
+# *** Plot the derivatives and periods of change ----
+
+m2.d <- Deriv(m2, n = 300)
+plot(m2.d, sizer = TRUE, alpha = 0.01)
+
+# Add periods of change to time series
+
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, type = "p", ylab = ylabel)
+lines(p2 ~ annual_time_step, data = pdat)
+CI <- confint(m2.d, alpha = 0.01)
+S <- signifD(p2, m2.d$annual_time_step$deriv, 
+             CI$annual_time_step$upper, 
+             CI$annual_time_step$lower,
+             eval = 0)
+lines(S$incr ~ annual_time_step, data = pdat, lwd = 3, col = "blue")
+lines(S$decr ~ annual_time_step, data = pdat, lwd = 3, col = "red")
+
+# Recreate with ggplot
+
+deriv_plot <- ggplot() +
+              geom_point(data = gam_inputs,
+                         aes(x = annual_time_step, y = log(indicator_score)),
+                             alpha = 0.3) +
+              geom_line(aes(x = gam_inputs$annual_time_step,
+                            y = p2)) +
+              geom_line(aes(x = gam_inputs$annual_time_step, 
+                               y = S$incr), col = "blue", size = 2) +
+              geom_line(aes(x = gam_inputs$annual_time_step, 
+                            y = S$decr), col = "red", size = 2) +
+              labs(title = paste(gam_inputs$scenario[1],
+                                 gam_inputs$indicator[1], sep = " "))
+
+deriv_plot
+
+ggsave(file.path(analysis_plots_folder,
+                 paste(gam_inputs$indicator[1],"_", gam_inputs$scenario[1], 
+                       "derivative_plot.png", sep = "")),
+       deriv_plot,  device = "png")
+
+# *** Plot uncertainty ----
+
+## simulate from posterior distribution of beta
+Rbeta <- mvrnorm(n = 1000, coef(m2$gam), vcov(m2$gam))
+Xp <- predict(m2$gam, newdata = pdat, type = "lpmatrix")
+sim1 <- Xp %*% t(Rbeta)
+
+# plot the observation and 25 of the 1000 trends
+set.seed(321)
+want <- sample(1000, 25)
+# ylim <- range(sim1[,want], gam_inputs$annual_time_step)
+ylim <- c(-1.2,1.2)
+plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, ylim = ylim, ylab = ylabel)
+matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
+
+
+
+
