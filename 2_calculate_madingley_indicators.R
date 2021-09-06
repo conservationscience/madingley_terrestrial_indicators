@@ -2325,6 +2325,9 @@ scenario_rli_plots[[4]]
 
 # RED LIST INDEX ANNUAL V2 ----
 
+## Lumping all species together to calculate RLI first up, rather than calculating 
+## by functional group then taking the mean
+
 # * Calculate RLI ----
 
 # RLI across all groups
@@ -2369,6 +2372,8 @@ scenario_all_rli_plots[[3]]
 scenario_all_rli_plots[[4]]
 
 # RED LIST INDEX ANNUAL V3 ----
+
+# Combining all species as above, but only including species larger than 10kg
 
 # * Calculate RLI ----
 
@@ -2431,16 +2436,18 @@ scenario_redlist_data_sampled_5yr <- list()
 for (i in seq_along(scenario_red_list_data)) {
   
   # Sample
+  
+  set <- seq(5,295,5)
  
   scenario_redlist_data_sampled_5yr[[i]] <- scenario_red_list_data[[i]] %>% 
     group_by(group_id) %>%
     #Calculate how many timesteps of data available for that species
     mutate(n_timesteps = n()) %>% 
     #Add a 5 yr interval column for sampling
-    mutate(interval = rep(1:sample_max_timestep, each = sample_interval,
+    mutate(annual_time_step = rep(set, each = sample_interval,
                           length.out = n_timesteps[1])) %>% 
     # Group by species and interval
-    group_by(group_id, interval) %>%
+    group_by(group_id, annual_time_step) %>%
     # Take the first observation
     slice(1)
   
@@ -2606,8 +2613,8 @@ dim(data)
 # * Get proportion extinct ----
 
 test2 <- scenario_redlist_data_sampled[[1]] %>% 
-  group_by(annual_time_step) %>% 
-  summarise(x = n())
+         group_by(annual_time_step) %>% 
+         summarise(x = n())
 
 test <- scenario_redlist_data_sampled_5yr[[1]] %>% 
         group_by(annual_time_step) %>% 
@@ -2657,7 +2664,7 @@ for (i in seq_along(scenario_redlist_data_sampled_5yr)) {
   
 }
 
-x <- scenario_fg_rli_outputs_5yr[[1]]
+x <- scenario_fg_rli_outputs_5yr[[4]]
 head(x)
 
 # Mean RLI aggregated across groups
@@ -2686,7 +2693,7 @@ for (i in seq_along(scenario_fg_rli_outputs_5yr)) {
   
 }
 
-head(scenario_rli_outputs_5yr)[[1]]
+head(scenario_rli_outputs_5yr)[[4]]
 
 # * Plot RLI ----
 
@@ -2712,7 +2719,7 @@ for (i in seq_along(scenario_fg_rli_outputs_5yr)) {
 scenario_rli_plots_fg_5yr[[1]]
 scenario_rli_plots_fg_5yr[[2]]
 scenario_rli_plots_fg_5yr[[3]]
-scenario_rli_plots_fg_5yr[[1]]
+scenario_rli_plots_fg_5yr[[4]]
 
 # RLI with all functional groups aggregated
 # i.e. mean of each 'taxa' RLI as per Butchart et al (2010) 'Indicators of
@@ -2743,72 +2750,7 @@ scenario_rli_plots_5yr[[4]]
 
 # RED LIST INDEX 5 YRS V2 ----
 
-# * Sample at 5 yr intervals 
-
-interval <- 12 * 5
-
-scenario_annual <- list()
-
-for (i in seq_along(scenario_averaged)) {
-  
-  #for (i in seq_along(scenario_smoothed_abundance)) {
-  
-  # scenario_groups <- split(scenario_smoothed_abundance[[i]], 
-  #                          scenario_smoothed_abundance[[i]]$group_id)
-  
-  scenario_groups <- split(scenario_averaged[[i]], 
-                           scenario_averaged[[i]]$group_id)
-  
-  groups_annual <- list()
-  
-  
-  for (j in seq_along(scenario_groups)) {
-    
-    groups_annual[[j]] <- scenario_groups[[j]] %>% 
-      slice(which(row_number() %% interval == 0)) %>%
-      mutate(annual_time_step = seq(1,max_timestep,5))
-    
-  }
-  
-  groups_annual_df <- do.call(rbind, groups_annual)
-  
-  scenario_annual[[i]] <- groups_annual_df
-  
-}
-
-check <- scenario_annual[[1]]
-head(check)
-dim(check)
-
-# Sample autotrophs
-
-scenario_auto_annual <- list()
-
-for (i in seq_along(scenario_smoothed_auto_abundance)) {
-  
-  scenario_auto_groups <- split(scenario_smoothed_auto_abundance[[i]], 
-                                scenario_smoothed_auto_abundance[[i]]$group_id)
-  
-  groups_auto_annual <- list()
-  
-  for (j in seq_along(scenario_auto_groups)) {
-    
-    
-    groups_auto_annual[[j]] <- scenario_auto_groups[[j]] %>% 
-      slice(which(row_number() %% interval == 0)) %>%
-      mutate(annual_time_step = seq(1,max_timestep,5))
-    
-  }
-  
-  groups_annual_auto_df <- do.call(rbind, groups_auto_annual)
-  
-  scenario_auto_annual[[i]] <- groups_annual_auto_df
-  
-}
-
-check <- scenario_auto_annual[[1]]
-head(check)
-length(scenario_auto_annual)
+## Assign the red list categories after sampling instead of before
 
 ## Referring to the thresholds quote under Criterion A, Reason 1 (declines
 ## are the result of reversible pressures) according to:
@@ -2817,10 +2759,10 @@ length(scenario_auto_annual)
 
 # * Assign Red List Categories ----
 
-scenario_red_list_data <- list()
+scenario_red_list_data_v2 <- list()
 
 #for (i in seq_along(scenario_ab_gl_formatted)) {
-for (i in seq_along(scenario_annual)) {
+for (i in seq_along(scenario_redlist_data_sampled_5yr)) {
   
   # Get replicate data for a single scenario
   
@@ -2831,8 +2773,8 @@ for (i in seq_along(scenario_annual)) {
   # except we are using functional groups as proxies for taxa (eg mammals, birds, 
   # reptiles) used in real world RLI calcs
   
-  status_inputs <- split(scenario_annual[[i]], 
-                         scenario_annual[[i]]$group_id)
+  status_inputs <- split(scenario_redlist_data_sampled_5yr[[i]], 
+                         scenario_redlist_data_sampled_5yr[[i]]$group_id)
   
   # Make a list to hold output for each individual massbin-func-group (ie virtual spp)
   
@@ -2843,18 +2785,18 @@ for (i in seq_along(scenario_annual)) {
     print(paste("Processing group", names(status_inputs)[[j]], sep = " "))
     
     group_red_list_data[[j]] <- status_inputs[[j]] %>%
-      rename(ave_abundance = abundance) %>% 
+      #rename(ave_abundance = abundance) %>% 
       group_by(group_id) %>%
-      arrange(monthly_time_step) %>%
+      arrange(annual_time_step) %>%
       # calculate the difference in abundance over 10 yrs or 3 generation lengths
       # (specified by 'timeframe' column). Its okay to take the first value of 
       # timeframe bc the dataframe is grouped by group_id, and timeframe only changes
       # between and not within group_ids
       # mutate(diff = (abundance - dplyr::lag(abundance, timeframe[1]))) %>%
-      mutate(diff = (ave_abundance - dplyr::lag(ave_abundance, 10))) %>%
+      mutate(diff = (ave_abundance - dplyr::lag(ave_abundance, 2))) %>%
       # Using the formula from p 35 (Complex patterns of decline) Guidelines 
       # for Using the IUCN Red List Categories and Criteria v14 August 2019 
-      mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, 10)) %>%
+      mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, 2)) %>%
       mutate(decline = ifelse(ave_abundance == 0, NA, decline)) %>% 
       # calculate the rate of change
       # mutate(decline = diff/dplyr::lag(abundance, timeframe[1])) %>% 
@@ -2869,7 +2811,7 @@ for (i in seq_along(scenario_annual)) {
                                               ifelse(decline >= 0.50 & decline < 0.80, "EN",
                                                      ifelse(decline >= 0.80, "CR",
                                                             ifelse(is.na(decline), "EX", "TBD"))))))) %>%
-      arrange(group_id, monthly_time_step) %>%
+      arrange(group_id, annual_time_step) %>%
       # Replace all non-ex status with ex after first occurrence 
       # mutate(extinct = match("EX", rl_status)) %>%
       mutate(rl_status = ifelse(ave_abundance == 0, "EX", rl_status)) %>% 
@@ -2883,7 +2825,9 @@ for (i in seq_along(scenario_annual)) {
   
   scenario_red_list_df <- do.call(rbind, group_red_list_data)
   
-  scenario_red_list_data[[i]] <- scenario_red_list_df
+  scenario_red_list_data_v2[[i]] <- scenario_red_list_df
+  
+  rm(scenario_red_list_df, group_red_list_data, status_inputs)
   
   # Save the inputs
   
@@ -2902,7 +2846,7 @@ for (i in seq_along(scenario_annual)) {
 
 # Have a quick look at the outputs
 
-rli_inputs <- scenario_red_list_data[[1]]
+rli_inputs <- scenario_red_list_data_v2[[1]]
 tail(rli_inputs)
 dim(rli_inputs)
 
@@ -2916,66 +2860,14 @@ ggplot(data = rli_inputs_group) +
   theme(legend.position = "none") +
   geom_text(aes(x = annual_time_step, y = ave_abundance, label = rl_status))
 
-
-# * Take coarser sample ----
-## Heterotrophs
-
-sample_interval <- 1 # interval between samples in years
-sample_max_timestep <- 60/sample_interval
-
-scenario_redlist_data_sampled <- list()
-
-for (i in seq_along(scenario_red_list_data)) {
-  
-  # Sample
-  sampled <- scenario_red_list_data[[i]] %>% 
-    group_by(group_id) %>%
-    slice(which(row_number() %% sample_interval == 0)) %>% 
-    mutate(annual_time_step = seq(1,sample_max_timestep,1))
-  
-  # Remove groups that have no biomass in sampled years or you get weird outputs
-  
-  scenario_redlist_data_sampled[[i]] <- sampled %>% 
-    rename(abundance = ave_abundance) %>% 
-    group_by(group_id) %>% 
-    mutate(total_abundance = sum(abundance, na.rm = TRUE),
-           exists = ifelse(total_abundance == 0 , FALSE, TRUE)) %>% 
-    filter(exists == TRUE)
-  
-}
-
-test <- scenario_redlist_data_sampled[[1]]
-test_group <- test %>% filter(group_id == "13.16.27")
-dim(test_group) # should have 60 rows
-
-## Autotrophs
-
-scenario_auto_sampled <- list()
-
-for (i in seq_along(scenario_auto_annual)) {
-  
-  # Sample
-  scenario_auto_sampled[[i]] <- scenario_auto_annual[[i]] %>% 
-    group_by(group_id) %>% 
-    slice(which(row_number() %% sample_interval == 0)) %>% 
-    mutate(annual_time_step = seq(1,sample_max_timestep,1))
-  
-}
-
-test <- scenario_auto_sampled[[1]]
-test_group <- test %>% filter(group_id == "autotrophs")
-dim(test_group) # should have 300 rows
-
-
-
 # * Get proportion extinct ----
 
 scenario_extinctions <- list()
 scenario_rl_status_plots <- list()
 
-for (i in seq_along(scenario_redlist_data_sampled)) {
+for (i in seq_along(scenario_red_list_data_v2)) {
   
-  scenario_extinctions[[i]] <- scenario_redlist_data_sampled[[i]] %>% 
+  scenario_extinctions[[i]] <- scenario_red_list_data_v2[[i]] %>% 
     group_by(annual_time_step, rl_status) %>% 
     filter(rl_status != is.na(rl_status)) %>% 
     summarise(test = n())
@@ -3003,12 +2895,12 @@ scenario_rl_status_plots[[4]]
 
 # RLI by individual functional groups
 
-scenario_fg_rli_outputs <- list()
+scenario_fg_rli_outputs_v2 <- list()
 
-for (i in seq_along(scenario_redlist_data_sampled)) {
+for (i in seq_along(scenario_red_list_data_v2)) {
   
-  scenario_fg_rli_outputs[[i]] <- calculate_red_list_index(
-    scenario_redlist_data_sampled[[i]], numboots, ci = FALSE) %>%
+  scenario_fg_rli_outputs_v2[[i]] <- calculate_red_list_index(
+    scenario_red_list_data_v2[[i]], numboots, ci = FALSE) %>%
     mutate(scenario = scenarios[[i]]) 
   
 }
@@ -3018,30 +2910,30 @@ head(x)
 
 # RLI across all groups
 
-scenario_all_rli_outputs <- list()
+scenario_all_rli_outputs_v2 <- list()
 
-for (i in seq_along(scenario_redlist_data_sampled)) {
+for (i in seq_along(scenario_red_list_data_v2)) {
   
-  scenario_all_rli_outputs[[i]] <- calculate_red_list_index2(
-    scenario_redlist_data_sampled[[i]], numboots, ci = FALSE) %>%
+  scenario_all_rli_outputs_v2[[i]] <- calculate_red_list_index2(
+    scenario_red_list_data_v2[[i]], numboots, ci = FALSE) %>%
     mutate(scenario = scenarios[[i]]) 
   
 }
 
-x <- scenario_all_rli_outputs[[1]]
+x <- scenario_all_rli_outputs_v2[[1]]
 head(x)
 
 # * Plot RLI ----
 
 # Using V2
 
-scenario_all_rli_plots <- list()
+scenario_all_rli_plots_v2 <- list()
 
-for (i in seq_along(scenario_all_rli_outputs)) {
+for (i in seq_along(scenario_all_rli_outputs_v2)) {
   
-  scenario_all_rli_plots[[i]] <- plot_red_list_index(scenario_all_rli_outputs[[i]],
-                                                 20, 
-                                                 40,
+  scenario_all_rli_plots_v2[[i]] <- plot_red_list_index(scenario_all_rli_outputs_v2[[i]],
+                                                 impact_start, 
+                                                 impact_end,
                                                  ci = FALSE)
   
   ggsave(file.path(rli_plots_folder, paste(today, scenarios[[i]],
@@ -3051,10 +2943,11 @@ for (i in seq_along(scenario_all_rli_outputs)) {
   
 }
 
-scenario_all_rli_plots[[1]]
-scenario_all_rli_plots[[2]]
-scenario_all_rli_plots[[3]]
-scenario_all_rli_plots[[4]]
+scenario_all_rli_plots_v2[[1]]
+scenario_all_rli_plots_v2[[2]]
+scenario_all_rli_plots_v2[[3]]
+scenario_all_rli_plots_v2[[4]]
+
 # RED LIST INDEX 5YRS V3 ----
 
 # * Calculate RLI ----
@@ -3100,8 +2993,11 @@ for (i in seq_along(scenario_large_spp_rli_outputs)) {
 }
 
 scenario_large_spp_rli_plots_5yr[[1]]
+scenario_all_rli_plots_v2[[2]]
 scenario_large_spp_rli_plots_5yr[[2]]
+scenario_all_rli_plots_v2[[3]]
 scenario_large_spp_rli_plots_5yr[[3]]
+scenario_all_rli_plots_v2[[4]]
 scenario_large_spp_rli_plots_5yr[[4]]
 
 # LIVING PLANET INDEX ----
@@ -3137,9 +3033,8 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
   
   scenario_lpi_inputs[[i]] <- scenario_redlist_data_sampled[[i]] %>% 
     dplyr::select(group_id, annual_time_step, 
-                  abundance, functional_group_name) # %>% 
-    # note - the carnivorous endotherms cause the time series to look like they're declining even before impact
-    # filter(functional_group_name != "carnivore endotherm")
+                  ave_abundance, functional_group_name) %>% 
+    rename(abundance = ave_abundance)
   
   
 }
