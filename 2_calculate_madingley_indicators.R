@@ -1824,7 +1824,12 @@ xx300 <- x300$group_id
 
 unique(x1$group_id) == unique(x300$group_id)
 
+# CHECKPOINT - CAN LOAD smoothed abundance here ----
+
 # saveRDS(indicator_outputs_folder, "scenario_smoothed_abundance.rds")
+
+scenario_smoothed_abundance <- readRDS(file.path(indicator_outputs_folder,
+                                                 "scenario_smoothed_abundance.rds"))
 
 group_test <- "10.59"
 
