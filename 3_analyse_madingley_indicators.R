@@ -40,6 +40,7 @@ library(strucchange)
 
 ## Viz
 library(ggpubr)
+library(cowplot)
 
 # Functions ----
 
@@ -314,18 +315,156 @@ if( !dir.exists( file.path(analysis_plots_folder) ) ) {
 
 # Load indicator > scenario level data ----
 
-indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-19_all_indicators_output_data_reps_averaged.rds")
+indicators_all_df <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-30_all_indicators_output_data_reps_averaged.rds")
+head(indicators_all_df)
 
-# Correlation ----
+# Indicator time series ----
 
-## *  Make correlation scatterplots ----
+indicators_all_list <- split(indicators_all_df, 
+                             indicators_all_df$indicator)
+
+indicator_time_series_plots <- list()
+
+for (i in seq_along(indicators_all_list)) {
+  
+  indicator_name <- indicators_all_list[[i]]$indicator[1]
+  
+  if(indicator_name == "total abundance harvested") {
+
+    indicator_data <- indicators_all_list[[i]] %>%
+                      filter(scenario != "000_Baseline") %>%
+                      mutate(scenario = ifelse(scenario == "100_Land_use",
+                             "1 - Land use scenario",
+                             ifelse(scenario == "200_Harvesting_carnivores",
+                             "2 - Carnivore harvesting scenario",
+                             ifelse(scenario == "300_Harvesting_herbivores",
+                             "3 - Herbivore harvesting scenario", NA))))
+
+    # harv <- indicator_data %>%
+    #        filter(scenario == "2 - Carnivore harvesting"|
+    #               scenario == "3 - Herbivore harvesting") %>%
+    #        mutate(indicator_score = log(indicator_score))
+    # 
+    # lu <- indicator_data %>%
+    #   filter(scenario == "1 - Land use scenario")
+    # 
+    # indicator_data <- rbind(harv, lu)
+
+    indicator_time_series_plots[[i]] <- ggplot(data = indicator_data,
+                                               aes(x = annual_time_step,
+                                                   y = log(indicator_score),
+                                                   col = scenario)) +
+      geom_line() +
+      scale_color_manual(values = c("#440154FF",
+                                    "#39568CFF",
+                                    "#1F968BFF")) +
+      facet_wrap( ~ scenario, ncol = 3) +
+      theme_classic() +
+      theme(panel.background = element_rect(fill = "snow2"),
+            legend.position = "none",
+            strip.text = element_text(face="bold", size=9)) +
+      geom_vline(xintercept = 100, linetype = "dashed") +
+      annotate(x=100,y=+Inf,label="Impact start",vjust=2,geom="label",
+               size = 3) +
+      geom_vline(xintercept = 200, linetype = "dashed") +
+      annotate(x=200,y=+Inf,label="Impact end",vjust=2,geom="label",
+               size = 3) +
+      labs(x = "Annual time step",
+           y = paste(indicator_name, "(log)", sep = " "))
+
+  } else {
+  
+  indicator_data <- indicators_all_list[[i]] %>% 
+    filter(scenario != "000_Baseline") %>% 
+    mutate(scenario = ifelse(scenario == "100_Land_use",
+                             "1 - Land use scenario",
+                             ifelse(scenario == "200_Harvesting_carnivores",
+                                    "2 - Carnivore harvesting scenario",
+                                    ifelse(scenario == "300_Harvesting_herbivores",
+                                           "3 - Herbivore harvesting scenario", NA))))
+  
+indicator_time_series_plots[[i]] <- ggplot(data = indicator_data, 
+                                           aes(x = annual_time_step, 
+                                    y = indicator_score,
+                                    col = scenario)) +
+    geom_line() +
+    scale_color_manual(values = c("#440154FF",
+                         "#39568CFF",
+                         "#1F968BFF")) +
+    facet_wrap( ~ scenario, ncol = 3) + 
+    theme_classic() +
+    theme(panel.background = element_rect(fill = "snow2"),
+          legend.position = "none",
+          strip.text = element_text(face="bold", size=9)) +
+    geom_vline(xintercept = 100, linetype = "dashed") +
+    annotate(x=100,y=+Inf,label="Impact start",vjust=2,geom="label",
+             size = 3) +
+    geom_vline(xintercept = 200, linetype = "dashed") +
+    annotate(x=200,y=+Inf,label="Impact end",vjust=2,geom="label",
+             size = 3) +
+    labs(x = "Annual time step",
+         y = indicator_name)
+  }
+}
+
+harvested <- indicator_time_series_plots[[20]]
+RLI <- indicator_time_series_plots[[18]]
+RLI_5yr <- indicator_time_series_plots[[17]]
+LPI <- indicator_time_series_plots[[11]]
+  
+
+
+fig <- plot_grid(harvested, RLI, RLI_5yr, LPI, align = "v", 
+                 nrow = 4, rel_heights = c(1/4, 1/4, 1/4, 1/4))
+
+fig
+
+ggsave(file.path(analysis_plots_folder, 
+                 paste(today,
+                       "indicator_time_series.png",
+                       sep = "_")), fig,  device = "png")
+
+# Distribution histograms ----
+
+indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-30_all_indicators_output_data_reps_averaged_list2.rds")
+
+# indicator_histograms <- list()
+# 
+# for (i in seq_along(indicators_all)) {
+#   
+#   single_indicator <- indicators_all[[i]]
+#  
+#   scenario_histograms <- list()
+#   
+#   for (j in seq_along(single_indicator)) {
+#     
+#     scenario_name <- str_to_title(scenarios[[j]])
+#     
+#     indicator_name <- single_indicator[[j]]$indicator[1]
+#    
+#     
+# 
+#     
+#     ggsave(file.path(analysis_plots_folder,
+#                      paste(indicator_name,"_", scenario_name, ".png", sep = "")),
+#            scenario_scatterplots[[j]],  device = "png")
+#     
+#   }
+#   
+#   names(scenario_scatterplots) <- scenarios
+#   
+#   indicator_scatterplots[[i]] <- scenario_scatterplots
+#   
+# }
+
+# Correlation analysis ----
 
 indicator_scatterplots <- list()
 
 for (i in seq_along(indicators_all)) {
   
   single_indicator <- indicators_all[[i]]
-  harvest_indicator <- indicators_all[[24]]
+  harvest_indicator <- indicators_all[[length(indicators_all)]]
   
   scenario_scatterplots <- list()
   
@@ -376,6 +515,7 @@ for (i in seq_along(indicators_all)) {
 
 names(indicator_scatterplots) <- names(indicators_all)
 
+indicator_scatterplots[["LPI"]][[1]]
 indicator_scatterplots[["LPI"]][[1]]
 indicator_scatterplots[["LPI"]][[2]]
 indicator_scatterplots[["LPI"]][[3]]
@@ -490,7 +630,7 @@ scenario_variance_summaries[[i]] <- indicator_variance_summaries
 # Harvested groups
 
 i <- 1
-plot(scenario_changepoint_summaries[[24]][[i]])
+plot(scenario_changepoint_summaries[[20]][[i]])
 summary(scenario_changepoint_summaries[[24]][[i]])
 plot(scenario_variance_summaries[[24]][[i]])
 summary(scenario_variance_summaries[[24]][[i]])
@@ -543,7 +683,7 @@ plot(m_binseg, type = "l", xlab = "Index", cpt.width = 4)
 
 # ** Land use scenario ----
 
-gam_inputs <- indicators_all %>% 
+gam_inputs <- indicators_all_df %>% 
               filter(indicator == "total abundance harvested") %>% 
               filter(scenario == "100_Land_use") 
 
@@ -558,7 +698,7 @@ plot(indicator_score ~ annual_time_step,
 
 # *** Fit a few different models ----
 
-term <- 200
+term <- 300
 ## Fit a smoother for Year to the data
 m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
 summary(m1$gam)
@@ -581,7 +721,9 @@ m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data =
 anova(m1$lme, m2$lme, m3$lme)
 
 # m2 looks best for our data too, lets have a look ...
-selected_mod <- m2
+selected_mod <- m3
+
+gam.check(selected_mod$gam)
 
 plot(selected_mod$gam, residuals = TRUE, pch = 19, cex = 0.75)
 
@@ -916,8 +1058,8 @@ matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
 
 # ** Land use scenario ----
 
-gam_inputs <- indicators_all %>% 
-  filter(indicator == "RLI") %>% 
+gam_inputs <- indicators_all_df %>% 
+  filter(indicator == "RLI 5yr") %>% 
   filter(scenario == "100_Land_use") 
 
 ylabel <- gam_inputs$indicator[1]
@@ -931,7 +1073,7 @@ plot(indicator_score ~ annual_time_step,
 
 # *** Fit a few different models ----
 
-term <- 20
+term <- 50
 ## Fit a smoother for Year to the data
 m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
 summary(m1$gam)
@@ -946,7 +1088,8 @@ pacf(resid(m1$lme, type = "normalized"))
 m2 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
            correlation = corARMA(form = ~ annual_time_step, p = 1))
 ## ...and fit the AR2
-m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), 
+           data = gam_inputs,
            correlation = corARMA(form = ~ annual_time_step, p = 2))
 
 # *** Model selection ----
@@ -1298,7 +1441,7 @@ plot(indicator_score ~ annual_time_step,
 
 # *** Fit a few different models ----
 
-term <- 20
+term <- 300
 ## Fit a smoother for Year to the data
 m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
 summary(m1$gam)
@@ -1323,15 +1466,17 @@ m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term),
 anova(m1$lme, m2$lme, m3$lme)
 
 # m2 looks best for our data too, lets have a look ...
-m2 <- m3
+selected_mod <- m3
 
-plot(m2$gam, residuals = TRUE, pch = 19, cex = 0.75)
+plot(selected_mod$gam, residuals = TRUE, pch = 19, cex = 0.75)
 
-summary(m2$gam)
+gam.check(selected_mod$gam)
+
+summary(selected_mod$gam)
 
 # *** Plot the fitted trend ----
 
-with(gam_inputs, tsDiagGamm(m2, timevar = annual_time_step, 
+with(gam_inputs, tsDiagGamm(selected_mod, timevar = annual_time_step, 
                             observed = indicator_score))
 
 plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, 
@@ -1343,7 +1488,7 @@ pdat <- with(gam_inputs,
                                                length = 300)))
 
 p1 <- predict(m1$gam, newdata = pdat)
-p2 <- predict(m2$gam, newdata = pdat)
+p2 <- predict(selected_mod$gam, newdata = pdat)
 lines(p1 ~ annual_time_step, data = pdat, col = "red")
 lines(p2 ~ annual_time_step, data = pdat, col = "blue")
 legend("topleft",
@@ -1352,15 +1497,15 @@ legend("topleft",
 
 # *** Plot the derivatives and periods of change ----
 
-m2.d <- Deriv(m2, n = 300)
-plot(m2.d, sizer = TRUE, alpha = 0.01)
+selected_mod.d <- Deriv(selected_mod, n = 300)
+plot(selected_mod.d, sizer = TRUE, alpha = 0.01)
 
 # Add periods of change to time series
 
 plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, type = "p", ylab = ylabel)
 lines(p2 ~ annual_time_step, data = pdat)
-CI <- confint(m2.d, alpha = 0.01)
-S <- signifD(p2, m2.d$annual_time_step$deriv, 
+CI <- confint(selected_mod.d, alpha = 0.01)
+S <- signifD(p2, selected_mod.d$annual_time_step$deriv, 
              CI$annual_time_step$upper, 
              CI$annual_time_step$lower,
              eval = 0)
@@ -1392,8 +1537,8 @@ ggsave(file.path(analysis_plots_folder,
 # *** Plot uncertainty ----
 
 ## simulate from posterior distribution of beta
-Rbeta <- mvrnorm(n = 1000, coef(m2$gam), vcov(m2$gam))
-Xp <- predict(m2$gam, newdata = pdat, type = "lpmatrix")
+Rbeta <- mvrnorm(n = 1000, coef(selected_mod$gam), vcov(selected_mod$gam))
+Xp <- predict(selected_mod$gam, newdata = pdat, type = "lpmatrix")
 sim1 <- Xp %*% t(Rbeta)
 
 # plot the observation and 25 of the 1000 trends
@@ -1422,7 +1567,7 @@ plot(indicator_score ~ annual_time_step,
 
 # *** Fit a few different models ----
 
-term <- 20
+term <- 200
 ## Fit a smoother for Year to the data
 m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
 summary(m1$gam)
@@ -1440,16 +1585,21 @@ m2 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data =
 m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
            correlation = corARMA(form = ~ annual_time_step, p = 2))
 
+m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 4))
+
 # *** Model selection ----
 
 anova(m1$lme, m2$lme, m3$lme)
 
 # m2 looks best for our data too, lets have a look ...
-m2 <- m3
+m2 <- m1
 
 plot(m2$gam, residuals = TRUE, pch = 19, cex = 0.75)
 
 summary(m2$gam)
+
+gam.check(m2$gam)
 
 # *** Plot the fitted trend ----
 
@@ -1543,7 +1693,7 @@ plot(indicator_score ~ annual_time_step,
 
 # *** Fit a few different models ----
 
-term <- 20
+term <- 250
 ## Fit a smoother for Year to the data
 m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
 summary(m1$gam)
@@ -1566,11 +1716,11 @@ m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data =
 anova(m1$lme, m2$lme, m3$lme)
 
 # m2 looks best for our data too, lets have a look ...
-m2 <- m1
 
 plot(m2$gam, residuals = TRUE, pch = 19, cex = 0.75)
 
 summary(m2$gam)
+gam.check(m2$gam)
 
 # *** Plot the fitted trend ----
 
