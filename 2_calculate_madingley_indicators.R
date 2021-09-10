@@ -507,8 +507,10 @@ plot_red_list_index <- function(data, impact_start, impact_end, ci = FALSE) {
   
   if (ci == TRUE) {
   
-  plot <- ggplot(data = data, aes(x = annual_time_step, y = indicator_score)) +
-    geom_line() +
+  plot <- ggplot() +
+    geom_line(data = data, aes(x = annual_time_step, y = indicator_score)) +
+    # geom_point(data = raw, aes(x = annual_time_step, y = standardised_abundance), 
+    #            alpha = 0.2) +
     geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper),
                 alpha = 0.4) +
     scale_fill_viridis_d() +
@@ -530,8 +532,10 @@ plot_red_list_index <- function(data, impact_start, impact_end, ci = FALSE) {
   
   } else {
     
-    plot <- ggplot(data = data, aes(x = annual_time_step, y = indicator_score)) +
-      geom_line() +
+    plot <- ggplot() +
+      geom_line(data = data, aes(x = annual_time_step, y = indicator_score)) +
+      # geom_point(data = raw, aes(x = annual_time_step, y = standardised_abundance), 
+      #            alpha = 0.2) +
       scale_fill_viridis_d() +
       scale_color_viridis_d() + 
       labs(x = "Time", 
@@ -1411,6 +1415,10 @@ head(test)
 any(is.nan(test$abundance))
 rm(scenario_false_extinctions_removed)
 
+saveRDS(scenario_ab_gl_formatted,
+        file.path(indicator_outputs_folder,
+                  paste(today, "formatted_abundance_1.rds", sep = "_")))
+
 
 # Take a random sample of 25 replicates ----
 
@@ -1556,6 +1564,10 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
 
 }
 
+saveRDS(scenario_decomposed,
+        file.path(indicator_outputs_folder,
+                  paste(today, "decomposed_abundance_2.rds", sep = "_")))
+
 # Average across replicates ----
 
 scenario_averaged <- list()
@@ -1629,6 +1641,10 @@ scenario_auto_averaged <- list()
 baseline <- scenario_averaged[[1]]
 head(baseline)
 any(is.nan(baseline$abundance))
+
+saveRDS(scenario_averaged,
+        file.path(indicator_outputs_folder,
+                  paste(today, "averaged_abundance_3.rds", sep = "_")))
 
 # Check for false extinctions
 
@@ -1770,6 +1786,10 @@ x300 <- scenario_remove_false_extinctions_2[[1]] %>%
 
 dim(x1)[1] == dim(x300)[1]
 
+saveRDS(scenario_remove_false_extinctions_2,
+        file.path(indicator_outputs_folder,
+                  paste(today, "weird_groups_removed_abundance_4.rds", sep = "_")))
+
 # # Smooth abundance ----
 
 ave_window <- 12 * 5
@@ -1824,53 +1844,166 @@ xx300 <- x300$group_id
 
 unique(x1$group_id) == unique(x300$group_id)
 
+saveRDS(scenario_smoothed_abundance,
+        file.path(indicator_outputs_folder,
+                  paste(today, "smoothed_abundance_5.rds", sep = "_")))
+
+ave_window <- 12 * 5
+
+## Autotrophs
+
+scenario_auto_smoothed_abundance <- list()
+
+for (i in seq_along(scenario_auto_averaged)) {
+  
+  group_list <- split(scenario_auto_averaged[[i]], 
+                      scenario_auto_averaged[[i]]$group_id)
+  
+  group_smoothed_abundance <- list()
+  
+  for (j in seq_along(group_list)) {
+    
+    group_df <- group_list[[j]]
+    
+    # check if the group has any abundance values, make it null if not
+    
+    if (sum(group_df$abundance, na.rm = TRUE) == 0) {
+      
+      group_smoothed_abundance[[j]] <- NULL
+      
+    } else {
+      
+      group_smoothed_abundance[[j]] <- group_df %>%
+        arrange(monthly_time_step) %>%
+        mutate(ave_abundance = rollapply(abundance,
+                                         ave_window,
+                                         mean,
+                                         na.rm = TRUE,
+                                         partial = TRUE,
+                                         align = "left"),
+               ave_abundance = ifelse(ave_abundance < 1,
+                                      0, ave_abundance))
+      
+      print(j)
+      
+    }
+  }
+  
+  scenario_auto_smoothed_abundance[[i]]  <- do.call(rbind,
+                                               group_smoothed_abundance)
+  
+  rm(group_smoothed_abundance, group_df)
+}
+
+
 # CHECKPOINT - CAN LOAD smoothed abundance here ----
 
-# saveRDS(indicator_outputs_folder, "scenario_smoothed_abundance.rds")
+# saveRDS(scenario_smoothed_abundance,
+#         file.path(indicator_outputs_folder,
+#                   paste(today, "scenario_smoothed_abundance.rds", sep = "_")))
 
-scenario_smoothed_abundance <- readRDS(file.path(indicator_outputs_folder,
-                                                 "scenario_smoothed_abundance.rds"))
+# scenario_smoothed_abundance <- readRDS(file.path(indicator_outputs_folder,
+#                                                  "scenario_smoothed_abundance.rds"))
 
-group_test <- "10.59"
+
+# Plot data transformation ----
+
+## Get an example group for each scenario (random for baseline, mid size herb for land use,
+## big carn for carnivores, big herb for herbivores)
+example_group <- c("10.59", "10.40", "11.68", "10.68")
 
 # Raw abundance
-t <- 20
-u <- 2
+r <- 1 # Pick a replicate
 
-group_raw <- scenario_ab_gl_formatted[[u]][[t]] %>% filter(group_id == group_test)
+## * Decomposition ----
+
+### Plot the change from raw data to truncated and decomposed
+
+decomposition_plots <- list()
+
+for ( i in seq_along(scenario_ab_gl_formatted)) {
+
+group_raw <- scenario_ab_gl_formatted[[i]][[r]] %>% 
+             filter(group_id == example_group[[i]]) %>% 
+             mutate(data_processing_level = "1 - raw for single replicate")
 
 # Decomposed abundance
 
-group_decomposed <- scenario_decomposed[[u]][[t]] %>% filter(group_id == group_test)
+group_decomposed <- scenario_decomposed[[i]][[r]] %>% 
+                    filter(group_id == example_group[[i]]) %>% 
+                    mutate(data_processing_level = "2 - 80th percentile & decomposed for single replicate")
 
+plot_data <- rbind(group_raw, group_decomposed)
 
-# Compare to averaged (not smoothed)
-group_averaged <- scenario_averaged[[u]] %>%  filter(group_id == group_test)
-
-# Compare to averaged and false extinctions gone
-group_averaged_2 <- scenario_remove_false_extinctions_2[[u]] %>%  filter(group_id == group_test)
-
-# Look at a group in smoothed
-
-group_smoothed <- scenario_smoothed_abundance[[u]] %>%  filter(group_id == group_test)
-
-
-ggplot() +
-  # geom_point(data = group_raw, aes(x = monthly_time_step, y = abundance),
-  #            alpha = 0.5, col = "pink") +
-  geom_point(data = group_decomposed, aes(x = monthly_time_step, y = abundance),
-             alpha = 0.5, col = "light blue") +
-  geom_line(data = group_averaged, aes(x = monthly_time_step, y = abundance),
-            col = "purple") +
-  # geom_line(data = group_averaged_2, aes(x = monthly_time_step, y = abundance),
-  #           col = "red") +
-  geom_line(data = group_smoothed, aes(x = monthly_time_step, y = ave_abundance),
-            col = "yellow") +
+decomposition_plots[[i]] <- ggplot(data = plot_data, aes(x = monthly_time_step, 
+                                                         y = abundance,
+                                                         col = data_processing_level)) +
+  geom_point() +
+  scale_color_manual(values = c("light blue", "pink")) +
   theme(panel.grid.major = element_line(linetype = "blank"), 
         panel.grid.minor = element_line(linetype = "blank"), 
         panel.background = element_rect(fill = "gray49"),
         axis.text.y=element_blank(),
-        axis.ticks.y=element_blank())
+        axis.ticks.y=element_blank(),
+        legend.position = "bottom") +
+  labs(title = scenarios[[i]])
+
+rm(group_raw, group_decomposed, plot_data)
+
+}
+
+decomposition_plots[[1]]
+decomposition_plots[[2]]
+decomposition_plots[[3]]
+decomposition_plots[[4]]
+
+## * Smoothing ----
+
+smoothing_plots <- list()
+
+for ( i in seq_along(scenario_averaged)) {
+  
+  group_decomposed <- scenario_decomposed[[i]][[r]] %>% 
+    filter(group_id == example_group[[i]]) %>% 
+    mutate(data_processing_level = "2 - 80th percentile & decomposed for one replicate")
+  
+  # Compare to averaged (not smoothed)
+  group_averaged <- scenario_averaged[[i]] %>% 
+    filter(group_id == example_group[[i]]) %>% 
+    mutate(data_processing_level = "3 - Averaged across replicates")
+  
+  # Compare to averaged and false extinctions gone
+  group_smoothed <- scenario_smoothed_abundance[[i]] %>% 
+    filter(group_id == example_group[[i]]) %>% 
+    mutate(data_processing_level = "4 - Smoothed over five year rollin window") %>% 
+    dplyr::select(-abundance) %>% 
+    rename(abundance = ave_abundance)
+  
+  plot_data <- rbind(group_decomposed, group_averaged, group_smoothed)
+
+  smoothing_plots[[i]] <-  ggplot() +
+    geom_point(data = plot_data, aes(x = monthly_time_step, 
+                                     y = abundance,
+                                     col = data_processing_level),
+               alpha = 0.2) +
+    scale_color_manual(values = c("light blue", "purple", "yellow")) +
+    theme(panel.grid.major = element_line(linetype = "blank"), 
+          panel.grid.minor = element_line(linetype = "blank"), 
+          panel.background = element_rect(fill = "gray49"),
+          axis.text.y=element_blank(),
+          axis.ticks.y=element_blank(),
+          legend.position = "bottom") +
+    labs(title = scenarios[[i]])
+  
+  
+  rm(group_smoothed, group_averaged, plot_data, group_decomposed)
+  
+}
+
+smoothing_plots[[1]]
+smoothing_plots[[2]]
+smoothing_plots[[3]]
+smoothing_plots[[4]]
 
 # Smooth auto abundance
 
@@ -1918,6 +2051,414 @@ for (i in seq_along(scenario_auto_averaged)) {
 
 check <- scenario_smoothed_auto_abundance[[1]]
 head(check)
+
+# Take a random sample of 5 replicates ----
+
+scenario_ab_gl_formatted_5 <- list()
+#scenario_auto_long_5 <- list()
+
+for (i in seq_along(scenario_ab_gl_formatted)) {
+
+  replicates <- scenario_ab_gl_formatted[[i]]
+  #replicates_auto <- scenario_auto[[i]]
+
+  set.seed(159)
+
+  scenario_ab_gl_formatted_5[[i]] <- sample(scenario_ab_gl_formatted[[i]], 5)
+  #scenario_auto_long_5[[i]] <- sample(scenario_auto[[i]], 5) # Will this sample the same reps??
+
+}
+
+
+# Truncate and decompose trends ----
+
+scenario_decomposed_5 <- list()
+#scenario_auto_decomposed <- list()
+
+for (i in seq_along(scenario_ab_gl_formatted_5)) {
+  
+  # Heterotrophs
+  
+  # Get reps for one scenario
+  
+  replicates <- scenario_ab_gl_formatted_5[[i]]
+  
+  replicates_decomposed <- list()
+  
+  for (j in seq_along(replicates)) {
+    
+    replicate <- replicates[[j]]
+    
+    # Remove groups with no abundance
+    
+    replicate <- replicate %>% 
+      group_by(group_id) %>% 
+      filter(!all(is.na(abundance)))
+    
+    # Split into individual groups
+    
+    rep_groups <- split(replicate, replicate$group_id)
+    
+    groups_decomposed <- list()
+    
+    for (k in seq_along(rep_groups)) {
+      
+      # Check the time series is long enough
+      
+      ts_length <- nrow(rep_groups[[k]] %>% filter(abundance > 0))
+      
+      # If not, add a null element to the list
+      
+      if (ts_length < 24) {
+        
+        groups_decomposed[[k]] <- NULL
+        
+      } else { #otherwise proceed
+        
+        # Get bottom and top 10% percentile limits
+        abundance_lims <- quantile(rep_groups[[k]]$abundance,
+                                   probs=c(.10, .90), na.rm = TRUE)
+        
+        # ggplot(data = rep_groups[[i]], aes(x = monthly_time_step,
+        #                                   y = abundance)) +
+        #   geom_point()
+        
+        print(rep_groups[[k]]$group_id[1])
+        
+        # Decompose the seasonal and random noise from the trend using a moving
+        # average https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/decompose
+        # Chops off the first and last 5 observations
+        
+        with_vals <- rep_groups[[k]] %>%
+          mutate(abundance_0 = abundance) %>% #Save un-altered abundance
+          mutate(abundance = ifelse(abundance_0 > abundance_lims[2], NA, #Create truncated abundance
+                                    ifelse(abundance_0 < abundance_lims[1],NA,
+                                           abundance_0))) %>%
+          # If extinction has occurred replace any +ve or NA with 0
+          mutate(abundance = ifelse(true_extinction == "true extinction",
+                                    0, abundance)) %>% 
+          filter(!is.na(abundance)) %>% 
+          mutate(abundance_1 = abundance, #save truncated abundance
+                 timeseries = ts(abundance_1, frequency = 12),# convert it to timeseries obj
+                 abundance = decompose(timeseries)$trend) # make decomposed trend the abundance variable
+        
+        without_vals <- rep_groups[[k]] %>%
+          mutate(abundance_0 = abundance) %>% #Save un-altered abundance
+          mutate(abundance = ifelse(abundance_0 > abundance_lims[2], NA,
+                                    ifelse(abundance_0 < abundance_lims[1],NA,
+                                           abundance_0))) %>%
+          filter(is.na(abundance)) %>% 
+          mutate(abundance_1 = abundance,
+                 timeseries = NA,
+                 abundance = abundance_1)
+        
+        
+        groups_decomposed[[k]] <- rbind(with_vals, without_vals) %>% 
+          arrange(monthly_time_step) %>%                         
+          slice(-1) %>% # Make sure we have exactly 3600 timesteps
+          slice(1:3600) %>% 
+          mutate(annual_time_step = rep(1:300, each = 12)) %>% # Add annual timestep
+          arrange(monthly_time_step) 
+        
+        # ggplot(data = x, aes(x = monthly_time_step,
+        #                                    y = abundance)) +
+        #   geom_point()
+        
+      }
+    }
+    
+    #clear out null elements
+    
+    groups_decomposed <- list.clean(groups_decomposed)
+    
+    # Bind and add to list
+    
+    df <- do.call(rbind, groups_decomposed)
+    
+    replicates_decomposed[[j]] <- df
+    
+  }
+  
+  scenario_decomposed_5[[i]] <- replicates_decomposed
+  
+  print(paste(scenarios[[i]], "replicates decomposed"))
+  
+  rm(replicate, replicates_decomposed, groups_decomposed)
+  
+}
+
+# Average across replicates ----
+
+scenario_averaged_5 <- list()
+#scenario_auto_averaged <- list()
+
+# for (i in seq_along(scenario_ab_gl_formatted_25)) {
+
+for (i in seq_along(scenario_decomposed_5)) {
+  
+  # Heterotrophs
+  
+  # replicates <- scenario_ab_gl_formatted_25[[i]]
+  
+  replicates <- scenario_decomposed_5[[i]]
+  
+  n <- length(replicates)
+  
+  replicate_df <- do.call(rbind, replicates)
+  
+  scenario_averaged_5[[i]] <- replicate_df %>% 
+    mutate(replicate = j - 1) %>% 
+    group_by(group_id, monthly_time_step) %>% 
+    mutate(mean_abundance = mean(abundance, na.rm = TRUE),
+           # 95% CIs using this info: https://www.cyclismo.org/tutorial/R/confidence.html
+           sd = sd(abundance, na.rm = TRUE),
+           error = qt(0.975, df = n - 1) * 
+             sd/sqrt(n),
+           lower_ci = mean_abundance - error, 
+           upper_ci = mean_abundance + error,  
+           mean_gen_length = mean(generation_length_yrs, na.rm = TRUE),
+           mean_timeframe = round(mean(timeframe, na.rm = TRUE))) %>%
+    dplyr::select(-abundance, -generation_length_yrs, -timeframe,
+                  -true_extinction, - replicate, - last_abundance,
+                  -abundance_0,-abundance_1, - timeseries) %>% 
+    rename(abundance = mean_abundance,
+           generation_length_yrs = mean_gen_length,
+           timeframe = mean_timeframe) %>% 
+    distinct(.) %>% 
+    ungroup(.)
+  
+  rm(replicate_df, replicates, n)
+  
+  # #Autotrophs
+  # 
+  # auto_replicates <- scenario_auto_long[[i]]
+  # 
+  # n2 <- length(auto_replicates)
+  # 
+  # auto_replicate_df <- do.call(rbind, auto_replicates)
+  # 
+  # scenario_auto_averaged[[i]] <- auto_replicate_df %>% 
+  #   group_by(group_id, monthly_time_step) %>% 
+  #   mutate(mean_abundance = mean(abundance, na.rm = TRUE),
+  #          # 95% CIs using this info: https://www.cyclismo.org/tutorial/R/confidence.html
+  #          sd = sd(abundance, na.rm = TRUE),
+  #          error = qt(0.975, df = n2 - 1) * 
+  #            sd/sqrt(n2),
+  #          lower_ci = mean_abundance - error, 
+  #          upper_ci = mean_abundance + error) %>%
+  #   dplyr::select(-abundance, - replicate) %>% 
+  #   rename(abundance = mean_abundance) %>% 
+  #   distinct(.) %>% 
+  #   ungroup(.)
+  # 
+  # rm(auto_replicate_df, auto_replicates, n2)
+  
+  print(paste(scenarios[[i]], "replicates averaged"))
+  
+}
+
+baseline <- scenario_averaged_5[[1]]
+head(baseline)
+tail(baseline)
+any(is.nan(baseline$abundance))
+
+# Check for false extinctions
+
+## Get groups that have experienced 0 abundance
+
+# zeroes <- baseline %>% 
+#           group_by(group_id) %>% 
+#           filter(any(abundance == 0))
+# 
+# zeroes_list <- split(zeroes, zeroes$group_id)
+# 
+# b <- b+1
+# x <- zeroes_list[[b]]
+
+group_test <- "13.16.9"
+group <- baseline %>%  filter(group_id == group_test)
+head(group)
+
+# 13 has vals
+h <- h + 1
+og_abundance <- scenario_decomposed[[1]][[13]] %>% filter(group_id == group_test)
+dim(og_abundance)
+print(h)
+
+ggplot() +
+  geom_line(data = og_abundance, 
+            aes(x = monthly_time_step, y = abundance_0), col = "yellow") +
+  geom_line(data = og_abundance,
+            aes(x = monthly_time_step, y = abundance_1), alpha = 0.9, col = "light blue") +
+  geom_line(data = group, aes(x = monthly_time_step, y = abundance), col = "red") +
+  labs(title = "averaged") +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+test3 <- scenario_auto_averaged[[1]]
+head(test3)
+
+# saveRDS(scenario_averaged, file.path(indicator_outputs_folder, 
+#                                      paste(today, "scenarios_averaged.RDS")))
+
+# Remove blinking groups ----
+
+scenario_abundance_clean_5 <- list()
+
+for (i in seq_along(scenario_averaged_5)) {
+  
+  # data <- data %>% filter(group_id == "15.18.21") # For testing
+  
+  # Determine which groups were there at beginning (post burnin)
+  temp<- scenario_averaged_5[[i]] %>%
+    group_by(group_id) %>%
+    filter(abundance != is.nan(abundance)) %>%
+    filter(monthly_time_step == min(monthly_time_step)) %>%
+    mutate(first_appearance = monthly_time_step,
+           beginning = ifelse(first_appearance <= 12006,
+                              TRUE, FALSE)) %>% 
+    dplyr::select(group_id, first_appearance, beginning)
+  
+  scenario_abundance_clean_5[[i]] <- temp %>% 
+    merge(scenario_averaged[[i]]) %>% 
+    tidylog::filter(beginning == TRUE)
+  
+  rm(temp)
+}
+
+
+# Check we have the same number of species at beginning and end
+
+x1 <- scenario_abundance_clean_5[[1]] %>% filter(monthly_time_step == 12006)
+x300 <- scenario_abundance_clean_5[[1]] %>% filter(monthly_time_step == max(monthly_time_step))
+
+unique(x1$group_id) == unique(x300$group_id)
+x1x300 <- cbind(x1$group_id,x300$group_id)
+
+# Remove false extinctions from averaged vals ----
+
+scenario_remove_false_extinctions_2_5 <- list()
+
+# for (i in seq_along(scenario_averaged)) {
+#   
+#   # Identify the last time-step a species has abundance values > 0
+#   temp2 <- scenario_averaged[[i]] %>% 
+
+for (i in seq_along(scenario_abundance_clean_5)) {
+  
+  # Identify the last time-step a species has abundance values > 0
+  temp2 <- scenario_abundance_clean_5[[i]] %>%
+    group_by(group_id) %>% 
+    slice(1:3600) %>% 
+    filter(abundance > 0) %>% 
+    dplyr::select(group_id, monthly_time_step, abundance) %>% 
+    filter(monthly_time_step == max(monthly_time_step)) %>% 
+    dplyr::select(group_id, monthly_time_step) %>% 
+    rename(last_abundance = monthly_time_step) %>% 
+    ungroup()
+  
+  dim(temp2)
+  
+  # Add the year of last positive abundance number as a column to the data    
+  temp3 <- scenario_abundance_clean_5[[i]] %>% 
+    #remove existing last abundance val bc it's leftover from before averaging
+    # dplyr::select(-last_abundance) %>% 
+    merge(temp2, by = "group_id", all = TRUE)
+  
+  dim(temp3)
+  
+  rm(temp2)
+  
+  # Use the last positive abundance year and current abundance value to determine
+  # if a zero abundance is a true extinction or just a missing value (false extinction)
+  scenario_remove_false_extinctions_2_5[[i]] <- temp3 %>%
+    group_by(group_id) %>%
+    slice(1:3600) %>% 
+    mutate(true_extinction = ifelse(abundance == 0 &
+                                      monthly_time_step < last_abundance,
+                                    "false extinction",
+                                    ifelse(abundance > 0 &
+                                             monthly_time_step < last_abundance,
+                                           "not extinct",
+                                           ifelse(abundance == 0 &
+                                                    monthly_time_step >= last_abundance,
+                                                  "true extinction", "not extinct")))) %>%
+    mutate(abundance = ifelse(true_extinction == "false extinction",
+                              NA, abundance)) %>%
+    group_by(group_id) %>%
+    arrange(group_id, monthly_time_step)  %>% 
+    ungroup()
+  
+  rm(temp3)
+}
+
+x1 <- scenario_remove_false_extinctions_2[[1]] %>% 
+  filter(monthly_time_step == 12006)
+
+x300 <- scenario_remove_false_extinctions_2[[1]] %>% 
+  filter(monthly_time_step == max(monthly_time_step))
+
+dim(x1)[1] == dim(x300)[1]
+
+# # Smooth abundance ----
+
+ave_window <- 12 * 5
+
+scenario_smoothed_abundance_5 <- list()
+
+for (i in seq_along(scenario_remove_false_extinctions_2_5)) {
+  
+  group_list <- split(scenario_remove_false_extinctions_2_5[[i]], 
+                      scenario_remove_false_extinctions_2_5[[i]]$group_id)
+  
+  group_smoothed_abundance <- list()
+  
+  for (j in seq_along(group_list)) {
+    
+    group_df <- group_list[[j]]
+    
+    # check if the group has any abundance values, make it null if not
+    
+    if (sum(group_df$abundance, na.rm = TRUE) == 0) {
+      
+      group_smoothed_abundance[[j]] <- NULL
+      
+    } else {
+      
+      group_smoothed_abundance[[j]] <- group_df %>%
+        arrange(monthly_time_step) %>%
+        mutate(ave_abundance = rollapply(abundance,
+                                         ave_window,
+                                         mean,
+                                         na.rm = TRUE,
+                                         partial = TRUE,
+                                         align = "left"),
+               ave_abundance = ifelse(ave_abundance < 1,
+                                      0, ave_abundance))
+      
+      print(j)
+      
+    }
+  }
+  
+  scenario_smoothed_abundance_5[[i]]  <- do.call(rbind,
+                                               group_smoothed_abundance)
+  
+  rm(group_smoothed_abundance, group_df)
+}
+
+x1 <- scenario_smoothed_abundance_5[[1]] %>% filter(monthly_time_step == 12006)
+x300 <- scenario_smoothed_abundance_5[[1]] %>% filter(monthly_time_step == max(monthly_time_step))
+xx1 <- x1$group_id
+xx300 <- x300$group_id
+
+unique(x1$group_id) == unique(x300$group_id)
+
+# CHECKPOINT - CAN LOAD smoothed abundance here ----
+
+saveRDS(scenario_smoothed_abundance,
+        file.path(indicator_outputs_folder,
+                  paste(today, "scenario_smoothed_abundance_5.rds", sep = "_")))
 
 # RED LIST INDEX ANNUAL ----
 
@@ -2007,10 +2548,10 @@ x300 <- x %>% filter(annual_time_step == 300)
 
 scenario_auto_annual <- list()
 
-for (i in seq_along(scenario_smoothed_auto_abundance)) {
+for (i in seq_along(scenario_auto_smoothed_abundance)) {
   
-  scenario_auto_groups <- split(scenario_smoothed_auto_abundance[[i]], 
-                                scenario_smoothed_auto_abundance[[i]]$group_id)
+  scenario_auto_groups <- split(scenario_auto_smoothed_abundance[[i]], 
+                                scenario_auto_smoothed_abundance[[i]]$group_id)
   
   groups_auto_annual <- list()
   
@@ -2175,7 +2716,7 @@ test <- scenario_redlist_data_sampled[[1]]
 test_group <- test %>% filter(group_id == "11.69")
 dim(test_group) # should have 300 rows
 
-test <- scenario_redlist_data[[1]]
+test <- scenario_red_list_data[[1]]
 test_group <- test %>% filter(group_id == "11.69")
 dim(test_group) # should have 300 rows
 
@@ -2277,6 +2818,27 @@ for (i in seq_along(scenario_fg_rli_outputs)) {
 
 head(scenario_rli_outputs)[[1]]
 
+# * Get the mean abundance of all groups in each time step
+
+scenario_mean_abundance <- list()
+
+for (i in seq_along(scenario_redlist_data_sampled)) {
+
+  scenario_mean_abundance[[i]] <- scenario_redlist_data_sampled[[i]] %>% 
+  ungroup() %>% 
+  group_by(annual_time_step) %>% 
+  mutate(mean_group_abundance = mean(ave_abundance, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  dplyr::select(annual_time_step, mean_group_abundance) %>% 
+  distinct(.)
+
+  scenario_mean_abundance[[i]]$standardised_abundance <- range01(scenario_mean_abundance[[i]]$mean_group_abundance)  
+
+}
+
+x <- scenario_mean_abundance[[1]]
+x <- scenario_redlist_data_sampled[[1]]
+
 # * Plot RLI ----
 
 ## By functional group
@@ -2313,10 +2875,10 @@ for (i in seq_along(scenario_rli_outputs)) {
   scenario_rli_plots[[i]] <- plot_red_list_index(scenario_rli_outputs[[i]],
                                                  impact_start, 
                                                  impact_end,
-                                                 ci = TRUE) +
+                                                 ci = FALSE) +
                              labs(title = "Annual sampling, RLI by func. groups then averaged")
   
-  ggsave(file.path(rli_plots_folder, paste(today, scenarios[[i]], 
+  ggsave(file.path(rli_plots_folder, paste(today, scenarios[[i]],
                                            "RLI_aggregated_averaged.png",
                                            sep = "_")),
          scenario_rli_plots[[i]],  device = "png")
@@ -2698,7 +3260,7 @@ for (i in seq_along(scenario_fg_rli_outputs_5yr)) {
   
 }
 
-head(scenario_rli_outputs_5yr)[[4]]
+head(scenario_rli_outputs_5yr)[[3]]
 
 # * Plot RLI ----
 
@@ -2738,7 +3300,7 @@ for (i in seq_along(scenario_rli_outputs_5yr)) {
   scenario_rli_plots_5yr[[i]] <- plot_red_list_index(scenario_rli_outputs_5yr[[i]],
                                                  impact_start, 
                                                  impact_end,
-                                                 ci = TRUE) +
+                                                 ci = FALSE) +
     labs(title = "5yr sampling, RLI by func. groups then averaged")
   
   ggsave(file.path(rli_plots_folder, paste(today, scenarios[[i]], 
@@ -3095,6 +3657,8 @@ scenario_lpi_plots[[2]]
 scenario_lpi_plots[[3]]
 scenario_lpi_plots[[4]]
 
+dev.off()
+
 # ** Functional groups ----
 
 scenario_lpi_fg_outputs <- list()
@@ -3145,6 +3709,7 @@ scenario_fg_lpi_plots[[2]]
 scenario_fg_lpi_plots[[3]]
 scenario_fg_lpi_plots[[4]]
 
+dev.off()
 
 # ** Trophic groups ----
 
@@ -3200,8 +3765,6 @@ scenario_tg_lpi_plots[[2]]
 scenario_tg_lpi_plots[[3]]
 scenario_tg_lpi_plots[[4]]
 
-
-
 head(scenario_lpi_tg_outputs[[1]])
 
 # MODEL OUTPUTS ----
@@ -3220,8 +3783,8 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
     
     harvested <- scenario_redlist_data_sampled[[i]] %>% 
       mutate(scenario = scenarios[[i]]) %>% 
-      group_by(monthly_time_step) %>% 
-      mutate(indicator_score = sum(abundance, na.rm = TRUE),
+      group_by(annual_time_step) %>% 
+      mutate(indicator_score = sum(ave_abundance, na.rm = TRUE),
              indicator = "total abundance harvested",
              ci_lower = NA,
              ci_upper = NA,
@@ -3243,9 +3806,9 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
     harvested <- scenario_auto_sampled[[i]] %>% 
       filter(group_id == "autotrophs") %>% 
       mutate(scenario = scenarios[[i]]) %>%
-      group_by(monthly_time_step) %>% 
+      group_by(annual_time_step) %>% 
       #mutate(ab_scaled = range01(abundance),
-      mutate(indicator_score = sum(abundance, na.rm = TRUE),
+      mutate(indicator_score = sum(ave_abundance, na.rm = TRUE),
              indicator = "total abundance harvested",
              ci_lower = NA,
              ci_upper = NA,
@@ -3272,12 +3835,12 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
                group_id == "11.68")  %>% 
       mutate(scenario = scenarios[[i]]) %>% 
       ungroup(.) %>% 
-      dplyr::select(annual_time_step, abundance, scenario) %>% 
+      dplyr::select(annual_time_step, ave_abundance, scenario) %>% 
       distinct(.) %>% 
-      mutate(ab_scaled = range01(abundance)) %>% 
+      #mutate(ab_scaled = range01(abundance)) %>% 
       group_by(annual_time_step) %>% 
       #mutate(indicator_score = sum(ab_scaled, na.rm = TRUE),
-      mutate(indicator_score = sum(abundance, na.rm = TRUE),
+      mutate(indicator_score = sum(ave_abundance, na.rm = TRUE),
              indicator = "total abundance harvested",
              ci_lower = NA,
              ci_upper = NA,
@@ -3305,11 +3868,11 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
                group_id == "10.68")   %>% 
       mutate(scenario = scenarios[[i]]) %>% 
       ungroup(.) %>% 
-      dplyr::select(annual_time_step, abundance, scenario) %>% 
+      dplyr::select(annual_time_step, ave_abundance, scenario) %>% 
       distinct(.) %>% 
       #mutate(ab_scaled = range01(abundance)) %>% 
       group_by(annual_time_step) %>% 
-      mutate(indicator_score = sum(abundance, na.rm = TRUE),
+      mutate(indicator_score = sum(ave_abundance, na.rm = TRUE),
              indicator = "total abundance harvested",
              ci_lower = NA,
              ci_upper = NA,
@@ -3332,6 +3895,28 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
 data <- scenario_harvested_groups[[1]]
 head(data)
 dim(data)
+
+# * Calculate density of harvested groups ----
+
+scenario_density_harvested <- list()
+
+for (i in seq_along(scenario_harvested_groups)) {
+  
+  scenario_density_harvested[[i]] <-  scenario_harvested_groups[[i]] %>% 
+    distinct(.) %>%
+    mutate(indicator_score = indicator_score/first(indicator_score),
+           density = indicator_score/sum(indicator_score, na.rm = TRUE)) 
+}
+
+head(scenario_density_harvested[[1]])
+
+ggplot(scenario_density_harvested[[2]], aes(annual_time_step, indicator_score)) +
+  geom_point()
+
+saveRDS(scenario_density_harvested,
+        file.path(indicator_outputs_folder,
+                  paste(today, "scenario_density_harvested.rds", sep = "_")))
+
 
 # * Plot harvested groups ----
 
@@ -3397,6 +3982,7 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
     ungroup(.)
   
 }
+
 
 
 data <- scenario_fg_abundance[[2]]
