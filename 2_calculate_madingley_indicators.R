@@ -45,6 +45,7 @@ library(zoo)
 library(ggridges)
 library(cowplot)
 library(ggThemeAssist)
+library(visdat)
 
 # Functions ----
 
@@ -866,7 +867,8 @@ location <- 'Serengeti'
 # Set up output folders
 
 indicator_inputs_folder <- file.path(indicators_project, 
-                           "/Serengeti/Outputs_from_indicator_code/Indicator_inputs")
+                           "/Serengeti/Outputs_from_indicator_code/Indicator_inputs",
+                           today)
 
 if( !dir.exists( file.path(indicator_inputs_folder) ) ) {
   dir.create( file.path(indicator_inputs_folder), recursive = TRUE )
@@ -878,6 +880,15 @@ indicator_outputs_folder <- file.path(indicators_project,
 
 if( !dir.exists( file.path(indicator_outputs_folder) ) ) {
   dir.create( file.path(indicator_outputs_folder), recursive = TRUE )
+  
+}
+
+general_indicator_outputs_folder <- file.path(indicators_project, 
+                                      "/Serengeti/Outputs_from_indicator_code/Indicator_outputs/general",
+                                      today)
+
+if( !dir.exists( file.path(general_indicator_outputs_folder) ) ) {
+  dir.create( file.path(general_indicator_outputs_folder), recursive = TRUE )
   
 }
 
@@ -991,11 +1002,33 @@ for (i in seq_along(processed_scenario_paths)) {
 
 scenario_replicate_paths
 
-# Get groups ----
+# Get groups & species ----
 # Details for the virtual species or 'groups'
 # Groups file is the same for all simulations, so can just pull it from whichever directory
 
 groups <- readRDS(file.path(processed_simulation_paths[[1]][1], "groups.rds"))
+
+key <- readRDS(file.path(processed_simulation_paths[[1]][1], "species_and_groups_key.rds"))
+
+species <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_adaptor_code/map_of_life/comparable_taxa.rds")
+
+# Add group_id to species
+
+species <- species %>% 
+           merge(key, by = "species_id")
+
+# Just take the first species matched with each group id as an example
+example_species <- species %>% 
+                 group_by(group_id) %>% 
+                 slice(1) %>% 
+                 dplyr::select(group_id, common_name, accepted_name, nutrition_source,
+                                 thermoregulation, bodymass)
+
+all_species <- split(species, species$group_id)
+
+harvested_carnivore_species <- species_group_id_list[["11.68"]]
+
+harvested_herbivore_species <- species_group_id_list[[c("10.68", "10.67")]]
 
 # Get abundance ----
 
@@ -1046,6 +1079,39 @@ scenario_autotroph_raw[[i]] <- lapply(autotroph_files, readRDS)
 
 }
 scenario_autotroph_raw[[1]][[1]][1:5,1:5]
+
+# Get generation lengths ----
+
+# Get the maximum generation length for each group ID across all replicates and 
+# scenarios
+
+scenario_gen_length_dfs <- list()
+
+for (i in seq_along(scenario_generations_raw)) {
+  
+  scenario_gen_length_dfs[[i]] <- do.call(rbind, scenario_generations_raw[[i]]) %>% 
+        group_by(group_id) %>% 
+        summarise(max_gen_length = max(generation_length_yrs, na.rm = TRUE))
+    
+}
+
+gen_lengths <- do.call(rbind, scenario_gen_length_dfs) %>% 
+               group_by(group_id) %>% 
+               summarise(max_gen_length = max(max_gen_length, na.rm = TRUE))
+
+model_species <- gen_lengths %>% 
+                 merge(example_species, by = "group_id", all = TRUE) %>% 
+                 rename(modelled_gen_length_yrs = max_gen_length) %>% 
+                 mutate(matched = ifelse(is.na(modelled_gen_length_yrs),
+                                         "real spp not represented in model",
+                                         ifelse(is.na(bodymass),
+                                                "mod spp not represented in real spp list",
+                                                "model spp matches real spp"))) %>% 
+                 mutate(bodymass_grams = bodymass) %>% 
+                 dplyr::select(-bodymass)
+
+write.csv(model_species, file.path(general_indicator_outputs_folder,
+                                   paste(today, "model_species.csv", sep ="_")))
 
 # SUBSET FOR TESTING ----
 ## (optional, leave commented out to continue applying to full dataset)
