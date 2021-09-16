@@ -315,23 +315,24 @@ if( !dir.exists( file.path(analysis_plots_folder) ) ) {
 
 # Load indicator > scenario level data ----
 
-indicators_all_df <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-30_all_indicators_output_data_reps_averaged.rds")
+indicators_all_df <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/general/2021-09-13/2021-09-14_all_indicators_output_dataframe.rds")
 head(indicators_all_df)
+unique(indicators_all_df$indicator)
 
 # Indicator time series ----
 
-indicators_all_list <- split(indicators_all_df, 
+indicators_all_df_list <- split(indicators_all_df, 
                              indicators_all_df$indicator)
 
 indicator_time_series_plots <- list()
 
-for (i in seq_along(indicators_all_list)) {
+for (i in seq_along(indicators_all_df_list)) {
   
-  indicator_name <- indicators_all_list[[i]]$indicator[1]
+  indicator_name <- indicators_all_df_list[[i]]$indicator[1]
   
-  if(indicator_name == "total abundance harvested") {
+  if(indicator_name == "abundance harvested groups") {
 
-    indicator_data <- indicators_all_list[[i]] %>%
+    indicator_data <- indicators_all_df_list[[i]] %>%
                       filter(scenario != "000_Baseline") %>%
                       mutate(scenario = ifelse(scenario == "100_Land_use",
                              "1 - Land use scenario",
@@ -340,15 +341,6 @@ for (i in seq_along(indicators_all_list)) {
                              ifelse(scenario == "300_Harvesting_herbivores",
                              "3 - Herbivore harvesting scenario", NA))))
 
-    # harv <- indicator_data %>%
-    #        filter(scenario == "2 - Carnivore harvesting"|
-    #               scenario == "3 - Herbivore harvesting") %>%
-    #        mutate(indicator_score = log(indicator_score))
-    # 
-    # lu <- indicator_data %>%
-    #   filter(scenario == "1 - Land use scenario")
-    # 
-    # indicator_data <- rbind(harv, lu)
 
     indicator_time_series_plots[[i]] <- ggplot(data = indicator_data,
                                                aes(x = annual_time_step,
@@ -374,7 +366,7 @@ for (i in seq_along(indicators_all_list)) {
 
   } else {
   
-  indicator_data <- indicators_all_list[[i]] %>% 
+  indicator_data <- indicators_all_df_list[[i]] %>% 
     filter(scenario != "000_Baseline") %>% 
     mutate(scenario = ifelse(scenario == "100_Land_use",
                              "1 - Land use scenario",
@@ -400,21 +392,22 @@ indicator_time_series_plots[[i]] <- ggplot(data = indicator_data,
     annotate(x=100,y=+Inf,label="Impact start",vjust=2,geom="label",
              size = 3) +
     geom_vline(xintercept = 200, linetype = "dashed") +
-    annotate(x=200,y=+Inf,label="Impact end",vjust=2,geom="label",
-             size = 3) +
+    # annotate(x=200,y=+Inf,label="Impact end",vjust=2,geom="label",
+    #          size = 3) +
     labs(x = "Annual time step",
          y = indicator_name)
   }
 }
 
-harvested <- indicator_time_series_plots[[20]]
-RLI <- indicator_time_series_plots[[18]]
-RLI_5yr <- indicator_time_series_plots[[17]]
-LPI <- indicator_time_series_plots[[11]]
+
+RLI <- indicator_time_series_plots[[1]]
+RLI_large <- indicator_time_series_plots[[2]]
+LPI <- indicator_time_series_plots[[3]]
+harvested <- indicator_time_series_plots[[4]]
   
 
 
-fig <- plot_grid(harvested, RLI, RLI_5yr, LPI, align = "v", 
+fig <- plot_grid(harvested, RLI, RLI_large, LPI, align = "v", 
                  nrow = 4, rel_heights = c(1/4, 1/4, 1/4, 1/4))
 
 fig
@@ -426,7 +419,7 @@ ggsave(file.path(analysis_plots_folder,
 
 # Distribution histograms ----
 
-indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-08-30_all_indicators_output_data_reps_averaged_list2.rds")
+indicators_all_list <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/general/2021-09-13/2021-09-14_all_indicators_output_list.rds")
 
 # indicator_histograms <- list()
 # 
@@ -461,10 +454,10 @@ indicators_all <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/
 
 indicator_scatterplots <- list()
 
-for (i in seq_along(indicators_all)) {
+for (i in seq_along(indicators_all_list)) {
   
-  single_indicator <- indicators_all[[i]]
-  harvest_indicator <- indicators_all[[length(indicators_all)]]
+  single_indicator <- indicators_all_list[[i]]
+  harvest_indicator <- indicators_all_list[[length(indicators_all_list)]]
   
   scenario_scatterplots <- list()
   
@@ -513,32 +506,36 @@ for (i in seq_along(indicators_all)) {
   
 }
 
-names(indicator_scatterplots) <- names(indicators_all)
+names(indicator_scatterplots) <- names(indicators_all_list)
 
-indicator_scatterplots[["LPI"]][[1]]
 indicator_scatterplots[["LPI"]][[1]]
 indicator_scatterplots[["LPI"]][[2]]
 indicator_scatterplots[["LPI"]][[3]]
 indicator_scatterplots[["LPI"]][[4]]
 
-indicator_scatterplots[["RLI"]][[1]]
-indicator_scatterplots[["RLI"]][[2]]
-indicator_scatterplots[["RLI"]][[3]]
-indicator_scatterplots[["RLI"]][[4]]
+indicator_scatterplots[["RLI all"]][[1]]
+indicator_scatterplots[["RLI all"]][[2]]
+indicator_scatterplots[["RLI all"]][[3]]
+indicator_scatterplots[["RLI all"]][[4]]
+
+indicator_scatterplots[["RLI large spp"]][[1]]
+indicator_scatterplots[["RLI large spp"]][[2]]
+indicator_scatterplots[["RLI large spp"]][[3]]
+indicator_scatterplots[["RLI large spp"]][[4]]
 
 ## * Calculate correlation coefficients ----
 
 indicator_cor_scores <- list()
 
-for (i in seq_along(indicators_all)) {
+for (i in seq_along(indicators_all_list)) {
   
   # Get the indicator (all scenarios)
   
-  indicator_scenarios <- indicators_all[[i]]
+  indicator_scenarios <- indicators_all_list[[i]]
   
   print(indicator_scenarios[[1]]$indicator[1])
   
-  harvested_scenarios <- indicators_all[["total abundance harvested"]]
+  harvested_scenarios <- indicators_all_list[["abundance harvested groups"]]
   
   # Make a list to hold scenario correlation coefficients
   
@@ -580,16 +577,16 @@ correlation_dataframe <- do.call(rbind, indicator_cor_scores) %>%
 # Breakpoint analyais ----
 
 
-scenario_indicator_names <- names(indicators_all)
+scenario_indicator_names <- names(indicators_all_list)
 
 scenario_changepoint_summaries <- list()
 scenario_variance_summaries <- list()
 
-for (i in seq_along(indicators_all)) {
+for (i in seq_along(indicators_all_list)) {
 
 # Get a single indicator data
   
-single_indicator <- indicators_all[[i]]
+single_indicator <- indicators_all_list[[i]]
 
 indicator_changepoint_summaries <- list()
 indicator_variance_summaries <- list()
@@ -622,18 +619,22 @@ indicator_variance_summaries <- list()
   
   }
 
+names(indicator_changepoint_summaries) <- scenarios
+
 scenario_changepoint_summaries[[i]] <- indicator_changepoint_summaries
 scenario_variance_summaries[[i]] <- indicator_variance_summaries
 
 }
 
+names(scenario_changepoint_summaries) <- names(all_indicators_list)
 # Harvested groups
 
-i <- 1
-plot(scenario_changepoint_summaries[[20]][[i]])
-summary(scenario_changepoint_summaries[[24]][[i]])
-plot(scenario_variance_summaries[[24]][[i]])
-summary(scenario_variance_summaries[[24]][[i]])
+i <- i + 1
+plot(scenario_changepoint_summaries[["RLI large spp"]][[i]])
+summary(scenario_changepoint_summaries[["RLI all"]][[i]])
+i <- i + 1
+plot(scenario_changepoint_summaries[["LPI"]][[i]])
+summary(scenario_variance_summaries[[2]][[i]])
 
 # LPI
 plot(scenario_changepoint_summaries[[15]][[i]])
@@ -652,9 +653,8 @@ summary(scenario_variance_summaries[[23]][[i]])
 # Test strucchange ----
 library(strucchange) # Seems to only find first breakpoint?
 
-lpi_landuse <- indicators_all %>% 
-  #filter(indicator == "total abundance harvested") %>% 
-  filter(indicator == "RLI") %>%
+lpi_landuse <- indicators_all_df %>% 
+  filter(indicator == "RLI 5y all spp") %>%
   filter(scenario == "100_Land_use") 
 
 dat <- tibble(ylag0 = lpi_landuse$indicator_score,
@@ -698,7 +698,7 @@ plot(indicator_score ~ annual_time_step,
 
 # *** Fit a few different models ----
 
-term <- 300
+term <- 50
 ## Fit a smoother for Year to the data
 m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
 summary(m1$gam)
@@ -721,7 +721,7 @@ m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data =
 anova(m1$lme, m2$lme, m3$lme)
 
 # m2 looks best for our data too, lets have a look ...
-selected_mod <- m3
+selected_mod <- m2
 
 gam.check(selected_mod$gam)
 
@@ -810,7 +810,7 @@ matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
 
 # ** Carnivore harvesting scenario ----
 
-gam_inputs <- indicators_all %>% 
+gam_inputs <- indicators_all_df %>% 
   filter(indicator == "total abundance harvested") %>% 
   filter(scenario == "200_Harvesting_carnivores") 
 
@@ -849,9 +849,9 @@ anova(m1$lme, m2$lme, m3$lme)
 
 # m2 looks best for our data too, lets have a look ...
 
-plot(m2$gam, residuals = TRUE, pch = 19, cex = 0.75)
+plot(m3$gam, residuals = TRUE, pch = 19, cex = 0.75)
 
-summary(m2$gam)
+summary(m3$gam)
 
 
 # *** Plot the fitted trend ----
@@ -877,7 +877,7 @@ legend("topleft",
 
 # *** Plot the derivatives and periods of change ----
 
-m2.d <- Deriv(m2, n = timesteps)
+m2.d <- Deriv(m3, n = timesteps)
 plot(m2.d, sizer = TRUE, alpha = 0.01)
 
 # Add periods of change to time series
@@ -935,7 +935,7 @@ matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
 # ** Herbivore harvesting scenario ----
 
 gam_inputs <- indicators_all %>% 
-  filter(indicator == "total abundance harvested") %>% 
+  filter(indicator == "abundance harvested groups") %>% 
   filter(scenario == "300_Harvesting_herbivores") 
 
 ylabel <- gam_inputs$indicator[1]
@@ -1058,9 +1058,32 @@ matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
 
 # ** Land use scenario ----
 
+unique(indicators_all_df$indicator)
+
+response <- indicators_all_df %>% 
+  filter(indicator == "LPI") %>% 
+  filter(scenario == "100_Land_use") %>% 
+  dplyr::select(annual_time_step, indicator_score) %>% 
+  rename(LPI = indicator_score)
+
+predictor <- indicators_all_df %>% 
+  filter(indicator == "total abundance harvested") %>% 
+  filter(scenario == "100_Land_use") %>% 
+  dplyr::select(annual_time_step, indicator_score) %>% 
+  rename(harvested = indicator_score)
+
+gam_inputs <- response %>% 
+              merge(predictor, by = "annual_time_step") %>% 
+              mutate(LPI_scaled = scale(LPI),
+                     harvested_scaled = scale(harvested))
+
+head(gam_inputs)
+summary(gam_inputs)
+
+# Looking for trends ----
 gam_inputs <- indicators_all_df %>% 
-  filter(indicator == "RLI 5yr") %>% 
-  filter(scenario == "100_Land_use") 
+  filter(indicator == "RLI 5y all spp") %>% 
+  filter(scenario == "100_Land_use")
 
 ylabel <- gam_inputs$indicator[1]
 timesteps <- max(gam_inputs$annual_time_step)
@@ -1073,68 +1096,157 @@ plot(indicator_score ~ annual_time_step,
 
 # *** Fit a few different models ----
 
-term <- 50
-## Fit a smoother for Year to the data
-m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
-summary(m1$gam)
+## Have a look at the distribution (positively skewed)
+hist(gam_inputs$indicator_score, breaks = 20)
+hist(log(gam_inputs$indicator_score), breaks = 20)
+range(gam_inputs$indicator_score)
 
-## look at autocorrelation in residuals:
-acf(resid(m1$lme, type = "normalized"))
-## ...wait... look at the plot, only then do...
-pacf(resid(m1$lme, type = "normalized"))
-## seems like like sharp cut-off in ACF and PACF - AR terms probably best
+term <- 30
+
+## Test some different options for family and temporal autocorrelation
+
+scatmod <- gamm(indicator_score ~ s(annual_time_step, k = term), 
+           data = gam_inputs, family = "scat")
+
+summary(scatmod$gam)
+gam.check(scatmod$gam)
+
+with(gam_inputs, tsDiagGamm(scatmod, timevar = annual_time_step, 
+                            observed = indicator_score))
+
+betamod <- gamm(indicator_score ~ s(annual_time_step, k = term), 
+           data = gam_inputs, family = "betar")
+
+summary(betamod$gam)
+gam.check(betamod$gam)
+
+with(gam_inputs, tsDiagGamm(betamod, timevar = annual_time_step, 
+                            observed = indicator_score))
+
+#####
+logmod <- gamm(log(indicator_score) ~ s(annual_time_step, k = term), 
+                data = gam_inputs)
+
+summary(logmod$gam)
+gam.check(logmod$gam)
+
+with(gam_inputs, tsDiagGamm(logmod, timevar = annual_time_step, 
+                            observed = indicator_score))
+
+sqrtmod <- gamm(sqrt(indicator_score) ~ s(annual_time_step, k = term), 
+               data = gam_inputs)
+
+summary(sqrtmod$gam)
+gam.check(sqrtmod$gam)
+
+with(gam_inputs, tsDiagGamm(logmod, timevar = annual_time_step, 
+                            observed = indicator_score))
+
+binommod <- gamm(indicator_score ~ s(annual_time_step, k = term), 
+                data = gam_inputs, family = "gaulss")
+
+summary(binommod$gam)
+gam.check(binommod$gam)
+
+with(gam_inputs, tsDiagGamm(logmod, timevar = annual_time_step, 
+                            observed = indicator_score))
+#####
+
+bm <- gam(indicator_score ~s(annual_time_step, k = term),
+          family=betar(link="cauchit"),
+          data= gam_inputs)
+
+bm
+plot(bm,pages=1)
+summary(bm)
+gam.check(bm)
+
+bmm <- gamm(indicator_score ~s(annual_time_step, k = 40, bs = 'cs'),
+          family="betar",
+          data= gam_inputs)
+
+bmm
+plot(bmm$gam,pages=1)
+summary(bmm$gam)
+gam.check(bmm$gam)
 
 ## ...so fit the AR1
-m2 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
-           correlation = corARMA(form = ~ annual_time_step, p = 1))
-## ...and fit the AR2
-m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), 
-           data = gam_inputs,
-           correlation = corARMA(form = ~ annual_time_step, p = 2))
+betamodar <- gamm(indicator_score ~ s(annual_time_step,k = 50, bs = 'cs'), 
+                  data = gam_inputs,
+           correlation = corARMA(form = ~ annual_time_step, p = 2),
+           family= "betar")
+
+betamodar
+plot(betamodar$gam,pages=1)
+summary(betamodar$gam)
+gam.check(betamodar$gam)
+
+tweediemod <- gamm(indicator_score ~ s(annual_time_step, k = 50, bs = 'ts'), 
+                   data = gam_inputs,
+                  correlation = corARMA(form = ~ annual_time_step, p = 2),
+                  family= "tw")
+
+tweediemod
+plot(tweediemod$gam,pages=1)
+gam.check(tweediemod$gam)
+summary(tweediemod$gam)
+
+nullmod <- gamm(indicator_score ~ s(1), family = betar, data = gam_inputs)
 
 # *** Model selection ----
 
+## Using ANOVA
 anova(m1$lme, m2$lme, m3$lme)
+anova(bm, bmm$lme, m1$lme)
 
-# m2 looks best for our data too, lets have a look ...
+## Using AIC
+mod_sel_table <- as.data.frame(AIC(tweediemod$lme, bmm$lme, betamodar$lme))
+mod_sel_table
 
-plot(m2$gam, residuals = TRUE, pch = 19, cex = 0.75)
+# Define selected model
 
-summary(m2$gam)
+selected_mod <- tweediemod
 
+plot(selected_mod$gam, residuals = TRUE, pch = 19, cex = 0.75)
+
+summary(selected_mod$gam)
+gam.check(selected_mod$gam)
 
 # *** Plot the fitted trend ----
 
-with(gam_inputs, tsDiagGamm(m2, timevar = annual_time_step, 
-                            observed = indicator_score))
+## Only works for GAMM
+# with(gam_inputs, tsDiagGamm(m2, timevar = annual_time_step, 
+#                             observed = indicator_score))
 
-plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, 
+plot(indicator_score ~ annual_time_step, data = gam_inputs, 
      type = "p", ylab = ylabel)
 
 pdat <- with(gam_inputs,
-             data.frame(annual_time_step = seq(min(annual_time_step), 
-                                               max(annual_time_step),
-                                               length = 300)))
+             data.frame(annual_time_step = seq(5, 295, 5)))
 
-p1 <- predict(m1$gam, newdata = pdat)
-p2 <- predict(m2$gam, newdata = pdat)
-lines(p1 ~ annual_time_step, data = pdat, col = "red")
-lines(p2 ~ annual_time_step, data = pdat, col = "blue")
+# p1 <- predict(m1$gam, newdata = pdat)
+# p2 <- predict(m2$gam, newdata = pdat)
+p <- predict(selected_mod$gam, newdata = pdat, type = "response")
+p
+lines(p ~ annual_time_step, data = pdat, col = "pink")
+# lines(p1 ~ annual_time_step, data = pdat, col = "red")
+# lines(p2 ~ annual_time_step, data = pdat, col = "blue")
 legend("topleft",
        legend = c("Uncorrelated Errors","AR(1) Errors"),
        bty = "n", col = c("red","blue"), lty = 1)
 
 # *** Plot the derivatives and periods of change ----
 
-m2.d <- Deriv(m2, n = 300)
+m2.d <- Deriv(selected_mod, n = 59)
 plot(m2.d, sizer = TRUE, alpha = 0.01)
 
 # Add periods of change to time series
 
-plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, type = "p", ylab = ylabel)
-lines(p2 ~ annual_time_step, data = pdat)
+plot(indicator_score ~ annual_time_step, data = gam_inputs, 
+     type = "p", ylab = ylabel)
+lines(p ~ annual_time_step, data = pdat)
 CI <- confint(m2.d, alpha = 0.01)
-S <- signifD(p2, m2.d$annual_time_step$deriv, 
+S <- signifD(p, m2.d$annual_time_step$deriv, 
              CI$annual_time_step$upper, 
              CI$annual_time_step$lower,
              eval = 0)
@@ -1144,7 +1256,7 @@ lines(S$decr ~ annual_time_step, data = pdat, lwd = 3, col = "red")
 
 deriv_plot <- ggplot() +
   geom_point(data = gam_inputs,
-             aes(x = annual_time_step, y = log(indicator_score)),
+             aes(x = annual_time_step, y = indicator_score),
              alpha = 0.3) +
   geom_line(aes(x = gam_inputs$annual_time_step,
                 y = p2)) +
@@ -1180,7 +1292,7 @@ matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
 # ** Carnivore harvesting scenario ----
 
 gam_inputs <- indicators_all %>% 
-  filter(indicator == "total abundance harvested") %>% 
+  filter(indicator == "abundance harvested groups") %>% 
   filter(scenario == "200_Harvesting_carnivores") 
 
 ylabel <- gam_inputs$indicator[1]
@@ -1303,7 +1415,7 @@ matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
 # ** Herbivore harvesting scenario ----
 
 gam_inputs <- indicators_all %>% 
-  filter(indicator == "total abundance harvested") %>% 
+  filter(indicator == "abundance harvested groups") %>% 
   filter(scenario == "300_Harvesting_herbivores") 
 
 ylabel <- gam_inputs$indicator[1]
@@ -1426,7 +1538,7 @@ matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
 
 # ** Land use scenario ----
 
-gam_inputs <- indicators_all %>% 
+gam_inputs <- indicators_all_df %>% 
   filter(indicator == "LPI") %>% 
   filter(scenario == "100_Land_use") 
 
@@ -1441,7 +1553,7 @@ plot(indicator_score ~ annual_time_step,
 
 # *** Fit a few different models ----
 
-term <- 300
+term <- 100
 ## Fit a smoother for Year to the data
 m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
 summary(m1$gam)
@@ -1463,10 +1575,10 @@ m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term),
 
 # *** Model selection ----
 
-anova(m1$lme, m2$lme, m3$lme)
+anova(m1$lme, m2$lme)
 
 # m2 looks best for our data too, lets have a look ...
-selected_mod <- m3
+selected_mod <- m2
 
 plot(selected_mod$gam, residuals = TRUE, pch = 19, cex = 0.75)
 
@@ -1551,9 +1663,10 @@ plot(log(indicator_score) ~ annual_time_step, data = gam_inputs,
 matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
 
 # ** Carnivore harvesting scenario ----
+unique(indicators_all_df$indicator)
 
-gam_inputs <- indicators_all %>% 
-  filter(indicator == "total abundance harvested") %>% 
+gam_inputs <- indicators_all_df %>% 
+  filter(indicator == "LPI") %>% 
   filter(scenario == "200_Harvesting_carnivores") 
 
 ylabel <- gam_inputs$indicator[1]
@@ -1567,7 +1680,7 @@ plot(indicator_score ~ annual_time_step,
 
 # *** Fit a few different models ----
 
-term <- 200
+term <- 250
 ## Fit a smoother for Year to the data
 m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
 summary(m1$gam)
@@ -1593,7 +1706,7 @@ m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data =
 anova(m1$lme, m2$lme, m3$lme)
 
 # m2 looks best for our data too, lets have a look ...
-m2 <- m1
+m2 <- m2
 
 plot(m2$gam, residuals = TRUE, pch = 19, cex = 0.75)
 
@@ -1603,7 +1716,8 @@ gam.check(m2$gam)
 
 # *** Plot the fitted trend ----
 
-with(gam_inputs, tsDiagGamm(m2, timevar = annual_time_step, 
+with(gam_inputs, tsDiagGamm(m2, 
+                            timevar = annual_time_step, 
                             observed = indicator_score))
 
 plot(log(indicator_score) ~ annual_time_step, data = gam_inputs, 
@@ -1678,8 +1792,8 @@ matlines(pdat$annual_time_step, sim1[,want], col = "black", lty = 1, pch = NA)
 
 # ** Herbivore harvesting scenario ----
 
-gam_inputs <- indicators_all %>% 
-  filter(indicator == "total abundance harvested") %>% 
+gam_inputs <- indicators_all_df %>% 
+  filter(indicator == "LPI") %>% 
   filter(scenario == "300_Harvesting_herbivores") 
 
 ylabel <- gam_inputs$indicator[1]
@@ -1693,7 +1807,7 @@ plot(indicator_score ~ annual_time_step,
 
 # *** Fit a few different models ----
 
-term <- 250
+term <- 300
 ## Fit a smoother for Year to the data
 m1 <- gamm(log(indicator_score+ 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs)
 summary(m1$gam)
@@ -1705,10 +1819,12 @@ pacf(resid(m1$lme, type = "normalized"))
 ## seems like like sharp cut-off in ACF and PACF - AR terms probably best
 
 ## ...so fit the AR1
-m2 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+m2 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), 
+           data = gam_inputs,
            correlation = corARMA(form = ~ annual_time_step, p = 1))
 ## ...and fit the AR2
-m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data = gam_inputs,
+m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), 
+           data = gam_inputs,
            correlation = corARMA(form = ~ annual_time_step, p = 2))
 
 # *** Model selection ----
@@ -1716,6 +1832,8 @@ m3 <- gamm(log(indicator_score + 0.0001) ~ s(annual_time_step, k = term), data =
 anova(m1$lme, m2$lme, m3$lme)
 
 # m2 looks best for our data too, lets have a look ...
+
+m2 <- m3
 
 plot(m2$gam, residuals = TRUE, pch = 19, cex = 0.75)
 
