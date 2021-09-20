@@ -22,13 +22,17 @@ get_species_in_domain <- function(range_map, domain, class_name = NA) {
   
   # Standardise the data so we can add it to the species data easily
   
-  if (class_name == "bird") {
+  if (class_name == "Birds") {
     
     species_in_domain <- ranges_domain %>%
-      dplyr::select(-Shape, PRESENCE) %>%
+      dplyr::select(-PRESENCE) %>%
       rename(Scientific.Name = SCINAME,
              id_no = SISID) %>%
-      mutate(source = "birdlife_international") 
+      mutate(source = "birdlife_international",
+             Taxonomic.Group = class_name,
+             Family = NA,
+             Common.Name = NA) %>% 
+      select(Scientific.Name, Common.Name, Family, Taxonomic.Group, source)
     
   } else {
     
@@ -36,11 +40,11 @@ get_species_in_domain <- function(range_map, domain, class_name = NA) {
                                             dplyr::select(binomial, 
                                                           class, family)) %>%
       mutate(source = "iucn_redlist",
-             family = tolower(family),
+             family = str_to_title(family),
              Common.Name = NA) %>% 
       rename(Scientific.Name = binomial,
              Family = family,
-             Taxonomic.Group = class) %>% 
+             Taxonomic.Group = class_name) %>% 
       select(Scientific.Name, Common.Name, Family, Taxonomic.Group, source)
     
   }
@@ -51,10 +55,20 @@ get_species_in_domain <- function(range_map, domain, class_name = NA) {
 
 # Make domain polygon ----
 
-## Get africa for reference
+## read in the coords
+
+coords_df <- read.csv("N:\\Quantitative-Ecology\\Indicators-Project\\Serengeti\\Inputs_to_adaptor_code\\Madingley_simulation_outputs\\100_Land_use\\101_BuildModel\\landuse_1012019-12-12_8.47.41\\SpecificLocations.csv")
 
 coords_sf <- st_as_sf(x = coords_df, #update here
                     coords = c("Longitude", "Latitude"))
+
+## Get species crs info
+
+amphibian_rangemap_dir <- file.path(species_inputs, "redlist_amphibian_range_maps")
+
+# Read in the range map
+
+amphibian_ranges <- st_read(amphibian_rangemap_dir)
 
 # Check if the CRS is projected (will be FALSE or NA)
 st_is_longlat(coords_sf)
@@ -98,17 +112,11 @@ st_write(countries ,file.path(outputs, "kenya_tanzania.shp"))
 
 # * Amphibians ----
 
-  amphibian_rangemap_dir <- file.path(inputs, "redlist_amphibian_range_maps")
-  
-  # Read in the range map
-  
-  amphibian_ranges <- st_read(amphibian_rangemap_dir)
-  
   # Remove unnecessary columns as well
   
   amphibians <- get_species_in_domain(amphibian_ranges, 
                                       study_site_sf,
-                                      "amphibian")
+                                      "Amphibians")
   
   amphibians$Taxonomic.Group <- tolower(amphibians$Taxonomic.Group)
   
@@ -116,7 +124,7 @@ st_write(countries ,file.path(outputs, "kenya_tanzania.shp"))
   
   # * Mammals ----
 
-  mammal_rangemap_dir <- file.path(inputs, "redlist_mammal_range_maps")
+  mammal_rangemap_dir <- file.path(species_inputs, "redlist_mammal_range_maps")
   
   # Read in the rangemap
   
@@ -124,7 +132,7 @@ st_write(countries ,file.path(outputs, "kenya_tanzania.shp"))
   
   mammals <- get_species_in_domain(mammal_ranges, 
                         study_site_sf,
-                        "mammals")
+                        "Mammals")
   
   rm(mammal_ranges)
   
@@ -134,65 +142,11 @@ st_write(countries ,file.path(outputs, "kenya_tanzania.shp"))
   
   write.csv(mammals, file.path(outputs, "serengeti_mammals_df.csv"))
   
-# * Birds ----
-
-  class <- "birds"
-
-## Note that bird maps come from birdlife international, not iucn, so
-## they are stored in a geodatabase with slightly different geometry types, so
-## require a couple of extra steps to process
-
-  bird_rangemap_dir <- file.path(inputs, "birdlife_avian_range_maps","BOTW.gdb")
-  
-  # Read in the rangemap
-  
-  bird_ranges <- st_read(bird_rangemap_dir, layer = "All_Species")
-  
-  # Remove unneccessary columns 
-  
-  bird_ranges <- bird_ranges %>%
-    select(SISID,
-           SCINAME, 
-           PRESENCE, 
-           Shape)
-  
-  # bird_ranges contains both multipolygon and multisurface
-  # geometry types, which means other st functions won't work.
-  
-  # Get only multisurface geoms
-  #' TODO: Figure out how to recast these to multipolygons
-  
-  # bird_ranges_ms <- bird_ranges %>%
-  #   filter(st_geometry_type(Shape) == "MULTISURFACE")
-  
-  # Get only multipolygon geoms
-  
-  bird_ranges <- bird_ranges %>%
-                 filter(st_geometry_type(Shape) == "MULTIPOLYGON")
-  
-  
-  birds <- get_species_in_domain(bird_ranges, 
-                        study_site_sf, "bird")
-  
-  rm(bird_ranges)
-  
-  st_write(birds, file.path(outputs, "serengeti_birds_spatial.shp"))
-  
-  birds_df <- birds %>% 
-              dplyr::select(-Shape, -PRESENCE) %>% 
-              mutate(class = "AVES") %>% 
-              dplyr::select(id_no, binomial, class, source) %>% 
-              st_drop_geometry()
-  
-  
-  head(birds_df)
-  
-  write.csv(birds_df, file.path(outputs, "serengeti_birds_df.csv"))
- 
-
 # * Reptiles ----
+  
+  ## Don't need to worry about processing the points bc none are in the serengeti
 
-  reptile_rangemap_dir <- file.path(inputs, "redlist_reptile_range_maps")
+  reptile_rangemap_dir <- file.path(species_inputs, "redlist_reptile_range_maps")
   
   # Read in the rangemap
   
@@ -201,39 +155,66 @@ st_write(countries ,file.path(outputs, "kenya_tanzania.shp"))
 
   reptiles <- get_species_in_domain(reptile_ranges, 
                                     study_site_sf,
-                                    "reptile")
+                                    "Reptiles")
   
   rm(reptile_ranges)
   
-  # Add in the point data
-  
-  reptile_points <- read.csv(file.path(inputs, "redlist_reptile_range_maps",
-                                       "REPTILES_points.csv"))
-  # Select necessary columns
-  
-  reptile_points <- reptile_points %>%
-    dplyr::select(binomial, latitude, longitude, category) 
-  
-  # Convert to sf object and set crs
-  
-  reptile_points_sf <- st_as_sf(reptile_points, coords = c('longitude', 
-                                                           'latitude'), 
-                                crs = st_crs(study_site_sf))
-  
-  # Get ecoregions the points fall within
-  
-  reptile_points <- st_intersection(reptile_points_sf, 
-                                           study_site_sf,
-                                           "reptile")
-  nrow(reptile_points)
-  
-  
-  st_write(reptiles, file.path(outputs, "serengeti_reptiles_spatial.shp"))
+   st_write(reptiles, file.path(outputs, "serengeti_reptiles_spatial.shp"))
   
   reptiles_df <- reptiles %>% 
     dplyr::select(-geometry)
   
   write.csv(reptiles_df, file.path(outputs, "serengeti_reptiles_df.csv"))
+  
+  
+  # * Birds ----
+  
+  ## Note that bird maps come from birdlife international, not iucn, so
+  ## they are stored in a geodatabase with slightly different geometry types, so
+  ## require a couple of extra steps to process
+  
+  bird_rangemap_dir <- file.path(species_inputs, "birdlife_avian_range_maps","BOTW.gdb")
+
+## WARNING SLOW CODE - bird ranges are huge, take ages to load
+  
+# Read in the rangemap
+  
+bird_ranges <- st_read(bird_rangemap_dir, layer = "All_Species")
+  
+names(bird_ranges)
+
+# Get only the columns we need
+  
+bird_ranges <- bird_ranges %>%
+               select(SISID,
+                     SCINAME, 
+                     PRESENCE, 
+                     Shape)
+            
+# bird_ranges contains both multipolygon and multisurface
+# geometry types, which alot of sf functions don't like
+  
+# Get only multipolygon geoms bc don't know how to intersect the multisurface geoms
+  
+bird_ranges <- bird_ranges %>%
+               filter(st_geometry_type(Shape) == "MULTIPOLYGON")
+  
+## WARNING  - SLOW CODE - takes like an hour, so annoying
+  
+birds <- get_species_in_domain(bird_ranges, 
+                                 study_site_sf, "Birds")
+  
+rm(bird_ranges)
+  
+birds_df <- birds %>% 
+            st_drop_geometry() %>% 
+            distinct(.)
+  
+  
+head(birds_df)
+  
+write.csv(birds_df, file.path(outputs, "serengeti_birds_df.csv"))
+  
 
 # Consolidate species list ----
   
@@ -248,6 +229,8 @@ serengeti_mol_species_list <- read.csv("N:/Quantitative-Ecology/Indicators-Proje
 
 serengeti_mol_species_list <- serengeti_mol_species_list %>% 
                               mutate(source = "map of life")
+
+unique(serengeti_mol_species_list$Taxonomic.Group)
 
 # Combine sources
 
