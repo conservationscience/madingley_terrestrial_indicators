@@ -1,0 +1,724 @@
+---
+title: "Analyse terrestrial indicators"
+author: "Simone Stevenson"
+date: "20/09/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+Directory path to git repo
+
+Simone's deakin laptop
+
+cd "C:\\Users\\ssteven\\OneDrive - Deakin University\\Deakin\\Chapter_3_indicator_testing\\madingley_terrestrial_indicators"
+
+Data structure
+
+Input data is structured hierarchically as follows:
+- Location (1)
+-- Scenarios (3)
+--- Replicates (25)
+
+Output indicator data is calculated at the same level, so each indicator should
+have values for:
+- Location (1)
+-- Scenarios (3)
+--- Replicates (25)
+
+```{r libraries}
+
+## Data wrangling
+library(tidyverse)
+library(tidylog)
+
+## Analysis
+library(mgcv)
+library(nlme)
+library(changepoint)
+library(MASS)
+library(strucchange)
+library(datawizard)
+#devtools::install_github("saskiaotto/INDperform")
+library(INDperform)
+
+## Viz
+library(ggpubr)
+library(cowplot)
+library(gridExtra)
+
+```
+
+```{r functions, echo=FALSE}
+
+#' Description
+
+#' @param 
+#' @param 
+#' @param 
+#' @return 
+
+function_name <- function(param){
+
+}
+
+```
+
+```{r template chunk }
+
+```
+
+```{r data }
+
+# Set up paths ----
+
+location <- 'Serengeti'
+
+indicators_project <- "N:/Quantitative-Ecology/Indicators-Project"
+
+# Analysis inputs are the outputs of 2_calculate_madingley_indicators.R
+
+analysis_inputs <- "N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/general/"
+
+# Inputs ----
+
+# Specify the date of inputs you want to use
+
+input_date <- "2021-09-18"
+
+# Get date to label outputs
+
+output_date <- Sys.Date() 
+
+scenarios_lower_case <- list("baseline", "land use", 
+                  "carnivore harvesting", 
+                  "herbivore harvesting")
+
+disturbance_string <- c("pre-disturbance", "disturbance", "post-disturbance")
+
+disturbance_factor <- factor(disturbance_string, ordered = TRUE,
+                              levels = c("pre-disturbance", 
+                                         "disturbance", 
+                                         "post-disturbance"))
+
+# Set up output folders
+
+## Include a folder to store the version of inputs used to get the outputs
+
+analysis_inputs_folder <- file.path(indicators_project,  
+                           "/Serengeti/Outputs_from_analysis_code/Analysis_inputs",
+                           output_date)
+
+if( !dir.exists( file.path(analysis_inputs_folder) ) ) {
+  dir.create( file.path(analysis_inputs_folder), recursive = TRUE )
+  
+}
+
+analysis_outputs_folder <- file.path(indicators_project, 
+                                     "/Serengeti/Outputs_from_analysis_code/Analysis_outputs",
+                                     output_date)
+
+if( !dir.exists( file.path(analysis_outputs_folder) ) ) {
+  dir.create( file.path(analysis_outputs_folder), recursive = TRUE )
+  
+}
+
+analysis_plots_folder <- file.path(indicators_project, 
+                                     "/Serengeti/Outputs_from_analysis_code/Analysis_plots_folder",
+                                   output_date)
+
+if( !dir.exists( file.path(analysis_plots_folder) ) ) {
+  dir.create( file.path(analysis_plots_folder), recursive = TRUE )
+  
+}
+
+# Load indicator > scenario level data ----
+
+indicators_all_df <- readRDS(file.path(analysis_inputs, input_date, paste(input_date, "all_indicators_output_dataframe.rds", sep = "_")))
+
+indicators_all_list <- flatten(readRDS(file.path(analysis_inputs, input_date, paste(input_date, "all_indicators_output_list.rds", sep = "_"))))
+
+# Split into a list of scenarios then indicators
+
+scenario_indicators <- split(indicators_all_df, indicators_all_df$scenario)
+
+# Or vice versa
+
+indicator_scenarios <- split(indicators_all_df, indicators_all_df$indicator)
+
+# Make a test df for building loop content
+
+test_df <- scenario_indicators[[2]] %>% 
+           filter(indicator == "LPI")
+
+# Get list of indicators
+
+indicators <- unique(indicators_all_df$indicator)
+
+# Get list of scenarios
+
+scenarios <- unique(indicators_all_df$scenario)
+
+# Save a copy of the inputs used to create outputs
+
+write.csv(indicators_all_df, file.path(analysis_inputs_folder,
+                                       paste(output_date, "input_data.csv",
+                                             sep = "_")))
+
+```
+
+```{r standardise difference variance}
+
+# Standardize & difference the data as per Bestelmeyer 2011
+
+indicators_all_df <- indicators_all_df %>% 
+                     group_by(indicator, scenario) %>% 
+                     mutate(indicator_score_std = standardize(indicator_score),
+                            indicator_score_diff = indicator_score_std - 
+                             lag(indicator_score_std, default = 0)) %>% 
+                     mutate(variance = rollapply(indicator_score_diff,
+                               10,
+                               var,
+                               na.rm = TRUE,
+                               partial = TRUE,
+                               align = "left")) %>%
+                     ungroup(.)
+
+
+test_output <- indicators_all_df %>%
+               filter(scenario == "100_Land_use" &
+                      indicator == "RLI annual")
+
+raw <- ggplot(test_output, aes(annual_time_step, indicator_score)) +
+  geom_line() 
+
+standardized <- ggplot(test_output, aes(annual_time_step, indicator_score_std)) +
+  geom_line(col = "deeppink")
+
+differenced <- ggplot(test_output, aes(annual_time_step, indicator_score_diff)) +
+  geom_line(col = "green")
+
+variance <- ggplot() +
+  geom_point(data = test_output, aes(annual_time_step, variance),
+             col = "purple") +
+  geom_line(data = test_output, aes(annual_time_step, indicator_score_diff),
+            col = "green") +
+  geom_line(data = test_output, aes(annual_time_step, indicator_score_std),
+            col = "deeppink")
+
+raw
+standardized
+differenced
+variance
+
+# Make list again with new variables
+
+scenario_indicators <- split(indicators_all_df, indicators_all_df$scenario)
+
+```
+
+```{r visualise, warning = FALSE }
+
+# Visualise smoothed time series using loess as in Bestelmeyer 2011
+
+# http://r-statistics.co/Loess-Regression-With-R.html
+
+loess_plots_1 <- list()
+
+for ( i in seq_along(scenario_indicators)) {
+  
+  # Get a list of indicator outputs for a single scenario
+  single_scenario <- split(scenario_indicators[[i]], 
+                           scenario_indicators[[i]]$indicator)
+  
+  scenario <- single_scenario[[1]]$scenario[1]
+  
+  indicators <- names(single_scenario)
+  
+  indicator_plots <- list()
+  
+  for (j in seq_along(single_scenario)) {
+  
+  # Get the scenario
+  
+  indicator <- single_scenario[[j]]$indicator[1]
+
+
+loessMod10 <- loess(indicator_score_std ~ annual_time_step, 
+                    data = single_scenario[[j]], span=0.10) # 10% smoothing span
+loessMod25 <- loess(indicator_score_std ~ annual_time_step, 
+                    data = single_scenario[[j]], span=0.25) # 25% smoothing span
+loessMod50 <- loess(indicator_score_std ~ annual_time_step, 
+                    data = single_scenario[[j]], span=0.50) # 50% smoothing span
+
+# get smoothed output
+smoothed10 <- as.data.frame(cbind(annual_time_step = single_scenario[[j]]$annual_time_step, 
+                            indicator_score_loess = predict(loessMod10))) 
+
+smoothed25 <-  as.data.frame(cbind(annual_time_step = single_scenario[[j]]$annual_time_step, 
+                            indicator_score_loess = predict(loessMod25)))
+
+smoothed50 <-  as.data.frame(cbind(annual_time_step = single_scenario[[j]]$annual_time_step, 
+                            indicator_score_loess = predict(loessMod50)))
+
+indicator_plots[[j]] <- ggplot() +
+  geom_point(data = single_scenario[[j]], aes(annual_time_step, 
+                                              indicator_score_std),
+             alpha = 0.2) +
+  geom_line(data = smoothed10, aes(x = annual_time_step, y = indicator_score_loess), col = "red") + theme(axis.text = element_text(size = 2),
+    axis.text.x = element_text(size = 1),
+    axis.text.y = element_text(size = 1)) +
+  geom_line(data = smoothed25, aes(annual_time_step, indicator_score_loess), col = "green") +
+  geom_line(data = smoothed50, aes(annual_time_step, indicator_score_loess), col = "blue") +
+  labs(title = indicator,
+       x = "Annual time step",
+       y = "Indicator") 
+
+  }
+  
+  title <- ggdraw() + draw_label(scenario)
+  
+  loess_plots_1[[i]] <- plot_grid(title,
+                                                     indicator_plots[[1]],
+                                                     indicator_plots[[2]],
+                                                     indicator_plots[[3]],
+                                                     indicator_plots[[4]],
+                                                     indicator_plots[[5]],
+                                                     nrow = 2, align = "v")
+rm(indicator_plots, indicator)
+
+}
+loess_plots_1[[1]]
+loess_plots_1[[2]]
+loess_plots_1[[3]]
+loess_plots_1[[4]]
+
+```
+
+
+```{r breakpoints }
+# https://www.marinedatascience.co/blog/2019/09/28/comparison-of-change-point-detection-methods/
+
+# https://kevin-kotze.gitlab.io/tsm/ts-2-tut/
+## Using the changepoint package
+
+### NOTE: Changepoint doesn't find anything if we used differenced values
+### but does if we just use normal values
+# i <- i + 1
+# data <- indicators_all_df %>% 
+#         filter(scenario == "300_Harvesting_herbivores" &
+#                indicator == indicators[i]) %>% 
+#         mutate(lag_indicator_score_diff = lag(indicator_score_std, 1))
+# 
+# print(data$scenario[1])
+# print(data$indicator[1])
+# m_binseg <- cpt.mean(data$indicator_score_diff, penalty = "BIC", method = "BinSeg", Q = 5)
+# plot(m_binseg, type = "l", xlab = "Index", cpt.width = 4, 
+#      main = paste(data$scenario[1], data$indicator[1], sep = " "))
+# 
+# # Using the strucchange package - think it only identifies one break??
+# ## Another tutorial https://datascienceplus.com/structural-changes-in-global-warming/
+# 
+# 
+# head(data)
+# 
+# i <- i + 1
+# data <- indicators_all_df %>% 
+#         filter(scenario == "300_Harvesting_herbivores" &
+#                indicator == indicators[i]) %>% 
+#         mutate(lag_indicator_score_diff = lag(indicator_score_diff, 1))
+# 
+# data2 <- data[-1,]
+# print(data2$indicator[1])
+# qlr <- Fstats(lag_indicator_score_diff ~ indicator_score_diff, data = data2)
+# breakpoints(qlr)
+# summary(qlr)
+# sctest(qlr, type = "supF")
+# plot(qlr)
+
+```
+
+```{r frequency distribution }
+
+# Visualise the frequnecy distribution and density of indicators as in Bestelmeyer 2011
+
+distribution_plots_1 <- list()
+
+for (i in seq_along(scenario_indicators)) {
+  
+  # Get a list of indicator outputs for a single scenario
+  single_scenario <- split(scenario_indicators[[i]], 
+                           scenario_indicators[[i]]$indicator)
+  
+  scenario <- single_scenario[[1]]$scenario[1]
+  
+  indicator_plots <- list()
+  
+  for (j in seq_along(single_scenario)) {
+  
+  # Get the indicator name
+  
+  indicator <- single_scenario[[j]]$indicator[1]
+
+
+indicator_plots[[j]] <- ggplot(data = single_scenario[[j]], 
+                               aes(indicator_score_std)) +
+  geom_histogram(aes(y = ..density..), colour="black", fill="white") +
+  geom_density(alpha = 0.2, fill = "hotpink") + 
+  theme(axis.text = element_text(size = 2),
+    axis.text.x = element_text(size = 1),
+    axis.text.y = element_text(size = 1)) +
+  labs(title = indicator,
+       x = "Indicator score",
+       y = "Density") 
+
+  }
+  
+  title <- ggdraw() + draw_label(scenario)
+  
+  distribution_plots_1[[i]] <- plot_grid(title,
+                                         indicator_plots[[1]],
+                                         indicator_plots[[2]],
+                                         indicator_plots[[3]],
+                                         indicator_plots[[4]],
+                                         indicator_plots[[5]],
+                                         nrow = 2, align = "v")
+rm(indicator_plots, indicator)
+
+}
+
+distribution_plots_1[[1]]
+distribution_plots_1[[2]]
+distribution_plots_1[[3]]
+distribution_plots_1[[4]]
+
+```
+
+```{r plot temporal variance}
+
+variance_plots_3 <- list()
+
+for (i in seq_along(scenario_indicators)) {
+  
+  # Get a list of indicator outputs for a single scenario
+  single_scenario <- split(scenario_indicators[[i]], 
+                           scenario_indicators[[i]]$indicator)
+  
+  scenario <- single_scenario[[1]]$scenario[1]
+  
+  indicator_plots <- list()
+  
+  for (j in seq_along(single_scenario)) {
+  
+  # Get the indicator name
+  
+  indicator <- single_scenario[[j]]$indicator[1]
+
+
+indicator_plots[[j]] <- ggplot(data = single_scenario[[j]], 
+                               aes(x = annual_time_step,
+                                   y = variance)) +
+  geom_line() + 
+  theme(axis.text = element_text(size = 2),
+    axis.text.x = element_text(size = 1),
+    axis.text.y = element_text(size = 1)) +
+  labs(title = indicator,
+       x = "Annual time step",
+       y = "Temporal variance") 
+
+  }
+  
+  title <- ggdraw() + draw_label(scenario)
+  
+  variance_plots_3[[i]] <- plot_grid(title,
+                                         indicator_plots[[1]],
+                                         indicator_plots[[2]],
+                                         indicator_plots[[3]],
+                                         indicator_plots[[4]],
+                                         indicator_plots[[5]],
+                                         nrow = 2, align = "v")
+rm(indicator_plots, indicator)
+
+}
+
+variance_plots_3[[1]]
+variance_plots_3[[2]]
+variance_plots_3[[3]]
+variance_plots_3[[4]]
+
+```
+
+```{r temporal autocorrelation }
+# https://a-little-book-of-r-for-time-series.readthedocs.io/en/latest/src/timeseries.html 
+# https://nwfsc-timeseries.github.io/atsa-labs/sec-tslab-correlation-within-and-among-time-series.html
+
+plotauto <- acf(test_df$indicator_score_std, lag.max = 300)
+plotauto
+```
+
+```{r trend modeling example}
+
+# Using the demo data
+head(ind_ex)
+head(press_ex)
+head(press_type_ex)
+# Scoring template:
+crit_scores_tmpl
+
+m_trend <- model_trend(ind_tbl = ind_ex[ ,-1],
+  time = ind_ex$Year)
+
+# Model diagnostics
+pd <- plot_diagnostics(model_list = m_trend$model)
+pd$all_plots[[1]] # first indicator
+# check for outliers in all models
+grid.arrange(grobs = pd$cooks_dist, ncol = 3) 
+# check normality in all models
+grid.arrange(grobs = pd$qq_plot, ncol = 3)
+# check homogeneity in all models
+grid.arrange(grobs = pd$resid_plot, ncol = 3)
+# check for autocorrelation in all models
+grid.arrange(grobs = pd$acf_plot, ncol = 3)
+# check for partial autocorrelation in all models
+grid.arrange(grobs = pd$pacf_plot, ncol = 3)
+
+# Save diagnostic plots per indicator in a pdf
+ml <- marrangeGrob(grobs = pd$all_plots, ncol = 1, nrow = 1)
+ggsave("Trend_diagnostics.pdf", ml, height = 8, width = 12)
+
+# Inspect trends
+pt <- plot_trend(m_trend)
+pt$TZA # shows trend of TZA indicator
+# show all together
+ml <- grid.arrange(grobs = pt, ncol = 3)
+ml
+# save as pdf
+ggsave("Trend_plots.pdf", ml, height = 12, width = 15)
+# show only significant trends
+grid.arrange(
+  grobs = pt[which(m_trend$p_val <= 0.05)],
+  ncol = 2
+    )
+
+```
+
+```{r prepare data for trend modelling }
+
+# Get one scenario
+single_scenario <- indicators_all_df %>% 
+                   filter(scenario == "100_Land_use") %>% 
+                   dplyr::select(annual_time_step, indicator, indicator_score)
+
+single_scenario <- as.data.frame(single_scenario)
+
+# Conver to wide format
+
+ind_trend_inputs <- single_scenario %>% 
+                    pivot_wider(names_from = indicator,
+                                values_from = indicator_score) %>% 
+                    arrange(annual_time_step)
+
+pressure_inputs <- single_scenario %>% 
+                   filter(indicator == "total abundance harvested") %>% 
+                   pivot_wider(names_from = indicator,
+                                values_from = indicator_score) %>% 
+                   arrange(annual_time_step)
+                    
+
+```
+
+```{r model trends and plot diagnostics }
+
+m_trend <- model_trend(ind_tbl = ind_trend_inputs[ ,-1],
+  time = ind_trend_inputs$annual_time_step)
+
+# Model diagnostics
+pd <- plot_diagnostics(model_list = m_trend$model)
+pd$all_plots[[3]] # first indicator
+pd$all_plots[[4]]
+pd$all_plots[[5]]
+
+# Save diagnostic plots per indicator in a pdf
+ml <- marrangeGrob(grobs = pd$all_plots, ncol = 1, nrow = 1)
+
+# ggsave(file.path(analysis_plots_folder, 
+#                  "Trend_diagnostics.pdf"), 
+#                  ml, height = 8, width = 12)
+
+```
+
+```{r plot trends }
+
+# Inspect trends
+pt <- plot_trend(m_trend)
+pt$TZA # shows trend of TZA indicator
+# show all together
+ml <- grid.arrange(grobs = pt, ncol = 3)
+ml
+# save as pdf
+ggsave("Trend_plots.pdf", ml, height = 12, width = 15)
+# show only significant trends
+grid.arrange(
+  grobs = pt[which(m_trend$p_val <= 0.05)],
+  ncol = 2
+    )
+
+
+```
+
+```{r prepare data for pressure - response modelling }
+
+dat_init <- ind_init(ind_tbl = ind_trend_inputs[ ,-1],
+  press_tbl = pressure_inputs[ ,-1], time = ind_trend_inputs$annual_time_step,
+    train = 0.9, random = FALSE)
+
+```
+
+```{r simple gams }
+
+m_gam <- model_gam(init_tbl = dat_init, k = 5,
+    family = stats::gaussian(), excl_outlier = NULL)
+
+# Model diagnostics
+pd <- plot_diagnostics(model_list = m_gam$model)  # (might take a while)
+ml <- marrangeGrob(grobs = pd$all_plots, ncol = 1, nrow = 1)
+ggsave("GAM_diagnostics.pdf", ml, height = 8, width = 12)
+
+# Any outlier?
+m_gam$pres_outlier %>% purrr::compact(.)
+# - get number of models with outliers detected
+purrr::map_lgl(m_gam$pres_outlier, ~!is.null(.)) %>% sum()
+# - which models and what observations?
+m_gam %>%
+    dplyr::select(id, ind, press, pres_outlier) %>%
+    dplyr::filter(!purrr::map_lgl(m_gam$pres_outlier, .f = is.null)) %>%
+    tidyr::unnest(pres_outlier)
+
+# Exclude outlier in models (using the returned model output tibble as selector)
+m_gam <- model_gam(init_tbl = dat_init, excl_outlier = m_gam$pres_outlier)
+
+# Any temporal autocorrelation (TAC)
+sum(m_gam$tac)
+
+# - which models
+m_gam %>%
+    dplyr::select(id, ind, press, tac) %>%
+    dplyr::filter(tac)
+
+```
+
+```{r GAMMs for temporally autocorrelated }
+
+m_gamm <- model_gamm(init_tbl = dat_init,
+  filter = m_gam$tac) # (apply GAMM only to rows where TAC detected)
+
+# Again, any outlier?
+purrr::map_lgl(m_gamm$pres_outlier, ~!is.null(.)) %>% sum()
+
+# Select best GAMM from different correlation structures
+# (based on AIC)
+best_gamm <- select_model(gam_tbl = m_gam, gamm_tbl = m_gamm)
+View(best_gamm)
+
+# Still any temporal autocorrelation?
+sum(best_gamm$tac) 
+# - which models
+best_gamm %>%
+  dplyr::select(id, ind, press, tac, corrstruc) %>%
+  dplyr::filter(tac) %>%
+  print(n = 100)
+
+# Inspect diagnostic plots of best GAMMs
+pd <- plot_diagnostics(model_list = best_gamm$model)
+ml <- marrangeGrob(grobs = pd$all_plots, ncol = 1, nrow = 1)
+ggsave(file.path(analysis_plots_folder, "bestGAMM_diagnostics.pdf"), 
+       ml, height = 8, width = 12)
+
+ 
+
+```
+
+```{r merge GAMS and GAMMS }
+m_merged <- merge_models(m_gam[m_gam$tac == FALSE, ], best_gamm)
+
+# View sign. models
+filter(m_merged, p_val <= 0.05) %>%
+  View()
+
+sel <- find_id(
+    mod_tbl = m_merged, 
+    ind_name = indicators
+)$id
+
+m_merged$nrmse[sel] <- calc_nrmse(
+    press = ind_init_ex$press_test[sel], 
+    ind = ind_init_ex$ind_test[sel],
+    model = m_merged$model[sel], 
+    transformation = "log"
+)
+
+m_all <- m_merged
+
+```
+
+```{r calculate derivatives }
+# WARNING SLOW CODE
+m_calc <- calc_deriv(init_tbl = dat_init, mod_tbl = m_merged,
+    sign_level = 0.05)
+
+```
+
+```{r model selection }
+
+it <- select_interaction(mod_tbl = m_calc)
+# (creates combinations to test for)
+
+m_all <- test_interaction(init_tbl = dat_init, mod_tbl = m_calc,
+     interactions = it, sign_level = 0.05)
+
+m_works <- m_all[-c(1,2), ]
+
+# Inspect diagnostics of threshold models
+pd_thresh <- m_works %>%
+    # flatten structure of nested threshold GAMs 
+    flatten() %>%
+    # and remove empty lists (where no threshold GAMs were applied (=NULL) 
+    # or no threshold GAMs were better than the simple GAMs (=NA)
+    keep(~is.list(.x))  %>%
+    plot_diagnostics()
+
+ml <- marrangeGrob(grobs = pd_thresh$all_plots, ncol = 1, nrow = 1)
+ggsave(file.path(analysis_plots_folder, "thresholdGAM_diagnostics.pdf"), 
+       ml, height = 8, width = 10)
+
+# Look at the development of the generalized cross-validation value 
+# at different thresholds level: the plot should show that the GCVV
+# of the final threshold should be clearly lower than of others 
+# (you should see a single sharp trough, not at the edge)
+grid.arrange(grobs = pd_thresh$gcvv_plot, ncol = 3)
+# -> some models do NOT show this (e.g. #4,6,7): here we could set the
+#  $interaction from TRUE to FALSE (for the scoring later) to ignore
+# this potentially spurious interaction found:
+m_all <- m_all %>% mutate(
+    interaction = case_when(
+    (ind == "Micro" & press == "Fsprat") |
+        (ind == "Cod" & press == "Fher") | 
+        (ind == "Cod" & press == "Fcod") ~ FALSE,
+    TRUE ~ interaction))
+
+```
+
+```{r plot models }
+
+
+# Show final significant GAM/GAMM (threshold GAM) plots:
+sel <- which(m_all$p_val <= 0.05)
+pm <- plot_model(init_tbl = dat_init[sel, ], mod_tbl = m_all[sel, ])
+# Save all sign. indicator plots
+ml <- gridExtra::marrangeGrob(grobs = pm$all_plots, ncol = 1, nrow = 1)
+ggplot2::ggsave(file.path(analysis_plots_folder, "Final_model_results.pdf"), 
+                          ml, height = 10, width = 12)
+
+```
