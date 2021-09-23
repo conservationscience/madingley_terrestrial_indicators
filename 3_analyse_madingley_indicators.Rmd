@@ -2,7 +2,9 @@
 title: "Analyse terrestrial indicators"
 author: "Simone Stevenson"
 date: "20/09/2021"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -55,7 +57,7 @@ library(gridExtra)
 
 ```
 
-```{r functions, echo=FALSE}
+```{r functions, echo=FALSE, eval=FALSE}
 
 #' Description
 
@@ -90,7 +92,7 @@ analysis_inputs <- "N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs
 
 # Specify the date of inputs you want to use
 
-input_date <- "2021-09-18"
+input_date <- "2021-09-22"
 
 # Get date to label outputs
 
@@ -140,9 +142,9 @@ if( !dir.exists( file.path(analysis_plots_folder) ) ) {
 
 # Load indicator > scenario level data ----
 
-indicators_all_df <- readRDS(file.path(analysis_inputs, input_date, paste(input_date, "all_indicators_output_dataframe.rds", sep = "_")))
+indicators_all_df <- readRDS(file.path(analysis_inputs, input_date, "all_indicators_output_dataframe.rds"))
 
-indicators_all_list <- flatten(readRDS(file.path(analysis_inputs, input_date, paste(input_date, "all_indicators_output_list.rds", sep = "_"))))
+indicators_all_list <- flatten(readRDS(file.path(analysis_inputs,input_date, "all_indicators_output_list.rds")))
 
 # Get list of indicators
 
@@ -159,7 +161,7 @@ write.csv(indicators_all_df, file.path(analysis_inputs_folder,
                                              sep = "_")))
 # Load red list data
 
-scenario_smoothed_abundance <- readRDS("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/2021-09-09_smoothed_abundance_5.rds")
+scenario_redlist_data_sampled <- readRDS(file.path(analysis_inputs, input_date, "scenario_redlist_data_annual_7.rds"))
 ```
 
 # Plot the raw indicator score, the standardized score, the differenced score and the temporal variance
@@ -213,7 +215,7 @@ test_df <- scenario_indicators[[2]] %>%
 
 # Visualise smoothed time series using loess at 10, 25 and 50% smoothing spans
 
-```{r visualise }
+```{r visualise, warning=FALSE, message = FALSE, error=FALSE}
 
 # Visualise smoothed time series using loess as in Bestelmeyer 2011
 
@@ -234,7 +236,7 @@ for ( i in seq_along(scenario_indicators)) {
   indicator_plots <- list()
   
   for (j in seq_along(single_scenario)) {
-  
+    
   # Get the scenario
   
   indicator <- single_scenario[[j]]$indicator[1]
@@ -291,6 +293,61 @@ loess_plots_1[[4]]
 
 ```
 
+# Visualise the differenced indicator values (the difference between indicator at time t and indicator at time t - 1)
+
+```{r plot differenced}
+
+differenced_plots <- list()
+
+for (i in seq_along(scenario_indicators)) {
+  
+  # Get a list of indicator outputs for a single scenario
+  single_scenario <- split(scenario_indicators[[i]], 
+                           scenario_indicators[[i]]$indicator)
+  
+  scenario <- single_scenario[[1]]$scenario[1]
+  
+  indicator_plots <- list()
+  
+  for (j in seq_along(single_scenario)) {
+  
+  # Get the indicator name
+  
+  indicator <- single_scenario[[j]]$indicator[1]
+
+
+indicator_plots[[j]] <- ggplot(data = single_scenario[[j]], 
+                               aes(x = annual_time_step,
+                                   y = indicator_score_diff)) +
+  geom_line() + 
+  theme(axis.text = element_text(size = 2),
+    axis.text.x = element_text(size = 1),
+    axis.text.y = element_text(size = 1)) +
+  labs(title = indicator,
+       x = "Annual time step",
+       y = "Differenced indicator score") 
+
+  }
+  
+  title <- ggdraw() + draw_label(scenarios_title[[i]])
+  
+  differenced_plots[[i]] <- plot_grid(title,
+                                         indicator_plots[[1]],
+                                         indicator_plots[[2]],
+                                         indicator_plots[[3]],
+                                         indicator_plots[[4]],
+                                         indicator_plots[[5]],
+                                         nrow = 2, align = "v")
+rm(indicator_plots, indicator)
+
+}
+
+differenced_plots[[1]]
+differenced_plots[[2]]
+differenced_plots[[3]]
+differenced_plots[[4]]
+
+```
 
 ```{r breakpoints }
 # https://www.marinedatascience.co/blog/2019/09/28/comparison-of-change-point-detection-methods/
@@ -455,178 +512,63 @@ distribution_plots_2[[3]]
 distribution_plots_2[[4]]
 
 ```
-# Plot the Red List Status breakdown per timestep
+# Visualise red list status breakdown changes over time
 
 ```{r red list status plots}
-# * Take an annual sample ----
-
-interval <- 12
-
-scenario_annual <- list()
-
-for (i in seq_along(scenario_smoothed_abundance)) {
-
- scenario_groups <- split(scenario_smoothed_abundance[[i]],
-                          scenario_smoothed_abundance[[i]]$group_id)
- 
-
-  groups_annual <- list()
-  
- 
-  for (j in seq_along(scenario_groups)) {
-    
-
-     groups_annual[[j]] <- scenario_groups[[j]] %>% 
-                           group_by(annual_time_step) %>% 
-     filter(ave_abundance == first(na.omit(ave_abundance))) %>% 
-       dplyr::select(-monthly_time_step, - true_extinction,
-                     -abundance, -sd, - error, -lower_ci, -upper_ci) %>% 
-       distinct(.) %>% 
-       ungroup(.) %>% 
-       group_by(group_id, annual_time_step) %>% 
-       slice(1) %>% 
-       ungroup(.)
-    
-    }
-  
-  groups_annual_df <- do.call(rbind, groups_annual)
-  
-  scenario_annual[[i]] <- groups_annual_df
-  
-  rm(groups_annual, groups_annual_df)
-  
-}
-
-# * Assign Red List Categories ----
-
-scenario_red_list_data <- list()
-
-for (i in seq_along(scenario_annual)) {
-  
-  # Get replicate data for a single scenario
-  
-  # Split by 'species'
-  
-  status_inputs <- split(scenario_annual[[i]], 
-                         scenario_annual[[i]]$group_id)
-  
-  # Make a list to hold output for each individual massbin-func-group (ie virtual spp)
-  
-  group_red_list_data <- list()
-  
-  for (j in seq_along(status_inputs)) {
-    
-    print(paste("Processing group", names(status_inputs)[[j]], sep = " "))
-    
-    group_red_list_data[[j]] <- status_inputs[[j]] %>%
-      # rename(ave_abundance = abundance) %>% 
-      group_by(group_id) %>%
-      arrange(annual_time_step) %>%
-      # calculate the difference in abundance over 10 yrs or 3 generation lengths
-      # (specified by 'timeframe' column). Its okay to take the first value of 
-      # timeframe bc the dataframe is grouped by group_id, and timeframe only changes
-      # between and not within group_ids
-      # mutate(diff = (abundance - dplyr::lag(abundance, timeframe[1]))) %>%
-      mutate(diff = (ave_abundance - dplyr::lag(ave_abundance, 10))) %>%
-      # Using the formula from p 35 (Complex patterns of decline) Guidelines 
-      # for Using the IUCN Red List Categories and Criteria v14 August 2019 
-      mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, 10)) %>%
-      mutate(decline = ifelse(ave_abundance == 0, NA, decline)) %>% 
-      # calculate the rate of change
-      # mutate(decline = diff/dplyr::lag(abundance, timeframe[1])) %>% 
-      # mutate(decline = diff/dplyr::lag(ave_abundance, 10)) %>%
-      # mutate(prev = dplyr::lag(ave_abundance, 10)) %>% 
-      # assign red list risk status based on decline 
-      # Using the thresholds from p 16 Categories A2 - A4 Guidelines 
-      # for Using the IUCN Red List Categories and Criteria v14 August 2019
-      mutate(rl_status = ifelse(decline < 0.20, "LC",
-                         ifelse(decline >= 0.20 & decline < 0.30, "NT", 
-                         ifelse(decline >= 0.30 & decline < 0.50, "VU",
-                         ifelse(decline >= 0.50 & decline < 0.80, "EN",
-                         ifelse(decline >= 0.80, "CR",
-                         ifelse(is.na(decline), "EX", "TBD"))))))) %>%
-      arrange(group_id, annual_time_step) %>%
-      # Replace all non-ex status with ex after first occurrence 
-      # mutate(extinct = match("EX", rl_status)) %>%
-      mutate(rl_status = ifelse(ave_abundance == 0, "EX", rl_status),
-             rl_status = ifelse(is.na(rl_status), lag(rl_status, 1),
-                                rl_status)) %>% 
-      mutate(extinct = ifelse(rl_status == "EX", 1, 0)) %>% 
-      # mutate(rl_status = with(., ave(rl_status, 
-      #                                         FUN=maintain_ex_status)))
-      #mutate(rl_status = rl_status) %>% 
-      group_by(group_id)
-    
-  }
-  
-  scenario_red_list_df <- do.call(rbind, group_red_list_data)
-  
-  scenario_red_list_data[[i]] <- scenario_red_list_df
-  
-  # Save the inputs
-  
-  # saveRDS(scenario_red_list_df,
-  #         file.path(rli_inputs_folder,
-  #                   paste(today, scenarios[[i]], "replicate", j,
-  #                         "RLI_input_data_monthly_smoothing.rds", sep = "_")))
-  # 
-  # write.csv(replicate_red_list_df,
-  #           file.path(rli_inputs_folder,
-  #                     paste(today, scenarios[[i]], "replicate", j,
-  #                           "RLI_input_data_monthly_smoothing.csv", sep = "_")))
-  
-}
-
-
-# * Take coarser sample ----
-## Heterotrophs
-
-sample_interval <- 1 # interval between samples in years
-sample_max_timestep <- 300/sample_interval
-
-scenario_redlist_data_sampled <- list()
-
-for (i in seq_along(scenario_red_list_data)) {
-
-  # Sample
-   sampled <- scenario_red_list_data[[i]] %>%
-     group_by(group_id) %>%
-    slice(which(row_number() %% sample_interval == 0))
-
-  # Remove groups that have no biomass in sampled years or you get weird outputs
-
-   scenario_redlist_data_sampled[[i]] <- sampled %>%
-           #rename(abundance = ave_abundance) %>%
-           group_by(group_id) %>%
-           mutate(total_abundance = sum(ave_abundance, na.rm = TRUE),
-                  exists = ifelse(total_abundance == 0 , FALSE, TRUE)) %>%
-           filter(exists == TRUE)
-}
-
-# * Get proportion extinct ----
 
 scenario_extinctions <- list()
 scenario_rl_status_plots <- list()
 
 for (i in seq_along(scenario_redlist_data_sampled)) {
   
-  scenario_extinctions[[i]] <- scenario_redlist_data_sampled[[i]] %>% 
-          group_by(annual_time_step, rl_status) %>% 
-          filter(rl_status != is.na(rl_status)) %>% 
-          summarise(test = n())
+  # Add an ordered factor for plotting
   
-  scenario_rl_status_plots[[i]] <- ggplot(scenario_extinctions[[i]], 
-                                          aes(x = annual_time_step, 
-                                              y = test, 
-                                              fill = rl_status)) +
-    geom_bar(position = "stack", stat = "identity") +
-    scale_fill_viridis_d() +
-    labs(title = scenarios[[i]])
+  rl_status_fac <- factor(scenario_redlist_data_sampled[[i]]$rl_status,
+      levels = c("LC", "NT", "VU", "EN", "CR", "EX"))
   
-  # ggsave(file.path(rli_plots_folder, paste(today, scenarios[[i]], 
-  #                                          "red_list_status.png",
-  #                                                sep = "_")),
-  #        scenario_rl_status_plots[[i]],  device = "png")
+  scenario_redlist_data <- cbind(scenario_redlist_data_sampled[[i]],
+  rl_status_fac = rl_status_fac)
+  
+  scenario_extinctions[[i]] <- scenario_redlist_data %>% 
+          group_by(annual_time_step, rl_status_fac) %>% 
+          filter(rl_status_fac != is.na(rl_status_fac)) %>% 
+          summarise(red_list_status = n())
+  
+  # scenario_rl_status_plots[[i]] <- ggplot(scenario_extinctions[[i]], 
+  #                                         aes(x = annual_time_step, 
+  #                                             y = red_list_status, 
+  #                                             fill = rl_status_fac)) +
+  #   geom_bar(position = "stack", stat = "identity") +
+  #   scale_fill_manual(values = c("#FDE725FF","#7AD151FF","#22A884FF","#2A788EFF",
+  #                                "#414487FF","#440154FF")) +
+  #   labs(title = scenarios_title[[i]])
+  
+ scenario_rl_status_plots[[i]] <- ggplot( scenario_extinctions[[i]],
+                                          aes(x=annual_time_step, y=red_list_status, 
+                                              fill=rl_status_fac)) +
+    geom_area(  ) +
+    scale_fill_manual(values = c("#FDE725FF","#7AD151FF","#22A884FF","#2A788EFF",
+                                 "#414487FF","#440154FF")) +
+    scale_color_manual(values = c("#FDE725FF","#7AD151FF","#22A884FF","#2A788EFF",
+                                 "#414487FF","#440154FF")) +
+   theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_rect(fill = "grey80"),
+          legend.position = "bottom",
+         legend.title=element_text(size=14), 
+         legend.text=element_text(size=12),
+          axis.title.x = element_text(size=14),
+          axis.title.y = element_text(size=14),
+          axis.text.x = element_text(size=12),
+          axis.text.y = element_text(size=12),
+          axis.ticks.x = element_blank(), 
+          axis.ticks.y = element_blank()) +
+   labs(title = scenarios_title[[i]],
+        x = "Time (years)",
+        y = "# species in Red List category") +
+   guides(fill=guide_legend(title="Red List Status"))
+   
+  rm(scenario_redlist_data)
   
 }
 
@@ -637,9 +579,9 @@ scenario_rl_status_plots[[4]]
 
 ```
 
-# Plot the temporal variance of the indicator values
+# Visualise the temporal variance 
 
-```{r plot temporal variance}
+```{r plot temporal variance, warning=FALSE, error = FALSE, message=FALSE}
 
 variance_plots_3 <- list()
 
@@ -700,8 +642,6 @@ variance_plots_3[[4]]
 # plotauto <- acf(test_df$indicator_score_std, lag.max = 300)
 # plotauto
 ```
-
-# Modelling mess, proceed at your own risk
 
 ```{r trend modeling example}
 
