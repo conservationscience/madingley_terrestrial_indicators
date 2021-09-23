@@ -1137,7 +1137,7 @@ model_species <- gen_lengths %>%
                 matched, bodymass_grams, mass_lower, mass_upper)
 
 write.csv(model_species, file.path(general_indicator_outputs_folder,
-                                   paste(today, "model_species.csv", sep ="_")))
+                                   "model_species.csv"))
 
 # Get calculated generation lengths ----
 
@@ -4649,13 +4649,11 @@ unique(all_indicators$indicator) # Check we have them all
 
 saveRDS(all_indicators,
         file.path(general_indicator_outputs_folder,
-                  paste(today, "all_indicators_output_dataframe.rds",
-                        sep = "_")))
+                   "all_indicators_output_dataframe.rds"))
 
 write.csv(all_indicators,
           file.path(general_indicator_outputs_folder,
-                    paste(today, "all_indicators_output_dataframe.csv",
-                          sep = "_")))
+                    "all_indicators_output_dataframe.csv"))
 
 # Reshuffle the list so the top level of the list is indicator, then scenario
 
@@ -4678,5 +4676,4 @@ names(new_indicator_list) <- indicator_names
 
 saveRDS(new_indicator_list,
         file.path(general_indicator_outputs_folder,
-                  paste(today, "all_indicators_output_list_v2.rds",
-                        sep = "_")))
+                  "all_indicators_output_list_v2.rds"))
