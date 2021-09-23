@@ -1039,10 +1039,6 @@ example_species <- species %>%
 
 all_species <- split(species, species$group_id)
 
-harvested_carnivore_species <- species_group_id_list[["11.68"]]
-
-harvested_herbivore_species <- species_group_id_list[[c("10.68", "10.67")]]
-
 # Get abundance ----
 
 # read in the abundance and generation length data. Output will be a nested list 
@@ -2646,9 +2642,9 @@ smoothing_plots[[4]]
   
 # CHECKPOINT - CAN LOAD PROCESSED DATA FROM HERE ----
 
-input_date <- "2021-09-09"
+input_date <- "2021-09-22"
 
-gen_folder <- file.path(indicator_outputs_folder, "general")
+gen_folder <- "N:/Quantitative-Ecology/Indicators-Project//Serengeti/Outputs_from_indicator_code/Indicator_outputs/general"
 
 # Load data
 
@@ -2705,10 +2701,6 @@ interval <- 12
 
 scenario_annual <- list()
 
-# for (i in seq_along(scenario_averaged)) {
-
-# scenario_groups <- split(scenario_averaged[[i]], 
-#                          scenario_averaged[[i]]$group_id)
 
 for (i in seq_along(scenario_smoothed_abundance)) {
 
@@ -4640,8 +4632,7 @@ names(all_indicators_list) <- c("RLI all",
 
 saveRDS(all_indicators_list,
         file.path(general_indicator_outputs_folder,
-                  paste(today, "all_indicators_output_list.rds",
-                        sep = "_")))
+                 "all_indicators_output_list.rds"))
 
 all_indicators_all_scenarios <- flatten(all_indicators_list)
 all_indicators <- do.call(rbind, all_indicators_all_scenarios)
