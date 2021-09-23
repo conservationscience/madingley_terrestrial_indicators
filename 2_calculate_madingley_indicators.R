@@ -887,7 +887,8 @@ if( !dir.exists( file.path(indicator_inputs_folder) ) ) {
 }
 
 indicator_outputs_folder <- file.path(indicators_project, 
-                                     "/Serengeti/Outputs_from_indicator_code/Indicator_outputs")
+                                     "/Serengeti/Outputs_from_indicator_code/Indicator_outputs",
+                                     today)
 
 if( !dir.exists( file.path(indicator_outputs_folder) ) ) {
   dir.create( file.path(indicator_outputs_folder), recursive = TRUE )
@@ -904,7 +905,8 @@ if( !dir.exists( file.path(general_indicator_outputs_folder) ) ) {
 }
 
 indicator_plots_folder <- file.path(indicators_project, 
-                                     "/Serengeti/Outputs_from_indicator_code/Indicator_plots")
+                                     "/Serengeti/Outputs_from_indicator_code/Indicator_plots",
+                                    today)
 
 if( !dir.exists( file.path(indicator_plots_folder) ) ) {
   dir.create( file.path(indicator_plots_folder), recursive = TRUE )
@@ -1523,11 +1525,11 @@ rm(scenario_false_extinctions_removed)
 
 
 saveRDS(scenario_ab_gl_formatted,
-        file.path(indicator_outputs_folder,
-                  paste(today, "formatted_abundance_1.rds", sep = "_")))
+        file.path(general_indicator_outputs_folder,
+                  "formatted_abundance_1.rds"))
 
-scenario_ab_gl_formatted <- readRDS(file.path(indicator_outputs_folder,
-                  paste(today, "formatted_abundance_1.rds", sep = "_")))
+# scenario_ab_gl_formatted <- readRDS(file.path(indicator_outputs_folder,
+#                   paste(today, "formatted_abundance_1.rds", sep = "_")))
 
 
 # Truncate and decompose trends ----
@@ -1649,8 +1651,8 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
 }
 
 saveRDS(scenario_decomposed,
-        file.path(indicator_outputs_folder,
-                  paste(today, "decomposed_abundance_2.rds", sep = "_")))
+        file.path(general_indicator_outputs_folder,
+                  "decomposed_abundance_2.rds"))
 
 # head(scenario_decomposed[[1]][[1]])
 
@@ -1767,8 +1769,8 @@ for (i in seq_along(scenario_auto_long)) {
 }
 
 saveRDS(scenario_auto_decomposed,
-        file.path(indicator_outputs_folder,
-                  paste(today, "decomposed_auto_abundance_2.rds", sep = "_")))
+        file.path(general_indicator_outputs_folder,
+                  "decomposed_auto_abundance_2.rds"))
 
 
 # Take a random sample of 25 replicates ----
@@ -1872,16 +1874,16 @@ head(baseline)
 any(is.nan(baseline$abundance))
 
 saveRDS(scenario_averaged,
-        file.path(indicator_outputs_folder,
-                  paste(today, "averaged_abundance_3.rds", sep = "_")))
+        file.path(general_indicator_outputs_folder,
+                  paste("averaged_abundance_3.rds", sep = "_")))
 
 baseline <- scenario_auto_averaged[[1]]
 head(baseline)
 any(is.nan(baseline$abundance))
 
 saveRDS(scenario_auto_averaged,
-        file.path(indicator_outputs_folder,
-                  paste(today, "averaged_auto_abundance_3.rds", sep = "_")))
+        file.path(general_indicator_outputs_folder,
+                  "averaged_auto_abundance_3.rds"))
 
 # Check for false extinctions
 
@@ -2024,8 +2026,8 @@ x300 <- scenario_remove_false_extinctions_2[[1]] %>%
 dim(x1)[1] == dim(x300)[1]
 
 saveRDS(scenario_remove_false_extinctions_2,
-        file.path(indicator_outputs_folder,
-                  paste(today, "weird_groups_removed_abundance_4.rds", sep = "_")))
+        file.path(general_indicator_outputs_folder,
+                  "weird_groups_removed_abundance_4.rds"))
 
 # # Smooth abundance ----
 
@@ -2082,8 +2084,8 @@ xx300 <- x300$group_id
 unique(x1$group_id) == unique(x300$group_id)
 
 saveRDS(scenario_smoothed_abundance,
-        file.path(indicator_outputs_folder,
-                  paste(today, "smoothed_abundance_5.rds", sep = "_")))
+        file.path(general_indicator_outputs_folder,
+                  "smoothed_abundance_5.rds"))
 
 ## Autotrophs
 
@@ -2133,16 +2135,8 @@ for (i in seq_along(scenario_auto_averaged)) {
 }
 
 saveRDS(scenario_auto_smoothed_abundance,
-        file.path(indicator_outputs_folder,
-                  paste(today, "smoothed_auto_abundance_5.rds", sep = "_")))
-
-# saveRDS(scenario_smoothed_abundance,
-#         file.path(indicator_outputs_folder,
-#                   paste(today, "scenario_smoothed_abundance.rds", sep = "_")))
-
-# scenario_smoothed_abundance <- readRDS(file.path(indicator_outputs_folder,
-#                                                  "scenario_smoothed_abundance.rds"))
-
+        file.path(general_indicator_outputs_folder,
+                  "smoothed_auto_abundance_5.rds"))
 
 # Plot data transformation ----
 
@@ -2652,44 +2646,33 @@ smoothing_plots[[4]]
   
 # CHECKPOINT - CAN LOAD PROCESSED DATA FROM HERE ----
 
-# input_date <- "2021-09-09"
+input_date <- "2021-09-09"
+
+gen_folder <- file.path(indicator_outputs_folder, "general")
 
 # Load data
 
-# scenario_ab_gl_formatted <- readRDS(file.path(indicator_outputs_folder, 
-#                                               paste(input_date,
-#                                               "formatted_abundance_1.rds", 
-#                                               sep = "_")))
+# scenario_ab_gl_formatted <- readRDS(file.path(gen_folder,input_date,
+#                                               "formatted_abundance_1.rds"))
 # 
-# scenario_decomposed <- readRDS(file.path(indicator_outputs_folder,
-#                                          paste(input_date,
-#                                          "decomposed_abundance_2.rds", 
-#                                          sep = "_")))
+# scenario_decomposed <- readRDS(file.path(gen_folder,input_date,
+#                                          "decomposed_abundance_2.rds"))
 # 
-# scenario_averaged <- readRDS(file.path(indicator_outputs_folder,
+# scenario_averaged <- readRDS(file.path(gen_folder,input_date,
+#                                           "averaged_abundance_3.rds"))
+# 
+# scenario_filtered <- readRDS(file.path(gen_folder,input_date,
 #                                        paste(input_date,
-#                                           "averaged_abundance_3.rds", 
-#                                                                   sep = "_")))
+#                                          "weird_groups_removed_abundance_4.rds"))
 # 
-# scenario_filtered <- readRDS(file.path(indicator_outputs_folder,
-#                                        paste(input_date,
-#                                          "weird_groups_removed_abundance_4.rds", 
-#                                                                   sep = "_")))
+# scenario_smoothed_abundance <- readRDS(file.path(gen_folder,input_date,
+#                                           "smoothed_abundance_5.rds"))
 # 
-# scenario_smoothed_abundance <- readRDS(file.path(indicator_outputs_folder,
-#                                                  paste(input_date,
-#                                           "smoothed_abundance_5.rds", 
-#                                           sep = "_")))
+# scenario_harvested <- readRDS(file.path(gen_folder,input_date,
+#                                              "scenario_density_harvested.rds"))
 # 
-# scenario_harvested <- readRDS(file.path(indicator_outputs_folder,
-#                                         paste(input_date,
-#                                              "scenario_density_harvested.rds", 
-#                                              sep = "_")))
-# 
-# scenario_smoothed_5_reps <- readRDS(file.path(indicator_outputs_folder,
-#                                               paste("2021-09-13",
-#                                         "scenario_smoothed_abundance_5.rds", 
-#                                         sep = "_")))
+# scenario_smoothed_5_reps <- readRDS(file.path(gen_folder,input_date,
+#                                         "scenario_smoothed_abundance_5.rds"))
 
 # RED LIST INDEX ANNUAL ----
 
@@ -2811,7 +2794,13 @@ check_auto <- scenario_auto_annual[[1]]
 head(check_auto)
 length(scenario_auto_annual)
 
+saveRDS(scenario_annual,
+        file.path(general_indicator_outputs_folder,
+                   "scenario_annual_6.rds"))
 
+saveRDS(scenario_auto_annual,
+        file.path(general_indicator_outputs_folder,
+                  "scenario_auto_annual_6.rds"))
 
 ## Referring to the thresholds quote under Criterion A, Reason 1 (declines
 ## are the result of reversible pressures) according to:
@@ -2822,17 +2811,13 @@ length(scenario_auto_annual)
 
 scenario_red_list_data <- list()
 
-#for (i in seq_along(scenario_ab_gl_formatted)) {
 for (i in seq_along(scenario_annual)) {
   
   # Get replicate data for a single scenario
   
   print(paste("Processing scenario", scenarios[[i]], sep = " "))
   
-  # Split by functional group, because we calculate RLI for different
-  # functional groups then aggregate later (as per Butchart etal 2010),
-  # except we are using functional groups as proxies for taxa (eg mammals, birds, 
-  # reptiles) used in real world RLI calcs
+  # Get one scenario dataframe
   
   status_inputs <- split(scenario_annual[[i]], 
                          scenario_annual[[i]]$group_id)
@@ -2846,23 +2831,21 @@ for (i in seq_along(scenario_annual)) {
     print(paste("Processing group", names(status_inputs)[[j]], sep = " "))
     
     group_red_list_data[[j]] <- status_inputs[[j]] %>%
-      # rename(ave_abundance = abundance) %>% 
-      group_by(group_id) %>%
-      arrange(annual_time_step) %>%
       # calculate the difference in abundance over 10 yrs or 3 generation lengths
       # (specified by 'timeframe' column). Its okay to take the first value of 
       # timeframe bc the dataframe is grouped by group_id, and timeframe only changes
       # between and not within group_ids
-      # mutate(diff = (abundance - dplyr::lag(abundance, timeframe[1]))) %>%
-      mutate(diff = (ave_abundance - dplyr::lag(ave_abundance, 10))) %>%
+      mutate(gen_length_3 = round(generation_length_yrs * 3)) %>% 
+      mutate(timeframe = ifelse(gen_length_3 > 10,
+                                gen_length_3, 10)) %>%
+      group_by(group_id) %>%
+      arrange(annual_time_step) %>%
+      mutate(diff = (ave_abundance - dplyr::lag(ave_abundance, timeframe[1]))) %>%
       # Using the formula from p 35 (Complex patterns of decline) Guidelines 
       # for Using the IUCN Red List Categories and Criteria v14 August 2019 
-      mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, 10)) %>%
+      mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, timeframe[1])) %>%
       mutate(decline = ifelse(ave_abundance == 0, NA, decline)) %>% 
       # calculate the rate of change
-      # mutate(decline = diff/dplyr::lag(abundance, timeframe[1])) %>% 
-      # mutate(decline = diff/dplyr::lag(ave_abundance, 10)) %>%
-      # mutate(prev = dplyr::lag(ave_abundance, 10)) %>% 
       # assign red list risk status based on decline 
       # Using the thresholds from p 16 Categories A2 - A4 Guidelines 
       # for Using the IUCN Red List Categories and Criteria v14 August 2019
@@ -2874,15 +2857,11 @@ for (i in seq_along(scenario_annual)) {
                          ifelse(is.na(decline), "EX", "TBD"))))))) %>%
       arrange(group_id, annual_time_step) %>%
       # Replace all non-ex status with ex after first occurrence 
-      # mutate(extinct = match("EX", rl_status)) %>%
       mutate(rl_status = ifelse(ave_abundance == 0, "EX", rl_status),
              rl_status = ifelse(is.na(rl_status), lag(rl_status, 1),
                                 rl_status)) %>% 
-      mutate(extinct = ifelse(rl_status == "EX", 1, 0)) %>% 
-      # mutate(rl_status = with(., ave(rl_status, 
-      #                                         FUN=maintain_ex_status)))
-      #mutate(rl_status = rl_status) %>% 
-      group_by(group_id) #%>% 
+      mutate(extinct = ifelse(rl_status == "EX", 1, 0)) #%>% 
+      #group_by(group_id) #%>% 
       #filter(annual_time_step != c(296, 297, 298, 299, 300)) # remove last 5 timesteps 
     
   }
@@ -2890,18 +2869,6 @@ for (i in seq_along(scenario_annual)) {
   scenario_red_list_df <- do.call(rbind, group_red_list_data)
   
   scenario_red_list_data[[i]] <- scenario_red_list_df
-  
-  # Save the inputs
-  
-  # saveRDS(scenario_red_list_df,
-  #         file.path(rli_inputs_folder,
-  #                   paste(today, scenarios[[i]], "replicate", j,
-  #                         "RLI_input_data_monthly_smoothing.rds", sep = "_")))
-  # 
-  # write.csv(replicate_red_list_df,
-  #           file.path(rli_inputs_folder,
-  #                     paste(today, scenarios[[i]], "replicate", j,
-  #                           "RLI_input_data_monthly_smoothing.csv", sep = "_")))
   
 }
 
@@ -2926,63 +2893,18 @@ ggplot(data = rli_inputs_group) +
 # * Take coarser sample ----
 ## Heterotrophs
 
-sample_interval <- 1 # interval between samples in years
-sample_max_timestep <- 300/sample_interval
+# We actually odn't need to take a coarser sample here for annual calcs so 
+# just rename the object
 
-scenario_redlist_data_sampled <- list()
-
-for (i in seq_along(scenario_red_list_data)) {
-
-  # Sample
-   sampled <- scenario_red_list_data[[i]] %>%
-     group_by(group_id) %>%
-    slice(which(row_number() %% sample_interval == 0))
-
-  # Remove groups that have no biomass in sampled years or you get weird outputs
-
-   scenario_redlist_data_sampled[[i]] <- sampled %>%
-           #rename(abundance = ave_abundance) %>%
-           group_by(group_id) %>%
-           mutate(total_abundance = sum(ave_abundance, na.rm = TRUE),
-                  exists = ifelse(total_abundance == 0 , FALSE, TRUE)) %>%
-           filter(exists == TRUE)
-}
-
-test <- scenario_redlist_data_sampled[[1]]
-test_group <- test %>% filter(group_id == "11.69")
-dim(test_group) # should have 295 rows
-
-test <- scenario_red_list_data[[1]]
-test_group <- test %>% filter(group_id == "11.69")
-dim(test_group) # should have 295 rows
+scenario_redlist_data_sampled <- scenario_red_list_data
 
 saveRDS(scenario_redlist_data_sampled,
-        file.path(indicator_outputs_folder,
-                  paste(today, "scenario_redlist_data_sampled.rds", sep = "_")))
+        file.path(general_indicator_outputs_folder, 
+                  "scenario_redlist_data_annual_7.rds"))
 
 ## Autotrophs
 
-scenario_auto_sampled <- list()
-
-for (i in seq_along(scenario_auto_annual)) {
-  
-  scenario_auto_sampled[[i]] <- scenario_auto_annual[[i]] %>% 
-    group_by(group_id, annual_time_step) %>% 
-    slice(1) 
-   # scenario_auto_sampled[[i]] <- scenario_auto_annual[[i]] %>% 
-   #  group_by(group_id) %>% 
-   #  slice(which(row_number() %% sample_interval == 0)) %>% 
-   #  mutate(annual_time_step = seq(1,sample_max_timestep,1))
-  
-}
-
-test <- scenario_auto_sampled[[1]]
-test_group <- test %>% filter(group_id == "autotrophs")
-dim(test_group) # should have 300 rows
-
-saveRDS(scenario_auto_sampled,
-        file.path(indicator_outputs_folder,
-                  paste(today, "scenario_auto_redlist_sampled.rds", sep = "_")))
+scenario_auto_sampled <- scenario_auto_annual
 
 #####
 
@@ -3267,20 +3189,12 @@ for (i in seq_along(scenario_red_list_data)) {
     # Take the first observation
     slice(1)
   
-  # Remove groups that have no biomass in sampled years or you get weird outputs
-  
-  # scenario_redlist_data_sampled_5yr[[i]] <- sampled %>% 
-  #   rename(abundance = ave_abundance) %>% 
-  #   group_by(group_id) %>% 
-  #   mutate(total_abundance = sum(abundance, na.rm = TRUE),
-  #          exists = ifelse(total_abundance == 0 , FALSE, TRUE)) %>% 
-  #   filter(exists == TRUE)
-  
 }
 
 test <- scenario_redlist_data_sampled_5yr[[1]]
 test_group <- test %>% filter(group_id == "10.32")
 dim(test_group) 
+
 
 ## Autotrophs
 
@@ -3298,6 +3212,10 @@ for (i in seq_along(scenario_auto_annual)) {
 test <- scenario_auto_sampled_5yr[[1]]
 test_group <- test %>% filter(group_id == "autotrophs")
 dim(test_group) # should have 300 rows
+
+saveRDS(scenario_auto_sampled_5yr,
+        file.path(general_indicator_outputs_folder, 
+                  "scenario_redlist_data_auto_annual_8.rds"))
 
 # * Get harvested groups only ----
 
@@ -3604,23 +3522,23 @@ for (i in seq_along(scenario_redlist_data_sampled_5yr)) {
     print(paste("Processing group", names(status_inputs)[[j]], sep = " "))
     
     group_red_list_data[[j]] <- status_inputs[[j]] %>%
-      #rename(ave_abundance = abundance) %>% 
-      group_by(group_id) %>%
-      arrange(annual_time_step) %>%
       # calculate the difference in abundance over 10 yrs or 3 generation lengths
       # (specified by 'timeframe' column). Its okay to take the first value of 
       # timeframe bc the dataframe is grouped by group_id, and timeframe only changes
       # between and not within group_ids
-      # mutate(diff = (abundance - dplyr::lag(abundance, timeframe[1]))) %>%
-      mutate(diff = (ave_abundance - dplyr::lag(ave_abundance, 2))) %>%
+      mutate(gen_length_3 = round(generation_length_yrs * 3)) %>% 
+      mutate(timeframe = ifelse(gen_length_3 > 10,
+                                gen_length_3, 10)) %>%
+      # Convert the yearly timeframe to deal with 5 yr intervals
+      mutate(timeframe = round(timeframe/5)) %>% 
+      group_by(group_id) %>%
+      arrange(annual_time_step) %>%
+      mutate(diff = (ave_abundance - dplyr::lag(ave_abundance, timeframe[1]))) %>%
       # Using the formula from p 35 (Complex patterns of decline) Guidelines 
       # for Using the IUCN Red List Categories and Criteria v14 August 2019 
-      mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, 2)) %>%
+      mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, timeframe[1])) %>%
       mutate(decline = ifelse(ave_abundance == 0, NA, decline)) %>% 
       # calculate the rate of change
-      # mutate(decline = diff/dplyr::lag(abundance, timeframe[1])) %>% 
-      # mutate(decline = diff/dplyr::lag(ave_abundance, 10)) %>%
-      # mutate(prev = dplyr::lag(ave_abundance, 10)) %>% 
       # assign red list risk status based on decline 
       # Using the thresholds from p 16 Categories A2 - A4 Guidelines 
       # for Using the IUCN Red List Categories and Criteria v14 August 2019
@@ -3632,13 +3550,12 @@ for (i in seq_along(scenario_redlist_data_sampled_5yr)) {
                                                             ifelse(is.na(decline), "EX", "TBD"))))))) %>%
       arrange(group_id, annual_time_step) %>%
       # Replace all non-ex status with ex after first occurrence 
-      # mutate(extinct = match("EX", rl_status)) %>%
-      mutate(rl_status = ifelse(ave_abundance == 0, "EX", rl_status)) %>% 
-      mutate(extinct = ifelse(rl_status == "EX", 1, 0)) %>% 
-      # mutate(rl_status = with(., ave(rl_status, 
-      #                                         FUN=maintain_ex_status)))
-      #mutate(rl_status = rl_status) %>% 
-      group_by(group_id)
+      mutate(rl_status = ifelse(ave_abundance == 0, "EX", rl_status),
+             rl_status = ifelse(is.na(rl_status), lag(rl_status, 1),
+                                rl_status)) %>% 
+      mutate(extinct = ifelse(rl_status == "EX", 1, 0)) #%>% 
+    #group_by(group_id) #%>% 
+    #filter(annual_time_step != c(296, 297, 298, 299, 300)) # remove last 5 timesteps 
     
   }
   
@@ -3652,15 +3569,15 @@ for (i in seq_along(scenario_redlist_data_sampled_5yr)) {
   
 }
 
+saveRDS(scenario_red_list_data_v2,
+        file.path(general_indicator_outputs_folder, 
+                  "scenario_redlist_data_5yr_8.rds"))
 
 # Have a quick look at the outputs
 
 rli_inputs <- scenario_red_list_data_v2[[4]]
 tail(rli_inputs)
 dim(rli_inputs)
-
-write.csv(rli_inputs, file.path(indicator_outputs_folder, 
-                                "rli_input_example_averaged_reps.csv"))
 
 rli_inputs_group <- rli_inputs %>% filter(group_id == "10.59")
 
