@@ -1,4 +1,4 @@
-
+rm(list = ls())
 # Set up ----
 
 library(sf)
