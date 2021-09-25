@@ -191,6 +191,12 @@ indicators_all_df <- indicators_all_df %>%
                                                  "no disturbance"))) %>%
                      ungroup(.)
 
+# Create a time since disturbance variable
+
+before <- rep(1, times = 99)
+after <- seq(2,202, 1)
+
+time_since_disturbance <- c(before, after)
 
 # Split into a list of scenarios then indicators
 
