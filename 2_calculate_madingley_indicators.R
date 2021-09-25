@@ -2841,6 +2841,7 @@ for (i in seq_along(scenario_annual)) {
       # assign red list risk status based on decline 
       # Using the thresholds from p 16 Categories A2 - A4 Guidelines 
       # for Using the IUCN Red List Categories and Criteria v14 August 2019
+      # https://www.iucnredlist.org/resources/redlistguidelines
       mutate(rl_status = ifelse(decline < 0.20, "LC",
                          ifelse(decline >= 0.20 & decline < 0.30, "NT", 
                          ifelse(decline >= 0.30 & decline < 0.50, "VU",
