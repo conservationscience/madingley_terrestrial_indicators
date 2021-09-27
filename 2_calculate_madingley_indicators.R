@@ -834,7 +834,8 @@ development_mode <- FALSE
 if (development_mode == FALSE) {
   
 
-  burnin_months <- 1000*12 # in months
+  #burnin_months <- 1000*12 # in months
+  burnin_months <- 900*12 # in months - burnin complete after 1000 but need the extra years to get RL status
   n <- 12
   numboots <- 1000 # Rowland et al 2021 (uncertainty)
   start_time_step <- 1
@@ -2664,6 +2665,9 @@ gen_folder <- "N:/Quantitative-Ecology/Indicators-Project//Serengeti/Outputs_fro
 # scenario_smoothed_abundance <- readRDS(file.path(gen_folder,input_date,
 #                                           "smoothed_abundance_5.rds"))
 # 
+# scenario_auto_smoothed_abundance <- readRDS(file.path(gen_folder,input_date,
+#                                                  "smoothed_auto_abundance_5.rds"))
+# 
 # scenario_harvested <- readRDS(file.path(gen_folder,input_date,
 #                                              "scenario_density_harvested.rds"))
 # 
@@ -3209,134 +3213,134 @@ saveRDS(scenario_auto_sampled_5yr,
         file.path(general_indicator_outputs_folder, 
                   "scenario_redlist_data_auto_annual_8.rds"))
 
-# * Get harvested groups only ----
+# # * Get harvested groups only ----
+# 
+# scenario_harvested_groups_5yr <- list()
+# 
+# for (i in seq_along(scenario_redlist_data_sampled_5yr)) {
+#   
+#   scenario <- scenarios[[i]]
+#   
+#   if (scenario == "000_Baseline") {
+#     
+#     # No disturbance so just get whatever groups
+#     
+#     harvested <- scenario_redlist_data_sampled_5yr[[i]] %>% 
+#       mutate(scenario = scenarios[[i]]) %>% 
+#       group_by(annual_time_step) %>% 
+#       mutate(indicator_score = sum(ave_abundance, na.rm = TRUE),
+#              indicator = "total abundance harvested",
+#              ci_lower = NA,
+#              ci_upper = NA,
+#              replicate = NA) %>% 
+#       ungroup(.) %>%                                 
+#       dplyr::select(annual_time_step, 
+#                     indicator_score,
+#                     ci_lower,
+#                     ci_upper,
+#                     indicator,
+#                     replicate,
+#                     scenario)%>% 
+#       distinct(.)
+#     
+#   } else if (scenario == "100_Land_use") {
+#     
+#     # Get the autotroph abundance
+#     
+#     harvested <- scenario_auto_sampled_5yr[[i]] %>% 
+#       filter(group_id == "autotrophs") %>% 
+#       mutate(scenario = scenarios[[i]]) %>%
+#       group_by(annual_time_step) %>% 
+#       #mutate(ab_scaled = range01(abundance),
+#       mutate(indicator_score = sum(ave_abundance, na.rm = TRUE),
+#              indicator = "total abundance harvested",
+#              ci_lower = NA,
+#              ci_upper = NA,
+#              replicate = NA) %>% 
+#       ungroup(.) %>% 
+#       dplyr::select(annual_time_step, 
+#                     indicator_score,
+#                     ci_lower,
+#                     ci_upper,
+#                     indicator,
+#                     replicate,
+#                     scenario) %>% 
+#       distinct(.)
+#     
+#   } else if (scenario == "200_Harvesting_carnivores") {
+#     
+#     # Get the carnivorous endotherms 100 - 200kg
+#     # Harvest doesn't seem to affect the ectotherms???
+#     
+#     harvested <- scenario_redlist_data_sampled_5yr[[i]] %>% 
+#       filter(functional_group_name == "carnivore endotherm" &
+#                group_id == "11.67"|
+#                functional_group_name == "carnivore endotherm" &
+#                group_id == "11.68")  %>% 
+#       mutate(scenario = scenarios[[i]]) %>% 
+#       ungroup(.) %>% 
+#       dplyr::select(annual_time_step, ave_abundance, scenario) %>% 
+#       distinct(.) %>% 
+#       mutate(ab_scaled = range01(ave_abundance)) %>% 
+#       group_by(annual_time_step) %>% 
+#       #mutate(indicator_score = sum(ab_scaled, na.rm = TRUE),
+#       mutate(indicator_score = sum(ave_abundance, na.rm = TRUE),
+#              indicator = "total abundance harvested",
+#              ci_lower = NA,
+#              ci_upper = NA,
+#              replicate = NA) %>% 
+#       ungroup(.) %>% 
+#       dplyr::select(annual_time_step, 
+#                     indicator_score,
+#                     ci_lower,
+#                     ci_upper,
+#                     indicator,
+#                     replicate,
+#                     scenario) %>% 
+#       distinct(.)
+#     
+#     
+#   } else if (scenario == "300_Harvesting_herbivores") {
+#     
+#     # Get the herbivorous endotherms 100 - 200kg
+#     # Harvest doesn't seem to affect the ectotherms???
+#     
+#     harvested <- scenario_redlist_data_sampled_5yr[[i]] %>% 
+#       filter(functional_group_name == "herbivore endotherm" &
+#                group_id == "10.67"|
+#                functional_group_name == "herbivore endotherm" &
+#                group_id == "10.68")   %>% 
+#       mutate(scenario = scenarios[[i]]) %>% 
+#       ungroup(.) %>% 
+#       dplyr::select(annual_time_step, ave_abundance, scenario) %>% 
+#       distinct(.) %>% 
+#       #mutate(ab_scaled = range01(abundance)) %>% 
+#       group_by(annual_time_step) %>% 
+#       mutate(indicator_score = sum(ave_abundance, na.rm = TRUE),
+#              indicator = "total abundance harvested",
+#              ci_lower = NA,
+#              ci_upper = NA,
+#              replicate = NA) %>% 
+#       ungroup(.) %>% 
+#       dplyr::select(annual_time_step, 
+#                     indicator_score,
+#                     ci_lower,
+#                     ci_upper,
+#                     indicator,
+#                     replicate,
+#                     scenario) %>% 
+#       distinct(.)
+#     
+#   } 
+#   
+#   scenario_harvested_groups_5yr[[i]] <- harvested
+# }
 
-scenario_harvested_groups_5yr <- list()
-
-for (i in seq_along(scenario_redlist_data_sampled_5yr)) {
-  
-  scenario <- scenarios[[i]]
-  
-  if (scenario == "000_Baseline") {
-    
-    # No disturbance so just get whatever groups
-    
-    harvested <- scenario_redlist_data_sampled_5yr[[i]] %>% 
-      mutate(scenario = scenarios[[i]]) %>% 
-      group_by(annual_time_step) %>% 
-      mutate(indicator_score = sum(ave_abundance, na.rm = TRUE),
-             indicator = "total abundance harvested",
-             ci_lower = NA,
-             ci_upper = NA,
-             replicate = NA) %>% 
-      ungroup(.) %>%                                 
-      dplyr::select(annual_time_step, 
-                    indicator_score,
-                    ci_lower,
-                    ci_upper,
-                    indicator,
-                    replicate,
-                    scenario)%>% 
-      distinct(.)
-    
-  } else if (scenario == "100_Land_use") {
-    
-    # Get the autotroph abundance
-    
-    harvested <- scenario_auto_sampled_5yr[[i]] %>% 
-      filter(group_id == "autotrophs") %>% 
-      mutate(scenario = scenarios[[i]]) %>%
-      group_by(annual_time_step) %>% 
-      #mutate(ab_scaled = range01(abundance),
-      mutate(indicator_score = sum(ave_abundance, na.rm = TRUE),
-             indicator = "total abundance harvested",
-             ci_lower = NA,
-             ci_upper = NA,
-             replicate = NA) %>% 
-      ungroup(.) %>% 
-      dplyr::select(annual_time_step, 
-                    indicator_score,
-                    ci_lower,
-                    ci_upper,
-                    indicator,
-                    replicate,
-                    scenario) %>% 
-      distinct(.)
-    
-  } else if (scenario == "200_Harvesting_carnivores") {
-    
-    # Get the carnivorous endotherms 100 - 200kg
-    # Harvest doesn't seem to affect the ectotherms???
-    
-    harvested <- scenario_redlist_data_sampled_5yr[[i]] %>% 
-      filter(functional_group_name == "carnivore endotherm" &
-               group_id == "11.67"|
-               functional_group_name == "carnivore endotherm" &
-               group_id == "11.68")  %>% 
-      mutate(scenario = scenarios[[i]]) %>% 
-      ungroup(.) %>% 
-      dplyr::select(annual_time_step, ave_abundance, scenario) %>% 
-      distinct(.) %>% 
-      mutate(ab_scaled = range01(ave_abundance)) %>% 
-      group_by(annual_time_step) %>% 
-      #mutate(indicator_score = sum(ab_scaled, na.rm = TRUE),
-      mutate(indicator_score = sum(ave_abundance, na.rm = TRUE),
-             indicator = "total abundance harvested",
-             ci_lower = NA,
-             ci_upper = NA,
-             replicate = NA) %>% 
-      ungroup(.) %>% 
-      dplyr::select(annual_time_step, 
-                    indicator_score,
-                    ci_lower,
-                    ci_upper,
-                    indicator,
-                    replicate,
-                    scenario) %>% 
-      distinct(.)
-    
-    
-  } else if (scenario == "300_Harvesting_herbivores") {
-    
-    # Get the herbivorous endotherms 100 - 200kg
-    # Harvest doesn't seem to affect the ectotherms???
-    
-    harvested <- scenario_redlist_data_sampled_5yr[[i]] %>% 
-      filter(functional_group_name == "herbivore endotherm" &
-               group_id == "10.67"|
-               functional_group_name == "herbivore endotherm" &
-               group_id == "10.68")   %>% 
-      mutate(scenario = scenarios[[i]]) %>% 
-      ungroup(.) %>% 
-      dplyr::select(annual_time_step, ave_abundance, scenario) %>% 
-      distinct(.) %>% 
-      #mutate(ab_scaled = range01(abundance)) %>% 
-      group_by(annual_time_step) %>% 
-      mutate(indicator_score = sum(ave_abundance, na.rm = TRUE),
-             indicator = "total abundance harvested",
-             ci_lower = NA,
-             ci_upper = NA,
-             replicate = NA) %>% 
-      ungroup(.) %>% 
-      dplyr::select(annual_time_step, 
-                    indicator_score,
-                    ci_lower,
-                    ci_upper,
-                    indicator,
-                    replicate,
-                    scenario) %>% 
-      distinct(.)
-    
-  } 
-  
-  scenario_harvested_groups_5yr[[i]] <- harvested
-}
-
-any(is.null(scenario_harvested_groups_5yr))
-
-harv5yr <- scenario_harvested_groups_5yr[[1]]
-head(harv5yr)
-dim(harv5yr)
+# any(is.null(scenario_harvested_groups_5yr))
+# 
+# harv5yr <- scenario_harvested_groups_5yr[[1]]
+# head(harv5yr)
+# dim(harv5yr)
 
 # # * Get proportion extinct ----
 # 
