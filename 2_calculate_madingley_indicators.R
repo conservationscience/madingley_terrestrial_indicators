@@ -1614,9 +1614,9 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
       
       groups_decomposed[[k]] <- rbind(with_vals, without_vals) %>% 
                                 arrange(monthly_time_step) %>%                         
-                                slice(-1) %>% # Make sure we have exactly 3600 timesteps
-                                slice(1:3600) %>% 
-                                mutate(annual_time_step = rep(1:300, each = 12),
+                                #slice(-1) %>% 
+                                slice(1:4800) %>% # Make sure we have exactly 4800 timesteps
+                                mutate(annual_time_step = rep(-99:300, each = 12),
                                        replicate = j - 1) %>% # Add annual timestep
                                 arrange(monthly_time_step) 
       
@@ -1732,9 +1732,8 @@ for (i in seq_along(scenario_auto_long)) {
         
         groups_decomposed[[k]] <- rbind(with_vals, without_vals) %>% 
           arrange(monthly_time_step) %>%                         
-          #slice(-1) %>% # Make sure we have exactly 3600 timesteps
-          slice(1:3600) %>% 
-          mutate(annual_time_step = rep(1:300, each = 12),
+          slice(1:4800) %>% 
+          mutate(annual_time_step = rep(-99:300, each = 12),
                  replicate = j - 1) %>% # Add annual timestep
           arrange(monthly_time_step) 
         
@@ -1866,6 +1865,15 @@ scenario_auto_averaged <- list()
   
 }
 
+x1 <- scenario_averaged[[3]] %>% 
+       filter(monthly_time_step == 12006)
+ 
+x300 <- scenario_averaged[[3]] %>% 
+         filter(monthly_time_step == max(monthly_time_step))
+
+dim(x1)[1] == dim(x300)[1]
+
+
 baseline <- scenario_averaged[[1]]
 head(baseline)
 any(is.nan(baseline$abundance))
@@ -1939,6 +1947,23 @@ for (i in seq_along(scenario_averaged)) {
                                 TRUE, FALSE)) %>% 
       dplyr::select(group_id, first_appearance, beginning)
     
+    temp<- scenario_averaged[[i]] %>%
+      #ignore pre-burnin for this function
+      filter(monthly_time_step >= 12006) %>% 
+      #group by functional group
+      group_by(group_id) %>%
+      #remove the NA and NAN vals
+      filter(abundance != is.nan(abundance)|
+               abundance != is.na(abundance)) %>%
+      #get the earliest month with positive abundance values
+      filter(monthly_time_step == min(monthly_time_step)) %>%
+      #Add a new column that specifies the year abundance for that group first 'appeared' 
+      mutate(first_appearance = monthly_time_step,
+      #Confirm whether it had abundance at the very beginning or not
+             beginning = ifelse(first_appearance <= 12006,
+                                TRUE, FALSE)) %>% 
+      dplyr::select(group_id, first_appearance, beginning)
+    
     scenario_abundance_clean[[i]] <- temp %>% 
                                      merge(scenario_averaged[[i]]) %>% 
                                      tidylog::filter(beginning == TRUE)
@@ -1949,29 +1974,32 @@ for (i in seq_along(scenario_averaged)) {
 sc_av <- scenario_averaged[[1]]
 sc_ab <- scenario_abundance_clean[[1]]
 
+# NB - we shouldn't necessarily have the same number of spp at beginning and end
+# at this point
+
 # Check we have the same number of species at beginning and end
+s <- 4
 
-x1 <- scenario_abundance_clean[[1]] %>% filter(monthly_time_step == 12006)
-x300 <- scenario_abundance_clean[[1]] %>% filter(monthly_time_step == max(monthly_time_step))
+first_time_step <- scenario_abundance_clean[[s]] %>% 
+      filter(annual_time_step == 1) %>% 
+      summarise(spp_number = n_distinct(group_id))
 
-unique(x1$group_id) == unique(x300$group_id)
-x1x300 <- cbind(x1$group_id,x300$group_id)
+last_time_step <- scenario_abundance_clean[[s]] %>% 
+  filter(annual_time_step == 300) %>% 
+  summarise(spp_number = n_distinct(group_id))
+
+first_time_step == last_time_step # Should be true
 
 # Remove false extinctions from averaged vals ----
 
 scenario_remove_false_extinctions_2 <- list()
-
-# for (i in seq_along(scenario_averaged)) {
-#   
-#   # Identify the last time-step a species has abundance values > 0
-#   temp2 <- scenario_averaged[[i]] %>% 
 
 for (i in seq_along(scenario_abundance_clean)) {
   
   # Identify the last time-step a species has abundance values > 0
   temp2 <- scenario_abundance_clean[[i]] %>%
            group_by(group_id) %>% 
-           slice(1:3600) %>% 
+           #slice(1:3600) %>% 
            filter(abundance > 0) %>% 
            dplyr::select(group_id, monthly_time_step, abundance) %>% 
            filter(monthly_time_step == max(monthly_time_step)) %>% 
@@ -1995,8 +2023,10 @@ for (i in seq_along(scenario_abundance_clean)) {
   # if a zero abundance is a true extinction or just a missing value (false extinction)
   scenario_remove_false_extinctions_2[[i]] <- temp3 %>%
     group_by(group_id) %>%
-    slice(1:3600) %>% 
-    mutate(true_extinction = ifelse(abundance == 0 &
+    #slice(1:3600) %>% 
+    mutate(true_extinction = ifelse(abundance == 0|
+                                      is.na(abundance)|
+                                      is.nan(abundance) &
                                     monthly_time_step < last_abundance,
                                     "false extinction",
                                     ifelse(abundance > 0 &
@@ -2005,6 +2035,7 @@ for (i in seq_along(scenario_abundance_clean)) {
                                     ifelse(abundance == 0 &
                                           monthly_time_step >= last_abundance,
                                     "true extinction", "not extinct")))) %>%
+    # Make sure false extinctions come up as NA, not 0
     mutate(abundance = ifelse(true_extinction == "false extinction",
                               NA, abundance)) %>%
     group_by(group_id) %>%
@@ -2014,13 +2045,17 @@ for (i in seq_along(scenario_abundance_clean)) {
   rm(temp3)
 }
 
-x1 <- scenario_remove_false_extinctions_2[[1]] %>% 
-      filter(monthly_time_step == 12006)
+s <- 4
 
-x300 <- scenario_remove_false_extinctions_2[[1]] %>% 
-        filter(monthly_time_step == max(monthly_time_step))
+first_time_step <- scenario_remove_false_extinctions_2[[s]] %>% 
+  filter(annual_time_step == 1) %>% 
+  summarise(spp_number = n_distinct(group_id))
 
-dim(x1)[1] == dim(x300)[1]
+last_time_step <- scenario_remove_false_extinctions_2[[s]] %>% 
+  filter(annual_time_step == 300) %>% 
+  summarise(spp_number = n_distinct(group_id))
+
+first_time_step == last_time_step # Should be true
 
 saveRDS(scenario_remove_false_extinctions_2,
         file.path(general_indicator_outputs_folder,
@@ -2073,12 +2108,19 @@ for (i in seq_along(scenario_remove_false_extinctions_2)) {
     rm(group_smoothed_abundance, group_df)
 }
 
-x1 <- scenario_smoothed_abundance[[1]] %>% filter(monthly_time_step == 12006)
-x300 <- scenario_smoothed_abundance[[1]] %>% filter(monthly_time_step == max(monthly_time_step))
-xx1 <- x1$group_id
-xx300 <- x300$group_id
+s <- 1
 
-unique(x1$group_id) == unique(x300$group_id)
+first_time_step <- scenario_smoothed_abundance[[s]] %>% 
+  filter(annual_time_step == 1) %>% 
+  summarise(spp_number = n_distinct(group_id))
+
+last_time_step <- scenario_smoothed_abundance[[s]] %>% 
+  filter(annual_time_step == 300) %>% 
+  summarise(spp_number = n_distinct(group_id))
+
+first_time_step == last_time_step # Should be true
+
+x <- scenario_smoothed_abundance[[1]] %>%  filter(group_id == "10.55")
 
 saveRDS(scenario_smoothed_abundance,
         file.path(general_indicator_outputs_folder,
@@ -2139,10 +2181,10 @@ saveRDS(scenario_auto_smoothed_abundance,
 
 ## Get an example group for each scenario (random for baseline, mid size herb for land use,
 ## big carn for carnivores, big herb for herbivores)
-example_group <- c("10.59", "10.40", "11.68", "10.68")
+example_group <- c("10.59", "10.55", "11.67", "10.68")
 
 # Raw abundance
-r <- 1 # Pick a replicate
+r <- 15 # Pick a replicate
 
 ## * Decomposition ----
 
@@ -2643,9 +2685,9 @@ smoothing_plots[[4]]
   
 # CHECKPOINT - CAN LOAD PROCESSED DATA FROM HERE ----
 
-input_date <- "2021-09-22"
-
-gen_folder <- "N:/Quantitative-Ecology/Indicators-Project//Serengeti/Outputs_from_indicator_code/Indicator_outputs/general"
+# input_date <- "2021-09-22"
+# 
+# gen_folder <- "N:/Quantitative-Ecology/Indicators-Project//Serengeti/Outputs_from_indicator_code/Indicator_outputs/general"
 
 # Load data
 
@@ -2701,10 +2743,7 @@ if( !dir.exists( file.path(rli_plots_folder) ) ) {
 
 # * Take an annual sample ----
 
-interval <- 12
-
 scenario_annual <- list()
-
 
 for (i in seq_along(scenario_smoothed_abundance)) {
 
@@ -2717,20 +2756,21 @@ for (i in seq_along(scenario_smoothed_abundance)) {
  
   for (j in seq_along(scenario_groups)) {
     
-    # groups_annual[[j]] <- scenario_groups[[j]] %>% 
-    #   slice(-n()) %>% 
-    #   slice(which(row_number() %% interval == 0))  
-    
+ 
      groups_annual[[j]] <- scenario_groups[[j]] %>% 
-                           group_by(annual_time_step) %>% 
+                           group_by(annual_time_step) %>%
+       # Get the first abundance value for each year that isn't NA
+       arrange(monthly_time_step) %>% 
        filter(ave_abundance == first(na.omit(ave_abundance))) %>% 
+       # Remove superfluous columns
        dplyr::select(-monthly_time_step, - true_extinction,
                      -abundance, -sd, - error, -lower_ci, -upper_ci) %>% 
-       distinct(.) %>% 
-       ungroup(.) %>% 
-       group_by(group_id, annual_time_step) %>% 
-       slice(1) %>% 
-       ungroup(.)
+       # Remove any duplicates
+       distinct(.) #%>% 
+       # ungroup(.) %>% 
+       # group_by(group_id, annual_time_step) %>% 
+       # slice(1) %>% 
+       # ungroup(.)
     
     }
   
@@ -2886,13 +2926,23 @@ ggplot(data = rli_inputs_group) +
   geom_text(aes(x = annual_time_step, y = ave_abundance, label = rl_status))
 
 
-# * Take coarser sample ----
+# * Get correct time steps ----
+
 ## Heterotrophs
+# scenario_redlist_data_sampled <- scenario_red_list_data
 
-# We actually odn't need to take a coarser sample here for annual calcs so 
-# just rename the object
+scenario_redlist_data_sampled <- list()
 
-scenario_redlist_data_sampled <- scenario_red_list_data
+for (i in seq_along(scenario_red_list_data)) {
+  
+  scenario_redlist_data_sampled[[i]] <- scenario_red_list_data[[i]] %>% 
+    # Filter out the extra time steps we needed to get the RL status but don't need anymore
+               filter(annual_time_step > 10 &
+                        annual_time_step < 292) 
+}
+
+min(scenario_redlist_data_sampled[[1]]$annual_time_step)
+max(scenario_redlist_data_sampled[[1]]$annual_time_step)
 
 saveRDS(scenario_redlist_data_sampled,
         file.path(general_indicator_outputs_folder, 
@@ -2900,7 +2950,18 @@ saveRDS(scenario_redlist_data_sampled,
 
 ## Autotrophs
 
-scenario_auto_sampled <- scenario_auto_annual
+# scenario_auto_sampled <- scenario_auto_annual
+
+scenario_auto_sampled <- list()
+
+for (i in seq_along(scenario_auto_annual)) {
+  
+  scenario_auto_sampled[[i]] <- scenario_auto_annual[[i]] %>% 
+    # Filter out the extra time steps we needed to get the RL status but don't need anymore
+    filter(annual_time_step > 10 &
+             annual_time_step < 292) 
+  
+}
 
 #####
 
@@ -3171,8 +3232,9 @@ for (i in seq_along(scenario_red_list_data)) {
   
   # Sample
   
-  set <- seq(5,295,5)
- 
+  #set <- seq(5,295,5)
+  set <- seq(-99,300,5)
+  
   scenario_redlist_data_sampled_5yr[[i]] <- scenario_red_list_data[[i]] %>% 
     group_by(group_id) %>%
     #Calculate how many timesteps of data available for that species
@@ -3198,20 +3260,30 @@ scenario_auto_sampled_5yr <- list()
 
 for (i in seq_along(scenario_auto_annual)) {
   
+  set <- seq(-99,300,5)
+  
   # Sample
   scenario_auto_sampled_5yr[[i]] <- scenario_auto_annual[[i]] %>% 
     group_by(group_id) %>% 
-    slice(which(row_number() %% sample_interval == 0)) 
+    #Calculate how many timesteps of data available for that species
+    mutate(n_timesteps = n()) %>% 
+    #Add a 5 yr interval column for sampling
+    mutate(annual_time_step = rep(set, each = sample_interval,
+                                  length.out = n_timesteps[1])) %>% 
+    # Group by species and interval
+    group_by(group_id, annual_time_step) %>%
+    # Take the first observation
+    slice(1)
   
 }
 
 test <- scenario_auto_sampled_5yr[[1]]
 test_group <- test %>% filter(group_id == "autotrophs")
-dim(test_group) # should have 300 rows
+dim(test_group) # should have 59 rows
 
 saveRDS(scenario_auto_sampled_5yr,
         file.path(general_indicator_outputs_folder, 
-                  "scenario_redlist_data_auto_annual_8.rds"))
+                  "scenario_redlist_data_auto_5yr_8.rds"))
 
 # # * Get harvested groups only ----
 # 
@@ -3494,7 +3566,6 @@ saveRDS(scenario_auto_sampled_5yr,
 
 scenario_red_list_data_v2 <- list()
 
-#for (i in seq_along(scenario_ab_gl_formatted)) {
 for (i in seq_along(scenario_redlist_data_sampled_5yr)) {
   
   # Get replicate data for a single scenario
@@ -3565,6 +3636,24 @@ for (i in seq_along(scenario_redlist_data_sampled_5yr)) {
   
 }
 
+s <- 1
+
+first_time_step <- scenario_red_list_data_v2[[s]] %>% 
+  ungroup(.) %>% 
+  filter(annual_time_step == 1) %>% 
+  dplyr::summarise(spp_number = n_distinct(group_id))
+
+last_time_step <- scenario_red_list_data_v2[[s]] %>% 
+  ungroup(.) %>%
+  filter(annual_time_step == 300) %>% 
+  summarise(spp_number = n_distinct(group_id))
+
+first_time_step == last_time_step # Should be true
+
+first_time_step == last_time_step
+
+
+
 saveRDS(scenario_red_list_data_v2,
         file.path(general_indicator_outputs_folder, 
                   "scenario_redlist_data_5yr_8.rds"))
@@ -3582,14 +3671,48 @@ ggplot(data = rli_inputs_group) +
   theme(legend.position = "none") +
   geom_text(aes(x = annual_time_step, y = ave_abundance, label = rl_status))
 
+# * Get correct time steps ----
+
+## Heterotrophs
+# scenario_redlist_data_sampled <- scenario_red_list_data
+
+scenario_redlist_data_sampled_5yr_2 <- list()
+
+for (i in seq_along(scenario_red_list_data)) {
+  
+  scenario_redlist_data_sampled_5yr_2[[i]] <- scenario_red_list_data_v2[[i]] %>% 
+    # Filter out the extra time steps we needed to get the RL status but don't need anymore
+    filter(annual_time_step > 10 &
+             annual_time_step < 296) 
+}
+
+min(scenario_redlist_data_sampled_5yr_2[[1]]$annual_time_step)
+max(scenario_redlist_data_sampled_5yr_2[[1]]$annual_time_step)
+
+## Autotrophs
+
+# scenario_auto_sampled <- scenario_auto_annual
+
+scenario_auto_sampled_5yr_2 <- list()
+
+for (i in seq_along(scenario_auto_sampled_5yr)) {
+  
+  scenario_auto_sampled_5yr_2 [[i]] <- scenario_auto_sampled_5yr[[i]] %>% 
+    # Filter out the extra time steps we needed to get the RL status but don't need anymore
+    filter(annual_time_step > 10 &
+             annual_time_step < 296) 
+  
+}
+
+
 # * Get proportion extinct ----
 
 scenario_extinctions <- list()
 scenario_rl_status_plots <- list()
 
-for (i in seq_along(scenario_red_list_data_v2)) {
+for (i in seq_along(scenario_redlist_data_sampled_5yr_2)) {
   
-  scenario_extinctions[[i]] <- scenario_red_list_data_v2[[i]] %>% 
+  scenario_extinctions[[i]] <- scenario_redlist_data_sampled_5yr_2[[i]] %>% 
     group_by(annual_time_step, rl_status) %>% 
     filter(rl_status != is.na(rl_status)) %>% 
     summarise(test = n())
@@ -3619,10 +3742,10 @@ scenario_rl_status_plots[[4]]
 
 scenario_all_rli_outputs_v2 <- list()
 
-for (i in seq_along(scenario_red_list_data_v2)) {
+for (i in seq_along(scenario_redlist_data_sampled_5yr_2)) {
   
   scenario_all_rli_outputs_v2[[i]] <- calculate_red_list_index2(
-    scenario_red_list_data_v2[[i]], numboots, ci = FALSE) %>%
+    scenario_redlist_data_sampled_5yr_2[[i]], numboots, ci = FALSE) %>%
     mutate(scenario = scenarios[[i]],
            indicator = "RLI 5y all spp") 
   
@@ -3630,6 +3753,7 @@ for (i in seq_along(scenario_red_list_data_v2)) {
 
 x <- scenario_all_rli_outputs_v2[[3]]
 head(x)
+tail(x)
 
 # * Plot RLI ----
 
@@ -3664,9 +3788,9 @@ scenario_all_rli_plots_v2[[4]]
 
 scenario_large_spp_rli_outputs_5yr <- list()
 
-for (i in seq_along(scenario_redlist_data_sampled_5yr)) {
+for (i in seq_along(scenario_redlist_data_sampled_5yr_2)) {
 
-  large_spp <- scenario_redlist_data_sampled_5yr[[i]] %>%
+  large_spp <- scenario_redlist_data_sampled_5yr_2[[i]] %>%
     tidylog::filter(mass_lower > 10000)
 
   scenario_large_spp_rli_outputs_5yr[[i]] <- calculate_red_list_index2(
@@ -3748,6 +3872,9 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
   
   
 }
+
+min(scenario_redlist_data_sampled[[1]]$annual_time_step)
+max(scenario_redlist_data_sampled[[1]]$annual_time_step)
 
 # lpi_input <- scenario_lpi_inputs[[1]]
 # head(lpi_input)
