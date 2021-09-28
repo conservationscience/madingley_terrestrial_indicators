@@ -92,7 +92,7 @@ analysis_inputs <- "N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs
 
 # Specify the date of inputs you want to use
 
-input_date <- "2021-09-22"
+input_date <- "2021-09-27"
 
 # Get date to label outputs
 
@@ -270,8 +270,8 @@ indicator_plots[[j]] <- ggplot() +
                                               indicator_score_std),
              alpha = 0.2) +
   geom_line(data = smoothed10, aes(x = annual_time_step, y = indicator_score_loess), col = "red") + theme(axis.text = element_text(size = 2),
-    axis.text.x = element_text(size = 1),
-    axis.text.y = element_text(size = 1)) +
+    axis.text.x = element_text(size = 6),
+    axis.text.y = element_text(size = 6)) +
   geom_line(data = smoothed25, aes(annual_time_step, indicator_score_loess), col = "green") +
   geom_line(data = smoothed50, aes(annual_time_step, indicator_score_loess), col = "blue") +
   labs(title = indicator,
@@ -327,8 +327,8 @@ indicator_plots[[j]] <- ggplot(data = single_scenario[[j]],
                                    y = indicator_score_diff)) +
   geom_line() + 
   theme(axis.text = element_text(size = 2),
-    axis.text.x = element_text(size = 1),
-    axis.text.y = element_text(size = 1)) +
+    axis.text.x = element_text(size = 6),
+    axis.text.y = element_text(size = 6)) +
   labs(title = indicator,
        x = "Annual time step",
        y = "Differenced indicator score") 
@@ -426,8 +426,8 @@ indicator_plots[[j]] <- ggplot(data = single_scenario[[j]],
   geom_histogram(aes(y = ..density..), colour="black", fill="white") +
   geom_density(alpha = 0.2, fill = "hotpink") + 
   theme(axis.text = element_text(size = 2),
-    axis.text.x = element_text(size = 1),
-    axis.text.y = element_text(size = 1)) +
+    axis.text.x = element_text(size = 6),
+    axis.text.y = element_text(size = 6)) +
   labs(title = indicator,
        x = "Indicator score",
        y = "Density") 
@@ -613,8 +613,8 @@ indicator_plots[[j]] <- ggplot(data = single_scenario[[j]],
                                    y = variance)) +
   geom_line() + 
   theme(axis.text = element_text(size = 2),
-    axis.text.x = element_text(size = 1),
-    axis.text.y = element_text(size = 1)) +
+    axis.text.x = element_text(size = 6),
+    axis.text.y = element_text(size = 6)) +
   labs(title = indicator,
        x = "Annual time step",
        y = "Temporal variance") 
