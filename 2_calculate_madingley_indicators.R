@@ -816,6 +816,14 @@ if (Sys.info()['nodename'] == "80VVPF0SSB53") {
 
 # Inputs ----
 
+# Set years we want to start and finish the data set
+
+time_step_start <- 1
+time_step_end <- 292
+
+monthly_time_step_start <- time_step_start * (12 * 1000)
+monthly_time_step_end <- monthly_time_step_start + (12 * time_step_end)
+
 # disable scientific notation
 
 options(scipen = 999)
@@ -1931,51 +1939,58 @@ head(test3)
 
 # Remove blinking groups ----
 
+# Check group 15.18.12
+test_group <- "15.18.12"
+
+test_data <- scenario_averaged[[2]] %>% filter(group_id == test_group)
+
+ggplot(test_data, aes(monthly_time_step, abundance)) +
+  geom_point()
+
+scenario_weird_groups_removed <- list()
 scenario_abundance_clean <- list()
 
 for (i in seq_along(scenario_averaged)) {
 
-    # data <- data %>% filter(group_id == "15.18.21") # For testing
-
-    # Determine which groups were there at beginning (post burnin)
     temp<- scenario_averaged[[i]] %>%
-      group_by(group_id) %>%
-      filter(abundance != is.nan(abundance)) %>%
-      filter(monthly_time_step == min(monthly_time_step)) %>%
-      mutate(first_appearance = monthly_time_step,
-             beginning = ifelse(first_appearance <= 12006,
-                                TRUE, FALSE)) %>% 
-      dplyr::select(group_id, first_appearance, beginning)
-    
-    temp<- scenario_averaged[[i]] %>%
-      #ignore pre-burnin for this function
-      filter(monthly_time_step >= 12006) %>% 
       #group by functional group
       group_by(group_id) %>%
       #remove the NA and NAN vals
       filter(abundance != is.nan(abundance)|
-               abundance != is.na(abundance)) %>%
+             abundance != is.na(abundance)) %>%
       #get the earliest month with positive abundance values
       filter(monthly_time_step == min(monthly_time_step)) %>%
       #Add a new column that specifies the year abundance for that group first 'appeared' 
       mutate(first_appearance = monthly_time_step,
-      #Confirm whether it had abundance at the very beginning or not
-             beginning = ifelse(first_appearance <= 12006,
+      #Confirm whether it had abundance at the beginning (of our sim) or not
+             beginning = ifelse(first_appearance <= monthly_time_step_start,
                                 TRUE, FALSE)) %>% 
       dplyr::select(group_id, first_appearance, beginning)
+    
+    
+    temp<- scenario_averaged[[i]] %>%
+      #group by functional group
+      group_by(group_id) %>%
+      #get the beginning month rows
+      filter(monthly_time_step == monthly_time_step_start) %>%
+      # Check whether ther was abundance at our starting time step
+      mutate(beginning = ifelse(abundance > 0,
+                                TRUE, FALSE)) %>% 
+      dplyr::select(group_id, beginning)
     
     scenario_abundance_clean[[i]] <- temp %>% 
                                      merge(scenario_averaged[[i]]) %>% 
                                      tidylog::filter(beginning == TRUE)
+    
+    scenario_weird_groups_removed[[i]] <- temp %>% 
+      merge(scenario_averaged[[i]]) %>% 
+      tidylog::filter(beginning == FALSE)
     
     rm(temp)
 }
 
 sc_av <- scenario_averaged[[1]]
 sc_ab <- scenario_abundance_clean[[1]]
-
-# NB - we shouldn't necessarily have the same number of spp at beginning and end
-# at this point
 
 # Check we have the same number of species at beginning and end
 s <- 4
@@ -1990,7 +2005,69 @@ last_time_step <- scenario_abundance_clean[[s]] %>%
 
 first_time_step == last_time_step # Should be true
 
+# Look at which groups were removed
+
+unique(scenario_weird_groups_removed[[s]]$group_id)
+
 # Remove false extinctions from averaged vals ----
+
+# * Test method first ----
+## Make some test data
+
+test_data <- data.frame(group_id = c("A","A","A","A","A","A",
+                                    "B","B","B","B","B","B"),
+                        monthly_time_step = c(1,2,3,4,5,6,1,2,3,4,5,6),
+                        abundance = c(2,0,3,4,0,0,2,0,3,0,0,0),
+                        desired = c(2,NA,3,4,NA,NA,2,NA,3,0,NA,NA))
+
+# Identify the last time-step a species has abundance values > 0
+temp2 <- test_data %>%
+  group_by(group_id) %>%
+  # Get only rows within our timeframe
+  filter(monthly_time_step <= 4) %>% 
+  # Get only the rows where abundance is greater than 0
+  filter(abundance > 0) %>%
+  # Just get the rows we care about
+  dplyr::select(group_id, monthly_time_step, abundance) %>%
+  # Get the latest month that group has abundance
+  filter(monthly_time_step == max(monthly_time_step)) %>%
+  dplyr::select(group_id, monthly_time_step) %>%
+  # Rename the column to specify the last time group has abundance
+  rename(last_abundance = monthly_time_step) %>%
+  ungroup()
+
+dim(temp2)
+
+# Add the year of last positive abundance number as a column to the data    
+temp3 <- test_data %>% 
+  merge(temp2, by = "group_id", all = TRUE)
+
+dim(temp3)
+
+rm(temp2)
+
+# Use the last positive abundance year and current abundance value to determine
+# if a zero abundance is a true extinction or just a missing value (false extinction)
+test_out <- temp3 %>%
+  group_by(group_id) %>%
+  mutate(positive_abundance = ifelse(abundance > 0, TRUE, FALSE)) %>% 
+  mutate(true_extinction = ifelse(positive_abundance == FALSE &
+                                  monthly_time_step < last_abundance,
+                                  "false extinction",
+                            ifelse(positive_abundance == TRUE &
+                                   monthly_time_step <= last_abundance,
+                                   "not extinct",
+                            ifelse(positive_abundance == FALSE &
+                                   monthly_time_step >= last_abundance,
+                                   "true extinction", "not extinct")))) %>%
+  # Make sure false extinctions come up as NA, not 0
+  mutate(new_abundance = ifelse(true_extinction == "false extinction",
+                            NA, abundance)) %>%
+  group_by(group_id) %>%
+  arrange(group_id, monthly_time_step)  %>% 
+  ungroup()
+
+# * Convert false 0 to NA ----
 
 scenario_remove_false_extinctions_2 <- list()
 
@@ -1998,22 +2075,25 @@ for (i in seq_along(scenario_abundance_clean)) {
   
   # Identify the last time-step a species has abundance values > 0
   temp2 <- scenario_abundance_clean[[i]] %>%
-           group_by(group_id) %>% 
-           #slice(1:3600) %>% 
-           filter(abundance > 0) %>% 
-           dplyr::select(group_id, monthly_time_step, abundance) %>% 
-           filter(monthly_time_step == max(monthly_time_step)) %>% 
-           dplyr::select(group_id, monthly_time_step) %>% 
-           rename(last_abundance = monthly_time_step) %>% 
+           group_by(group_id) %>%
+  # Get only rows within our timeframe
+           filter(monthly_time_step <= monthly_time_step_end) %>% 
+  # Get only the rows where abundance is greater than 0
+           filter(abundance > 0) %>%
+  # Just get the rows we care about
+           dplyr::select(group_id, monthly_time_step, abundance) %>%
+  # Get the latest month that group has abundance
+           filter(monthly_time_step == max(monthly_time_step)) %>%
+           dplyr::select(group_id, monthly_time_step) %>%
+  # Rename the column to specify the last time group has abundance
+           rename(last_abundance = monthly_time_step) %>%
            ungroup()
   
   dim(temp2)
   
   # Add the year of last positive abundance number as a column to the data    
   temp3 <- scenario_abundance_clean[[i]] %>% 
-    #remove existing last abundance val bc it's leftover from before averaging
-    # dplyr::select(-last_abundance) %>% 
-    merge(temp2, by = "group_id", all = TRUE)
+           merge(temp2, by = "group_id", all = TRUE)
   
   dim(temp3)
   
@@ -2023,21 +2103,19 @@ for (i in seq_along(scenario_abundance_clean)) {
   # if a zero abundance is a true extinction or just a missing value (false extinction)
   scenario_remove_false_extinctions_2[[i]] <- temp3 %>%
     group_by(group_id) %>%
-    #slice(1:3600) %>% 
-    mutate(true_extinction = ifelse(abundance == 0|
-                                      is.na(abundance)|
-                                      is.nan(abundance) &
-                                    monthly_time_step < last_abundance,
+    mutate(positive_abundance = ifelse(abundance > 0, TRUE, FALSE)) %>% 
+    mutate(true_extinction = ifelse(positive_abundance == FALSE &
+                                      monthly_time_step < last_abundance,
                                     "false extinction",
-                                    ifelse(abundance > 0 &
-                                           monthly_time_step < last_abundance,
-                                    "not extinct",
-                                    ifelse(abundance == 0 &
-                                          monthly_time_step >= last_abundance,
-                                    "true extinction", "not extinct")))) %>%
+                                    ifelse(positive_abundance == TRUE &
+                                             monthly_time_step <= last_abundance,
+                                           "not extinct",
+                                           ifelse(positive_abundance == FALSE &
+                                                    monthly_time_step >= last_abundance,
+                                                  "true extinction", "not extinct")))) %>%
     # Make sure false extinctions come up as NA, not 0
     mutate(abundance = ifelse(true_extinction == "false extinction",
-                              NA, abundance)) %>%
+                                  NA, abundance)) %>%
     group_by(group_id) %>%
     arrange(group_id, monthly_time_step)  %>% 
     ungroup()
@@ -2045,7 +2123,7 @@ for (i in seq_along(scenario_abundance_clean)) {
   rm(temp3)
 }
 
-s <- 4
+s <- 2
 
 first_time_step <- scenario_remove_false_extinctions_2[[s]] %>% 
   filter(annual_time_step == 1) %>% 
@@ -2060,6 +2138,12 @@ first_time_step == last_time_step # Should be true
 saveRDS(scenario_remove_false_extinctions_2,
         file.path(general_indicator_outputs_folder,
                   "weird_groups_removed_abundance_4.rds"))
+
+# Check our test group
+
+# test_ex_removed <- scenario_remove_false_extinctions_2[[s]] %>% filter(group_id == test_group)
+# 
+# ggplot(test_ex_removed, aes(monthly_time_step, abundance))
 
 # # Smooth abundance ----
 
@@ -2685,7 +2769,7 @@ smoothing_plots[[4]]
   
 # CHECKPOINT - CAN LOAD PROCESSED DATA FROM HERE ----
 
-# input_date <- "2021-09-22"
+# input_date <- "2021-09-27"
 # 
 # gen_folder <- "N:/Quantitative-Ecology/Indicators-Project//Serengeti/Outputs_from_indicator_code/Indicator_outputs/general"
 
@@ -2715,6 +2799,9 @@ smoothing_plots[[4]]
 # 
 # scenario_smoothed_5_reps <- readRDS(file.path(gen_folder,input_date,
 #                                         "scenario_smoothed_abundance_5.rds"))
+
+# scenario_redlist_data_sampled <- readRDS(file.path(gen_folder,input_date,
+#                   "scenario_redlist_data_annual_7.rds"))
 
 # RED LIST INDEX ANNUAL ----
 
@@ -2782,17 +2869,17 @@ for (i in seq_along(scenario_smoothed_abundance)) {
   
 }
 
-check <- scenario_annual[[1]] %>% filter(group_id == "11.63")
-head(check)
-dim(check)
-any(duplicated(check$annual_time_step))
+s <- 2
 
-ggplot() +
-  geom_point(data = check, aes(x = annual_time_step, y = ave_abundance)) 
+first_time_step <- scenario_annual[[s]] %>% 
+  filter(annual_time_step == 1) %>% 
+  summarise(spp_number = n_distinct(group_id))
 
-x <- scenario_annual[[1]]
-x1 <- x %>% filter(annual_time_step == 1)
-x300 <- x %>% filter(annual_time_step == 300)
+last_time_step <- scenario_annual[[s]] %>% 
+  filter(annual_time_step == time_step_end) %>% 
+  summarise(spp_number = n_distinct(group_id))
+
+first_time_step == last_time_step # Should be true
 
 # Sample autotrophs
 
@@ -2810,7 +2897,7 @@ for (i in seq_along(scenario_auto_smoothed_abundance)) {
     groups_auto_annual[[j]] <- scenario_auto_groups[[j]] %>% 
       group_by(annual_time_step) %>%
       arrange(monthly_time_step) %>% 
-      slice(1)
+      filter(ave_abundance == first(na.omit(ave_abundance)))
     
     # groups_auto_annual[[j]] <- scenario_auto_groups[[j]] %>% 
     #   slice(which(row_number() %% interval == 0)) %>%
@@ -2908,7 +2995,6 @@ for (i in seq_along(scenario_annual)) {
   
 }
 
-
 # Have a quick look at the outputs
 
 rli_inputs <- scenario_red_list_data[[1]]
@@ -2937,8 +3023,8 @@ for (i in seq_along(scenario_red_list_data)) {
   
   scenario_redlist_data_sampled[[i]] <- scenario_red_list_data[[i]] %>% 
     # Filter out the extra time steps we needed to get the RL status but don't need anymore
-               filter(annual_time_step > 10 &
-                        annual_time_step < 292) 
+               filter(annual_time_step > time_step_start &
+                        annual_time_step < time_step_end) 
 }
 
 min(scenario_redlist_data_sampled[[1]]$annual_time_step)
@@ -2958,12 +3044,42 @@ for (i in seq_along(scenario_auto_annual)) {
   
   scenario_auto_sampled[[i]] <- scenario_auto_annual[[i]] %>% 
     # Filter out the extra time steps we needed to get the RL status but don't need anymore
-    filter(annual_time_step > 10 &
-             annual_time_step < 292) 
+    # filter(annual_time_step > 10 &
+    #          annual_time_step < 292) 
+    filter(annual_time_step > time_step_start &
+             annual_time_step < time_step_end) 
   
 }
 
 #####
+# * Plot groups gone extinct ----
+
+extinct_groups <- list()
+extinct_groups_data <- list()
+
+for (i in seq_along(scenario_redlist_data_sampled)) {
+  
+  ex_groups <- scenario_redlist_data_sampled[[i]] %>% 
+    filter(rl_status == "EX") %>% 
+    dplyr::select(group_id) %>% 
+    pull()
+  
+  extinct_groups_data[[i]] <- scenario_redlist_data_sampled[[i]][scenario_redlist_data_sampled[[i]]$group_id %in%
+                                        ex_groups,]
+  
+  extinct_groups[[i]] <- ggplot(extinct_groups_data[[i]], aes(annual_time_step, 
+                                                              ave_abundance)) + 
+    geom_line()+
+    geom_point() +
+    facet_wrap( ~ group_id, ncol = 1)
+}
+
+extinct_groups[[1]]
+extinct_groups[[2]]
+extinct_groups[[3]]
+extinct_groups[[4]]
+
+x <- extinct_groups_data[[2]]
 
 # * Get proportion extinct ----
 
@@ -3245,7 +3361,7 @@ for (i in seq_along(scenario_red_list_data)) {
     # Group by species and interval
     group_by(group_id, annual_time_step) %>%
     # Take the first observation
-    slice(1)
+    filter(ave_abundance == first(na.omit(ave_abundance)))
   
 }
 
@@ -3273,13 +3389,13 @@ for (i in seq_along(scenario_auto_annual)) {
     # Group by species and interval
     group_by(group_id, annual_time_step) %>%
     # Take the first observation
-    slice(1)
+    filter(ave_abundance == first(na.omit(ave_abundance)))
   
 }
 
 test <- scenario_auto_sampled_5yr[[1]]
 test_group <- test %>% filter(group_id == "autotrophs")
-dim(test_group) # should have 59 rows
+dim(test_group) 
 
 saveRDS(scenario_auto_sampled_5yr,
         file.path(general_indicator_outputs_folder, 
@@ -3640,19 +3756,67 @@ s <- 1
 
 first_time_step <- scenario_red_list_data_v2[[s]] %>% 
   ungroup(.) %>% 
-  filter(annual_time_step == 1) %>% 
+  filter(annual_time_step == time_step_start) %>% 
   dplyr::summarise(spp_number = n_distinct(group_id))
 
 last_time_step <- scenario_red_list_data_v2[[s]] %>% 
   ungroup(.) %>%
-  filter(annual_time_step == 300) %>% 
+  filter(annual_time_step == time_step_end) %>% 
   summarise(spp_number = n_distinct(group_id))
 
 first_time_step == last_time_step # Should be true
 
-first_time_step == last_time_step
+# If false, figure out which spp are missing
 
+groups_first <- scenario_red_list_data_v2[[s]] %>% 
+  ungroup(.) %>%
+  filter(annual_time_step == time_step_start) %>% 
+  pull(group_id)
 
+groups_last <- scenario_red_list_data_v2[[s]] %>% 
+  ungroup(.) %>%
+  filter(annual_time_step == time_step_end) %>% 
+  pull(group_id)
+
+# Get missing spp
+missing_spp <- setdiff(groups_first, groups_last)
+
+# Look at what happens to them
+
+missing_spp_data <- scenario_red_list_data_v2[[s]][scenario_red_list_data_v2[[s]]$group_id %in% 
+                                                     missing_spp, ]
+
+# Get last time step for each
+
+last_time_steps <- missing_spp_data %>% 
+                   group_by(group_id) %>% 
+                   summarise(last_time_step = max(annual_time_step, na.rm = TRUE))
+
+# have a look - are they going extinct?
+
+ggplot(data = missing_spp_data, aes(annual_time_step, log(ave_abundance), col = group_id)) +
+  geom_point() +
+  geom_line()
+
+# Check full dataset too
+missing_spp_data_full <- scenario_smoothed_abundance[[s]][scenario_smoothed_abundance[[s]]$group_id %in% 
+                                                            missing_spp, ]
+
+last_time_steps_full <- missing_spp_data_full %>% 
+  group_by(group_id) %>% 
+  summarise(last_time_step = max(annual_time_step, na.rm = TRUE))
+
+ggplot(data = missing_spp_data_full, aes(annual_time_step, log(ave_abundance), col = group_id)) +
+  geom_point() +
+  geom_line()
+
+# Looks like 15.18.12 (as an example) is legit extinct, let's look
+
+group_extinct <- missing_spp_data_full %>% filter(group_id == "15.18.12")
+
+# Does seem truly extinct, but abundance = NA  instead of 0, so need to go back
+# and check step that checks for fake extinctions. Also need to make sure we
+# have an annual entry for each species regardless of whether it is present or not
 
 saveRDS(scenario_red_list_data_v2,
         file.path(general_indicator_outputs_folder, 
@@ -3682,8 +3846,10 @@ for (i in seq_along(scenario_red_list_data)) {
   
   scenario_redlist_data_sampled_5yr_2[[i]] <- scenario_red_list_data_v2[[i]] %>% 
     # Filter out the extra time steps we needed to get the RL status but don't need anymore
-    filter(annual_time_step > 10 &
-             annual_time_step < 296) 
+    # filter(annual_time_step > 10 &
+    #          annual_time_step < 296) 
+    filter(annual_time_step > time_step_start &
+             annual_time_step < time_step_end) 
 }
 
 min(scenario_redlist_data_sampled_5yr_2[[1]]$annual_time_step)
@@ -3699,8 +3865,10 @@ for (i in seq_along(scenario_auto_sampled_5yr)) {
   
   scenario_auto_sampled_5yr_2 [[i]] <- scenario_auto_sampled_5yr[[i]] %>% 
     # Filter out the extra time steps we needed to get the RL status but don't need anymore
-    filter(annual_time_step > 10 &
-             annual_time_step < 296) 
+    # filter(annual_time_step > 10 &
+    #          annual_time_step < 296) 
+    filter(annual_time_step > time_step_start &
+             annual_time_step < time_step_end)
   
 }
 
