@@ -1,0 +1,795 @@
+---
+title: "Analyse terrestrial indicators"
+author: "Simone Stevenson"
+date: "20/09/2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+
+# https://bookdown.org/yihui/rmarkdown/r-code.html
+
+knitr::opts_chunk$set(echo = FALSE, message = FALSE,
+  warnings = FALSE, error = FALSE)
+```
+
+Directory path to git repo
+
+Simone's deakin laptop
+
+cd "C:\\Users\\ssteven\\OneDrive - Deakin University\\Deakin\\Chapter_3_indicator_testing\\madingley_terrestrial_indicators"
+
+Data structure
+
+Input data is structured hierarchically as follows:
+- Location (1)
+-- Scenarios (3)
+--- Replicates (25)
+
+Output indicator data is calculated at the same level, so each indicator should
+have values for:
+- Location (1)
+-- Scenarios (3)
+--- Replicates (25)
+
+# Possible useful ref?
+https://www.frontiersin.org/articles/10.3389/fevo.2018.00149/full
+
+```{r libraries}
+
+## Data wrangling
+library(tidyverse)
+library(tidylog)
+library(zoo)
+
+## Analysis
+library(mgcv)
+library(nlme)
+library(MASS)
+library(datawizard)
+#devtools::install_github("saskiaotto/INDperform")
+library(INDperform)
+
+## Viz
+library(ggpubr)
+library(cowplot)
+library(gridExtra)
+
+```
+# Functions
+
+```{r functions, echo=FALSE, eval=FALSE}
+
+# Taken from https://gist.github.com/gavinsimpson/e73f011fdaaab4bb5a30
+
+Deriv <- function(mod, n = 200, eps = 1e-7, newdata, term) {
+    if(inherits(mod, "gamm"))
+        mod <- mod$gam
+    m.terms <- attr(terms(mod), "term.labels")
+    if(missing(newdata)) {
+        newD <- sapply(model.frame(mod)[, m.terms, drop = FALSE],
+                       function(x) seq(min(x), max(x), length = n))
+        names(newD) <- m.terms
+    } else {
+        newD <- newdata
+    }
+    newDF <- data.frame(newD) ## needs to be a data frame for predict
+    X0 <- predict(mod, newDF, type = "lpmatrix")
+    newDF <- newDF + eps
+    X1 <- predict(mod, newDF, type = "lpmatrix")
+    Xp <- (X1 - X0) / eps
+    Xp.r <- NROW(Xp)
+    Xp.c <- NCOL(Xp)
+    ## dims of bs
+    bs.dims <- sapply(mod$smooth, "[[", "bs.dim") - 1
+    ## number of smooth terms
+    t.labs <- attr(mod$terms, "term.labels")
+    ## match the term with the the terms in the model
+    if(!missing(term)) {
+        want <- grep(term, t.labs)
+        if(!identical(length(want), length(term)))
+            stop("One or more 'term's not found in model!")
+        t.labs <- t.labs[want]
+    }
+    nt <- length(t.labs)
+    ## list to hold the derivatives
+    lD <- vector(mode = "list", length = nt)
+    names(lD) <- t.labs
+    for(i in seq_len(nt)) {
+        Xi <- Xp * 0
+        want <- grep(t.labs[i], colnames(X1))
+        Xi[, want] <- Xp[, want]
+        df <- Xi %*% coef(mod)
+        df.sd <- rowSums(Xi %*% mod$Vp * Xi)^.5
+        lD[[i]] <- list(deriv = df, se.deriv = df.sd)
+    }
+    class(lD) <- "Deriv"
+    lD$gamModel <- mod
+    lD$eps <- eps
+    lD$eval <- newD - eps
+    lD ##return
+}
+
+confint.Deriv <- function(object, term, alpha = 0.05, ...) {
+    l <- length(object) - 3
+    term.labs <- names(object[seq_len(l)])
+    if(missing(term)) {
+        term <- term.labs
+    } else { ## how many attempts to get this right!?!?
+        ##term <- match(term, term.labs)
+        ##term <- term[match(term, term.labs)]
+        term <- term.labs[match(term, term.labs)]
+    }
+    if(any(miss <- is.na(term)))
+        stop(paste("'term'", term[miss], "not a valid model term."))
+    res <- vector(mode = "list", length = length(term))
+    names(res) <- term
+    residual.df <- df.residual(object$gamModel)
+    tVal <- qt(1 - (alpha/2), residual.df)
+    ##for(i in term.labs[term]) {
+    for(i in term) {
+        upr <- object[[i]]$deriv + tVal * object[[i]]$se.deriv
+        lwr <- object[[i]]$deriv - tVal * object[[i]]$se.deriv
+        res[[i]] <- list(upper = drop(upr), lower = drop(lwr))
+    }
+    res$alpha = alpha
+    res
+}
+
+signifD <- function(x, d, upper, lower, eval = 0) {
+    miss <- upper > eval & lower < eval
+    incr <- decr <- x
+    want <- d > eval
+    incr[!want | miss] <- NA
+    want <- d < eval
+    decr[!want | miss] <- NA
+    list(incr = incr, decr = decr)
+}
+
+plot.Deriv <- function(x, alpha = 0.05, polygon = TRUE,
+                       sizer = FALSE, term,
+                       eval = 0, lwd = 3,
+                       col = "lightgrey", border = col,
+                       ylab, xlab, main, ...) {
+    l <- length(x) - 3
+    ## get terms and check specified (if any) are in model
+    term.labs <- names(x[seq_len(l)])
+    if(missing(term)) {
+        term <- term.labs
+    } else {
+        term <- term.labs[match(term, term.labs)]
+    }
+    if(any(miss <- is.na(term)))
+        stop(paste("'term'", term[miss], "not a valid model term."))
+    if(all(miss))
+        stop("All terms in 'term' not found in model.")
+    l <- sum(!miss)
+    nplt <- n2mfrow(l)
+    tVal <- qt(1 - (alpha/2), df.residual(x$gamModel))
+    if(missing(ylab))
+        ylab <- expression(italic(hat(f)*"'"*(x)))
+    if(missing(xlab)) {
+        xlab <- attr(terms(x$gamModel), "term.labels")
+        names(xlab) <- xlab
+    }
+    if (missing(main)) {
+        main <- term
+        names(main) <- term
+    }
+    ## compute confidence interval
+    CI <- confint(x, term = term)
+    ## plots
+    layout(matrix(seq_len(l), nrow = nplt[1], ncol = nplt[2]))
+    for(i in term) {
+        upr <- CI[[i]]$upper
+        lwr <- CI[[i]]$lower
+        ylim <- range(upr, lwr)
+        plot(x$eval[,i], x[[i]]$deriv, type = "n",
+             ylim = ylim, ylab = ylab, xlab = xlab[i], main = main[i], ...)
+        if(isTRUE(polygon)) {
+            polygon(c(x$eval[,i], rev(x$eval[,i])),
+                    c(upr, rev(lwr)), col = col, border = border)
+        } else {
+            lines(x$eval[,i], upr, lty = "dashed")
+            lines(x$eval[,i], lwr, lty = "dashed")
+        }
+        abline(h = 0, ...)
+        if(isTRUE(sizer)) {
+            lines(x$eval[,i], x[[i]]$deriv, lwd = 1)
+            S <- signifD(x[[i]]$deriv, x[[i]]$deriv, upr, lwr,
+                         eval = eval)
+            lines(x$eval[,i], S$incr, lwd = lwd, col = "blue")
+            lines(x$eval[,i], S$decr, lwd = lwd, col = "red")
+        } else {
+            lines(x$eval[,i], x[[i]]$deriv, lwd = 2)
+        }
+    }
+    layout(1)
+    invisible(x)
+}
+
+# Using Gist from https://fromthebottomoftheheap.net/2014/05/15/identifying-periods-of-change-with-gams/
+
+#' get_derivs is a function to calculate the first derivatives of the predicted indicator values
+
+#' @param mod - gamm object
+#' @param data - the input pressure response time step data for the model
+#' @param length - double - number of time steps you want to output
+#' @param scenario - string, name of scenario you modelled
+#' @param indicator - string, name of indicator you modelled
+#' @param term_string - string, name of model input variable you want to predict against
+#' @return a list with a ggplot of first derivatives and significant trends,
+#' and output data including observed, predicted, derivatives and confidence intervals
+
+get_derivs <- function(mod, data, length, scenario, indicator, term_string) {
+  
+want <- seq(1, nrow(data), length.out = length)
+
+pdat <- with(data,
+             data.frame(annual_time_step = annual_time_step[want]))
+             
+p2 <- predict(mod$gam, newdata = pdat, type = "terms", se.fit = TRUE,
+              response = TRUE)
+pdat <- transform(pdat, p2 = p2$fit[,1], se2 = p2$se.fit[,1])
+
+df.res <- df.residual(mod$gam)
+crit.t <- qt(0.025, df.res, lower.tail = FALSE)
+pdat <- transform(pdat,
+                  upper = p2 + (crit.t * se2),
+                  lower = p2 - (crit.t * se2))
+
+Term <- term_string
+
+m2.d <- Deriv(mod) # Gets first derivative
+m2.dci <- confint(m2.d, term = Term)
+m2.dsig <- signifD(pdat$p2, d = m2.d[[Term]]$deriv,
+                    m2.dci[[Term]]$upper, m2.dci[[Term]]$lower)
+
+ylim <- with(pdat, range(upper, lower, p2))
+ylab <- "test"
+
+selected_mod_df <- data %>% 
+                   dplyr::select(annual_time_step, response_var) %>% 
+                   merge(pdat, by = "annual_time_step") %>% 
+                   mutate(increasing = m2.dsig$incr,
+                          decreasing = m2.dsig$decr)
+
+plot(p2 ~ annual_time_step, data = pdat, type = "n", ylab = ylab, ylim = ylim)
+lines(p2 ~ annual_time_step, data = pdat)
+lines(upper ~ annual_time_step, data = pdat, lty = "dashed")
+lines(lower ~ annual_time_step, data = pdat, lty = "dashed")
+lines(unlist(m2.dsig$incr) ~ annual_time_step, data = pdat, col = "blue", lwd = 3)
+lines(unlist(m2.dsig$decr) ~ annual_time_step, data = pdat, col = "red", lwd = 3)
+
+# Recreate with ggplot
+
+deriv_plot <- ggplot() +
+  # geom_point(data = selected_mod_df,
+  #            aes(x = annual_time_step, y = response_var),
+  #            alpha = 0.3) +
+  geom_line(aes(x = selected_mod_df$annual_time_step,
+                y = selected_mod_df$p2)) +
+  geom_line(aes(x = selected_mod_df$annual_time_step, 
+                y = selected_mod_df$increasing), col = "blue", size = 2) +
+  geom_line(aes(x = selected_mod_df$annual_time_step, 
+                y = selected_mod_df$decreasing), col = "red", size = 2) +
+  labs(title = paste(scenario,
+                     indicator, sep = " "))
+
+return(list(selected_mod_df, deriv_plot))
+
+}
+
+
+```
+
+```{r template chunk }
+
+```
+
+```{r data, results=FALSE }
+
+# Set up paths ----
+
+location <- 'Serengeti'
+
+indicators_project <- "N:/Quantitative-Ecology/Indicators-Project"
+
+# Analysis inputs are the outputs of 2_calculate_madingley_indicators.R
+
+analysis_inputs <- "N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/general/"
+
+# Inputs ----
+
+# Specify the date of inputs you want to use
+
+input_date <- "2021-09-30"
+
+# Get date to label outputs
+
+output_date <- Sys.Date() 
+
+scenarios_title <- list("Baseline", "Land use", 
+                  "Carnivore harvesting", 
+                  "Herbivore harvesting")
+
+disturbance_string <- c("pre-disturbance", "disturbance", "post-disturbance")
+
+disturbance_factor <- factor(disturbance_string, ordered = TRUE,
+                              levels = c("pre-disturbance", 
+                                         "disturbance", 
+                                         "post-disturbance"))
+
+# Set up output folders
+
+## Include a folder to store the version of inputs used to get the outputs
+
+analysis_inputs_folder <- file.path(indicators_project,  
+                           "/Serengeti/Outputs_from_analysis_code/Analysis_inputs",
+                           output_date)
+
+if( !dir.exists( file.path(analysis_inputs_folder) ) ) {
+  dir.create( file.path(analysis_inputs_folder), recursive = TRUE )
+  
+}
+
+analysis_outputs_folder <- file.path(indicators_project, 
+                                     "/Serengeti/Outputs_from_analysis_code/Analysis_outputs",
+                                     output_date)
+
+if( !dir.exists( file.path(analysis_outputs_folder) ) ) {
+  dir.create( file.path(analysis_outputs_folder), recursive = TRUE )
+  
+}
+
+analysis_plots_folder <- file.path(indicators_project, 
+                                     "/Serengeti/Outputs_from_analysis_code/Analysis_plots_folder",
+                                   output_date)
+
+if( !dir.exists( file.path(analysis_plots_folder) ) ) {
+  dir.create( file.path(analysis_plots_folder), recursive = TRUE )
+  
+}
+
+# Load indicator > scenario level data ----
+
+indicators_all_df <- readRDS(file.path(analysis_inputs, input_date, "all_indicators_output_dataframe.rds"))
+
+indicators_all_list <- flatten(readRDS(file.path(analysis_inputs,input_date, "all_indicators_output_list.rds")))
+
+# Get list of indicators
+
+indicators <- unique(indicators_all_df$indicator)
+
+# Get list of scenarios
+
+scenarios <- unique(indicators_all_df$scenario)
+
+# Save a copy of the inputs used to create outputs
+
+write.csv(indicators_all_df, file.path(analysis_inputs_folder,
+                                       paste(output_date, "input_data.csv",
+                                             sep = "_")))
+# Load red list data
+
+scenario_redlist_data_sampled <- readRDS(file.path(analysis_inputs, input_date, "scenario_redlist_data_annual_7.rds"))
+```
+
+```{r prep data, results = FALSE}
+# Standardize & difference the data as per Bestelmeyer 2011
+
+indicators_all_df <- indicators_all_df %>% 
+                     group_by(indicator, scenario) %>% 
+  filter(indicator == "RLI annual"|
+         indicator == "LPI"|
+         indicator == "total abundance harvested") %>% 
+                     mutate(indicator_score_std = standardize(indicator_score),
+                            indicator_score_diff = indicator_score_std - 
+                             lag(indicator_score_std, default = 0)) %>% 
+                     mutate(scenario_indicator = paste(scenario, indicator, sep = "_"),
+                            variance = rollapply(indicator_score_diff,
+                               10,
+                               var,
+                               na.rm = TRUE,
+                               partial = TRUE,
+                               align = "left"),
+                            disturbance = as.integer(ifelse(annual_time_step > 99 &
+                                                 annual_time_step < 201,
+                                                 1, 0)),
+                            disturbance_factor = as.factor(ifelse(disturbance == 1,
+                                                 "disturbance", 
+                                                 "no disturbance")),
+                            years_since_disturbance = ifelse(annual_time_step < 100,
+                                                            1, (annual_time_step - 100)),
+                            disturbance_phase = as.integer(ifelse(annual_time_step < 100,
+                                                                  1,
+                                                 ifelse(annual_time_step > 99 &
+                                                 annual_time_step < 201,
+                                                 2, 3)))) %>%
+                     ungroup(.)
+
+# Split into a list of scenarios then indicators
+
+scenario_indicators <- split(indicators_all_df, indicators_all_df$scenario)
+
+# Or vice versa
+
+indicator_scenarios <- split(indicators_all_df, indicators_all_df$indicator)
+
+# Single indicator, single scenario
+
+scenario_indicator_single <- split(indicators_all_df, indicators_all_df$scenario_indicator)
+
+# Make a test df of one scenario, one indicator for building loop content
+
+test_df <- scenario_indicators[[2]] %>% 
+           filter(indicator == "LPI")
+
+```
+
+```{r prep gam inputs, results=FALSE }
+
+# * LPI ----
+# *** Prep inputs ----
+
+unique(indicators_all_df$indicator)
+unique(indicators_all_df$scenario)
+ind <- "LPI"
+scen <- "100_Land_use"
+
+response <- indicators_all_df %>% 
+  filter(indicator == ind) %>% 
+  filter(scenario == scen) %>% 
+  rename(response_var = indicator_score) %>% 
+  dplyr::select(annual_time_step, response_var)
+
+predictor <- indicators_all_df %>% 
+  filter(indicator == "total abundance harvested") %>% 
+  filter(scenario == scen) %>% 
+  mutate(indicator_score_std = exp(indicator_score_std)) %>% 
+  rename(pressure_var_c = indicator_score_std,
+         pressure_var_f = disturbance_factor) %>% 
+  dplyr::select(annual_time_step, cycle_var, pressure_var_c, pressure_var_f,
+                years_since_disturbance)
+
+
+pr_gam_inputs <- response %>% 
+  merge(predictor, by = "annual_time_step")
+
+pr_gam_inputs <- pr_gam_inputs %>% 
+                 merge(deriv_df, by = "annual_time_step")
+
+
+```
+
+# Model 0 - Temporal trend, no correlation structure
+
+```{r m, echo = TRUE}
+
+# Prepare a gamm with no correlation structure
+
+m <- gamm(response_var ~ s(annual_time_step),
+          select = TRUE,
+          data = pr_gam_inputs)
+
+# Check the autocorrelation of the residuals
+
+mr <- residuals(m$gam, type = "response")
+
+acf(mr)
+pacf(mr)
+
+# Check the model fit
+
+gam.check(m$gam)
+
+# All look terrible
+## Gradually decreasing acf and sharply changing pacf suggest we need an AR1 
+## correlation structure
+
+```
+
+# Model 1 - Temporal trend accounting for autocorrelation using AR1 seasonal
+
+https://stats.stackexchange.com/questions/258229/how-to-specify-autocorrelation-in-gamm
+
+
+```{r m1, echo = TRUE }
+
+m1 <- gamm(response_var ~ s(annual_time_step), 
+                 data = pr_gam_inputs,
+                 correlation = corAR1(form = ~ 1|seasonal_var_f))
+
+m1r <- residuals(m1$gam, type = "response")
+
+acf(m1r)
+pacf(m1r)
+
+```
+
+# Model 2 - Temporal trend accounting for autocorrelation using AR1 cycle
+
+```{r m2, echo = TRUE }
+
+m2 <- gamm(response_var ~ s(annual_time_step), 
+                 data = pr_gam_inputs,
+                 correlation = corAR1(form = ~ 1|cycle_var))
+
+m2r <- residuals(m2$gam, type = "response")
+
+acf(m2r)
+pacf(m2r)
+
+```
+
+# Model 3 - Temporal trend accounting for autocorrelation using ARMA
+
+```{r m3, echo = TRUE }
+
+m3 <- gamm(response_var ~ s(annual_time_step), 
+                 data = pr_gam_inputs,
+                 correlation = corARMA(form = ~ 1|cycle_var, p = 2, q = 2))
+
+m3r <- residuals(m3$gam, type = "response")
+
+acf(m3r)
+pacf(m3r)
+
+```
+# Model selection so far
+
+```{r model selection 1, echo = TRUE }
+
+anova.lme(m$lme, m1$lme, m2$lme, m3$lme)
+
+selected_mod <- m1
+
+gam.check(selected_mod$gam)
+
+```
+
+# Plot fitted against observed
+
+```{r model selection 1, echo = TRUE }
+
+fit_obs_df <- data.frame(annual_time_step = pr_gam_inputs$annual_time_step, 
+                   fitted = selected_mod$gam$fitted.values, 
+                   observed = pr_gam_inputs$response_var)
+
+ggplot() + 
+  geom_line(data = fit_obs_df, aes(annual_time_step, fitted)) + 
+  geom_point(data = fit_obs_df, aes(annual_time_step, observed))
+
+
+```
+# Calculate and plot first derivatives
+
+First derivatives show the rate of change in the indicator at a specific time 
+point. Values = 0 signify no trend, values > 0 signify a positive trend, and 
+values < 0 signify a negative trend.
+
+```{r first derivatives}
+
+selected_mods[[i]] <- selected_mod
+mod_inputs[[i]] <- pr_gam_inputs
+
+first_derivatives <- list()
+
+for (i in seq_along(scenario_indicator_mods)){
+  
+  first_derivatives[[i]] <- get_derivs(selected_mods[[i]],
+                                       mod_inputs[[i]],
+                                       290,
+                                       "annual_time_step")
+}
+
+get_derivs(selected_mod, pr_gam_inputs, 290, 
+                   "land use", "LPI", "annual_time_step")
+
+```
+
+```{r graveyard, echo = TRUE }
+
+# Using Jess' method
+
+deriv_func <- splinefun(x = fit_obs_df$annual_time_step, y = fit_obs_df$fitted)
+deriv_fitted <- as.data.frame(x = deriv_func(seq(1, 290, 1), deriv = 1))
+
+deriv_df <- cbind(ts = fit_obs_df$annual_time_step,d = deriv_fitted)
+
+ggplot(deriv_df, aes(ts, `deriv_func(seq(1, 290, 1), deriv = 1)`))+
+  geom_line()
+
+# Using gratia package
+
+library(gratia)
+
+gratia_derivs <- derivatives(selected_mod, order = 1, 
+                    n = 290, interval = "confidence")
+
+draw(gratia_derivs)
+
+
+
+test <- get_derivs(selected_mod, pr_gam_inputs, 290, 
+                   "land use", "LPI", "annual_time_step")
+
+x <- test[[1]]
+test
+
+```
+
+# Calculate and plot second derivatives
+
+Second derivatives show when the indicator values have changed direction
+
+```{r derivative 2, echo = TRUE }
+
+deriv_func <- splinefun(x = fit_obs_df$annual_time_step, y = fit_obs_df$fitted)
+deriv_fitted <- as.data.frame(x = deriv_func(seq(1, 290, 1), deriv = 2))
+
+deriv_df <- cbind(ts = fit_obs_df$annual_time_step,d = deriv_fitted)
+
+ggplot(deriv_df, aes(ts, `deriv_func(seq(1, 290, 1), deriv = 2)`))+
+  geom_line()
+
+
+```
+
+```{r misc }
+
+m1 <- gamm(response_var ~ s(annual_time_step)+ pressure_var_f, 
+          data = pr_gam_inputs,
+           correlation = corARMA(form = ~ 1|seasonal_var, p = 1))
+
+
+intervals(m1$lme, which = "var-cov")$corStruct
+
+AIC(m, m0, m1$lme)
+
+selected_mod <- m1
+
+test <- data.frame(annual_time_step = pr_gam_inputs$annual_time_step, 
+                   fitted = selected_mod$gam$fitted.values, 
+                   observed = pr_gam_inputs$response_var)
+
+ggplot() + 
+  geom_line(data = test, aes(annual_time_step, fitted)) + 
+  geom_point(data = test, aes(annual_time_step, observed))
+
+
+deriv_func <- splinefun(x = test$annual_time_step, y = test$fitted)
+deriv_fitted <- as.data.frame(x = deriv_func(seq(1, 290, 1), deriv = 2))
+
+deriv_df <- cbind(ts = test$annual_time_step,d = deriv_fitted)
+
+ggplot(deriv_df, aes(ts, `deriv_func(seq(1, 290, 1), deriv = 2)`))+
+  geom_line()
+
+# https://petolau.github.io/Analyzing-double-seasonal-time-series-with-GAM-in-R/
+# https://fromthebottomoftheheap.net/2014/05/09/modelling-seasonal-data-with-gam/
+# https://asbates.rbind.io/2019/04/19/time-series-with-spline-based-models/
+# https://asbates.rbind.io/2019/05/03/gams-for-time-series/ 
+
+fit <- auto.arima(resid(m1$lme, type = "normalized"),
+                       stationary = TRUE, seasonal = TRUE)
+
+fit$coef
+
+plot(forecast(fit,h=20))
+summary(fit)
+
+plot(pr_gam_inputs$pressure_var_f, resid(m1), xlab = "disturbance",
+ylab = "Residuals")
+
+plot(pr_gam_inputs$pressure_var_c, resid(m1), xlab = "disturbance level",
+ylab = "Residuals")
+
+plot(pr_gam_inputs$annual_time_step, resid(m1), xlab = "annual time step",
+ylab = "Residuals")
+
+
+
+selected_mod <- mmmm
+
+gam.check(selected_mod$gam)
+
+E <- residuals(selected_mod, type = "response")
+I1 <- !is.na(pr_gam_inputs$response_var)
+Efull <- vector(length = length(pr_gam_inputs$response_var))
+Efull <- NA
+Efull[I1] <- E
+acf(Efull, na.action = na.pass,
+main = "Auto-correlation plot for residuals")
+
+acf(Efull, plot = FALSE)
+pacf(Efull, plot = FALSE)
+
+```
+
+
+# Model selection
+
+```{r model selection }
+
+#Using ANOVA (as per https://fromthebottomoftheheap.net/2014/05/09/modelling-seasonal-data-with-gam/)
+
+# anova(m1, m2$lme, m3, m4$lme, m5, m6$lme)
+
+## Using AIC
+mod_sel_table <- as.data.frame(AIC(m1, m2$lme, m3$lme, m4))
+mod_sel_table
+
+# Define selected model
+
+selected_mod <- m4
+
+summary(selected_mod)
+
+plot(selected_mod, residuals = TRUE, pch = 19, cex = 0.75)
+
+gam.check(selected_mod)
+```
+
+```{r plot selected mods, eval = FALSE}
+
+summary(pr_gam_inputs)
+
+pdat <- data.frame(annual_time_step = c(1:300),
+                   pressure_var_f = as.factor("disturbance"))
+
+head(pdat)
+
+p <- predict(selected_mod, newdata = pdat, type = "response")
+p
+
+pdat <- cbind(pdat,p)
+lines(p ~ annual_time_step, data = pdat, col = "pink")
+# lines(p1 ~ annual_time_step, data = pdat, col = "red")
+# lines(p2 ~ annual_time_step, data = pdat, col = "blue")
+legend("topleft",
+       legend = c("Uncorrelated Errors","AR(1) Errors"),
+       bty = "n", col = c("red","blue"), lty = 1)
+
+# *** Plot the derivatives and periods of change ----
+
+m2.d <- Deriv(selected_mod$terms, n = 300)
+plot(m2.d, sizer = TRUE, alpha = 0.01)
+
+# Add periods of change to time series
+
+plot(LPI ~ annual_time_step, data = pr_gam_inputs, 
+     type = "p")
+lines(p ~ annual_time_step, data = pdat)
+CI <- confint(m2.d, alpha = 0.01)
+S <- signifD(p, m2.d$annual_time_step$deriv, 
+             CI$annual_time_step$upper, 
+             CI$annual_time_step$lower,
+             eval = 0)
+lines(S$incr ~ annual_time_step, data = pdat, lwd = 3, col = "blue")
+lines(S$decr ~ annual_time_step, data = pdat, lwd = 3, col = "red")
+# Recreate with ggplot
+
+deriv_plot <- ggplot() +
+  geom_point(data = gam_inputs,
+             aes(x = annual_time_step, y = indicator_score),
+             alpha = 0.3) +
+  geom_line(aes(x = gam_inputs$annual_time_step,
+                y = p2)) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$incr), col = "blue", size = 2) +
+  geom_line(aes(x = gam_inputs$annual_time_step, 
+                y = S$decr), col = "red", size = 2) +
+  labs(title = paste(gam_inputs$scenario[1],
+                     gam_inputs$indicator[1], sep = " "))
+
+deriv_plot
+
+ggsave(file.path(analysis_plots_folder,
+                 paste(gam_inputs$indicator[1],"_", gam_inputs$scenario[1], 
+                       "derivative_plot.png", sep = "")),
+       deriv_plot,  device = "png")
+
+```

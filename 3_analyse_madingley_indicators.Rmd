@@ -92,7 +92,7 @@ analysis_inputs <- "N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs
 
 # Specify the date of inputs you want to use
 
-input_date <- "2021-09-27"
+input_date <- "2021-09-30"
 
 # Get date to label outputs
 
@@ -146,6 +146,7 @@ indicators_all_df <- readRDS(file.path(analysis_inputs, input_date, "all_indicat
 
 indicators_all_list <- flatten(readRDS(file.path(analysis_inputs,input_date, "all_indicators_output_list.rds")))
 
+
 # Get list of indicators
 
 indicators <- unique(indicators_all_df$indicator)
@@ -174,6 +175,9 @@ Using the annual RLI in Land use scenario as an example
 
 indicators_all_df <- indicators_all_df %>% 
                      group_by(indicator, scenario) %>% 
+  filter(indicator == "RLI annual"|
+         indicator == "LPI"|
+         indicator == "total abundance harvested") %>% 
                      mutate(indicator_score_std = standardize(indicator_score),
                             indicator_score_diff = indicator_score_std - 
                              lag(indicator_score_std, default = 0)) %>% 
@@ -188,15 +192,11 @@ indicators_all_df <- indicators_all_df %>%
                                                  1, 0)),
                             disturbance_factor = as.factor(ifelse(disturbance == 1,
                                                  "disturbance", 
-                                                 "no disturbance"))) %>%
+                                                 "no disturbance")),
+                            years_since_disturbance = ifelse(annual_time_step < 100,
+                                                            1, (annual_time_step - 100))) %>%
                      ungroup(.)
 
-# Create a time since disturbance variable
-
-before <- rep(1, times = 99)
-after <- seq(2,202, 1)
-
-time_since_disturbance <- c(before, after)
 
 # Split into a list of scenarios then indicators
 
@@ -219,7 +219,7 @@ test_df <- scenario_indicators[[2]] %>%
 
 ```
 
-# Visualise smoothed time series using loess at 10, 25 and 50% smoothing spans
+# Visualise smoothed time series using loess at 25 and 50% smoothing spans
 
 ```{r visualise, warning=FALSE, message = FALSE, error=FALSE}
 
@@ -269,14 +269,18 @@ indicator_plots[[j]] <- ggplot() +
   geom_point(data = single_scenario[[j]], aes(annual_time_step, 
                                               indicator_score_std),
              alpha = 0.2) +
-  geom_line(data = smoothed10, aes(x = annual_time_step, y = indicator_score_loess), col = "red") + theme(axis.text = element_text(size = 2),
+  # geom_line(data = smoothed10, aes(x = annual_time_step, 
+  #                                  y = indicator_score_loess), col = "red") + 
+  theme(axis.text = element_text(size = 2),
     axis.text.x = element_text(size = 6),
     axis.text.y = element_text(size = 6)) +
   geom_line(data = smoothed25, aes(annual_time_step, indicator_score_loess), col = "green") +
   geom_line(data = smoothed50, aes(annual_time_step, indicator_score_loess), col = "blue") +
   labs(title = indicator,
        x = "Annual time step",
-       y = "Indicator") 
+       y = "Indicator") +
+  geom_vline(xintercept = 100, col = "red") +
+  geom_vline(xintercept = 200, col = "blue")
 
   }
   
@@ -286,8 +290,8 @@ indicator_plots[[j]] <- ggplot() +
                                                      indicator_plots[[1]],
                                                      indicator_plots[[2]],
                                                      indicator_plots[[3]],
-                                                     indicator_plots[[4]],
-                                                     indicator_plots[[5]],
+                                                     # indicator_plots[[4]],
+                                                     # indicator_plots[[5]],
                                                      nrow = 2, align = "v")
 rm(indicator_plots, indicator)
 
@@ -301,7 +305,7 @@ loess_plots_1[[4]]
 
 # Visualise the differenced indicator values (the difference between indicator at time t and indicator at time t - 1)
 
-```{r plot differenced}
+```{r plot differenced, eval = FALSE}
 
 differenced_plots <- list()
 
@@ -341,8 +345,8 @@ indicator_plots[[j]] <- ggplot(data = single_scenario[[j]],
                                          indicator_plots[[1]],
                                          indicator_plots[[2]],
                                          indicator_plots[[3]],
-                                         indicator_plots[[4]],
-                                         indicator_plots[[5]],
+                                         # indicator_plots[[4]],
+                                         # indicator_plots[[5]],
                                          nrow = 2, align = "v")
 rm(indicator_plots, indicator)
 
@@ -355,26 +359,72 @@ differenced_plots[[4]]
 
 ```
 
-```{r breakpoints }
+# Visualise breakpoints (tbc)
+
+```{r breakpoints, eval = FALSE }
 # https://www.marinedatascience.co/blog/2019/09/28/comparison-of-change-point-detection-methods/
 
-# https://kevin-kotze.gitlab.io/tsm/ts-2-tut/
-## Using the changepoint package
+## Using the changepoint package:
 
-### NOTE: Changepoint doesn't find anything if we used differenced values
-### but does if we just use normal values
-# i <- i + 1
-# data <- indicators_all_df %>% 
-#         filter(scenario == "300_Harvesting_herbivores" &
-#                indicator == indicators[i]) %>% 
-#         mutate(lag_indicator_score_diff = lag(indicator_score_std, 1))
-# 
-# print(data$scenario[1])
-# print(data$indicator[1])
-# m_binseg <- cpt.mean(data$indicator_score_diff, penalty = "BIC", method = "BinSeg", Q = 5)
-# plot(m_binseg, type = "l", xlab = "Index", cpt.width = 4, 
-#      main = paste(data$scenario[1], data$indicator[1], sep = " "))
-# 
+# https://kevin-kotze.gitlab.io/tsm/ts-2-tut/
+
+breakpoint_plots <- list()
+
+for ( i in seq_along(scenario_indicators)) {
+  
+  # Get a list of indicator outputs for a single scenario
+  single_scenario <- split(scenario_indicators[[i]], 
+                           scenario_indicators[[i]]$indicator)
+  
+  scenario <- single_scenario[[1]]$scenario[1]
+  
+  indicators <- names(single_scenario)
+  
+  indicator_plots <- list()
+  
+  for (j in seq_along(single_scenario)) {
+    
+  # Get the scenario
+  
+  indicator <- single_scenario[[j]]$indicator[1]
+
+  m_binseg <- cpt.mean(single_scenario[[j]]$indicator_score_std, 
+                       penalty = "BIC", method = "BinSeg", Q = 5)
+  
+  plot(m_binseg, type = "l", xlab = "Index", cpt.width = 4, 
+  main = paste(scenario, indicator, sep = " "))
+  
+  cpt <- c(10, m_binseg@cpts)
+  
+  indicator_plots[[j]] <- ggplot() +
+    geom_line(data = single_scenario[[j]],
+                                 aes(x = annual_time_step,
+                                     y = indicator_score_std)) +
+    geom_point
+
+
+  }
+  
+  title <- ggdraw() + draw_label(scenarios_title[[i]])
+  
+  breakpoint_plots[[i]] <- plot_grid(title,
+                                                     indicator_plots[[1]],
+                                                     indicator_plots[[2]],
+                                                     indicator_plots[[3]],
+                                                     # indicator_plots[[4]],
+                                                     # indicator_plots[[5]],
+                                                     nrow = 2, align = "v")
+rm(indicator_plots, indicator)
+
+}
+
+breakpoint_plots[[1]]
+breakpoint_plots[[2]]
+breakpoint_plots[[3]]
+breakpoint_plots[[4]]
+
+
+
 # # Using the strucchange package - think it only identifies one break??
 # ## Another tutorial https://datascienceplus.com/structural-changes-in-global-warming/
 # 
@@ -398,7 +448,7 @@ differenced_plots[[4]]
 ```
 # Visualise the frequency distribution of the indicator values & abundance of harvested groups
 
-```{r frequency distribution }
+```{r frequency distribution, eval = FALSE }
 
 # Visualise the frequnecy distribution and density of indicators as in Bestelmeyer 2011
 
@@ -440,8 +490,8 @@ indicator_plots[[j]] <- ggplot(data = single_scenario[[j]],
                                          indicator_plots[[1]],
                                          indicator_plots[[2]],
                                          indicator_plots[[3]],
-                                         indicator_plots[[4]],
-                                         indicator_plots[[5]],
+                                         # indicator_plots[[4]],
+                                         # indicator_plots[[5]],
                                          nrow = 2, align = "v")
 rm(indicator_plots, indicator)
 
@@ -505,8 +555,8 @@ for (i in seq_along(scenario_indicators)) {
                                          indicator_plots[[1]],
                                          indicator_plots[[2]],
                                          indicator_plots[[3]],
-                                         indicator_plots[[4]],
-                                         indicator_plots[[5]],
+                                         # indicator_plots[[4]],
+                                         # indicator_plots[[5]],
                                          nrow = 2, align = "v")
 rm(indicator_plots, indicator)
 
@@ -587,7 +637,7 @@ scenario_rl_status_plots[[4]]
 
 # Visualise the temporal variance 
 
-```{r plot temporal variance, warning=FALSE, error = FALSE, message=FALSE}
+```{r plot temporal variance, warning=FALSE, error = FALSE, message=FALSE, eval = FALSE}
 
 variance_plots_3 <- list()
 
@@ -641,193 +691,186 @@ variance_plots_3[[4]]
 
 ```
 
-```{r temporal autocorrelation }
-# https://a-little-book-of-r-for-time-series.readthedocs.io/en/latest/src/timeseries.html 
-# https://nwfsc-timeseries.github.io/atsa-labs/sec-tslab-correlation-within-and-among-time-series.html
-
-# plotauto <- acf(test_df$indicator_score_std, lag.max = 300)
-# plotauto
-```
-
 ```{r trend modeling example}
 
-# # Using the demo data
-# head(ind_ex)
-# head(press_ex)
-# head(press_type_ex)
-# # Scoring template:
-# crit_scores_tmpl
-# 
-# m_trend <- model_trend(ind_tbl = ind_ex[ ,-1],
-#   time = ind_ex$Year)
-# 
-# # Model diagnostics
-# pd <- plot_diagnostics(model_list = m_trend$model)
-# pd$all_plots[[1]] # first indicator
-# # check for outliers in all models
-# grid.arrange(grobs = pd$cooks_dist, ncol = 3) 
-# # check normality in all models
-# grid.arrange(grobs = pd$qq_plot, ncol = 3)
-# # check homogeneity in all models
-# grid.arrange(grobs = pd$resid_plot, ncol = 3)
-# # check for autocorrelation in all models
-# grid.arrange(grobs = pd$acf_plot, ncol = 3)
-# # check for partial autocorrelation in all models
-# grid.arrange(grobs = pd$pacf_plot, ncol = 3)
-# 
-# # Save diagnostic plots per indicator in a pdf
-# ml <- marrangeGrob(grobs = pd$all_plots, ncol = 1, nrow = 1)
-# ggsave("Trend_diagnostics.pdf", ml, height = 8, width = 12)
-# 
-# # Inspect trends
-# pt <- plot_trend(m_trend)
-# pt$TZA # shows trend of TZA indicator
-# # show all together
-# ml <- grid.arrange(grobs = pt, ncol = 3)
-# ml
-# # save as pdf
-# ggsave("Trend_plots.pdf", ml, height = 12, width = 15)
-# # show only significant trends
-# grid.arrange(
-#   grobs = pt[which(m_trend$p_val <= 0.05)],
-#   ncol = 2
-#     )
+# Using the demo data
+head(ind_ex)
+head(press_ex)
+head(press_type_ex)
+# Scoring template:
+crit_scores_tmpl
+
+m_trend <- model_trend(ind_tbl = ind_ex[ ,-1],
+  time = ind_ex$Year)
+
+# Model diagnostics
+pd <- plot_diagnostics(model_list = m_trend$model)
+pd$all_plots[[1]] # first indicator
+# check for outliers in all models
+grid.arrange(grobs = pd$cooks_dist, ncol = 3)
+# check normality in all models
+grid.arrange(grobs = pd$qq_plot, ncol = 3)
+# check homogeneity in all models
+grid.arrange(grobs = pd$resid_plot, ncol = 3)
+# check for autocorrelation in all models
+grid.arrange(grobs = pd$acf_plot, ncol = 3)
+# check for partial autocorrelation in all models
+grid.arrange(grobs = pd$pacf_plot, ncol = 3)
+
+# Save diagnostic plots per indicator in a pdf
+ml <- marrangeGrob(grobs = pd$all_plots, ncol = 1, nrow = 1)
+ml
+ggsave("Trend_diagnostics.pdf", ml, height = 8, width = 12)
+
+# Inspect trends
+pt <- plot_trend(m_trend)
+pt$TZA # shows trend of TZA indicator
+# show all together
+ml <- grid.arrange(grobs = pt, ncol = 3)
+ml
+# save as pdf
+ggsave("Trend_plots.pdf", ml, height = 12, width = 15)
+# show only significant trends
+grid.arrange(
+  grobs = pt[which(m_trend$p_val <= 0.05)],
+  ncol = 2
+    )
 
 ```
 
 ```{r prepare data for trend modelling }
 
-# # Get one scenario
-# single_scenario <- indicators_all_df %>% 
-#                    filter(scenario == "100_Land_use") %>% 
-#                    dplyr::select(annual_time_step, indicator, indicator_score)
-# 
-# single_scenario <- as.data.frame(single_scenario)
-# 
-# # Conver to wide format
-# 
-# ind_trend_inputs <- single_scenario %>% 
-#                     pivot_wider(names_from = indicator,
-#                                 values_from = indicator_score) %>% 
-#                     arrange(annual_time_step)
-# 
-# pressure_inputs <- single_scenario %>% 
-#                    filter(indicator == "total abundance harvested") %>% 
-#                    pivot_wider(names_from = indicator,
-#                                 values_from = indicator_score) %>% 
-#                    arrange(annual_time_step)
+# Get one scenario
+single_scenario <- indicators_all_df %>%
+                   filter(scenario == "100_Land_use") %>%
+                   dplyr::select(annual_time_step, indicator, indicator_score)
+
+single_scenario <- as.data.frame(single_scenario)
+
+# Conver to wide format
+
+ind_trend_inputs <- single_scenario %>%
+                    pivot_wider(names_from = indicator,
+                                values_from = indicator_score) %>%
+                    arrange(annual_time_step)
+
+pressure_inputs <- single_scenario %>%
+                   filter(indicator == "total abundance harvested") %>%
+                   pivot_wider(names_from = indicator,
+                                values_from = indicator_score) %>%
+                   arrange(annual_time_step)
                     
 
 ```
 
 ```{r model trends and plot diagnostics }
 
-# m_trend <- model_trend(ind_tbl = ind_trend_inputs[ ,-1],
-#   time = ind_trend_inputs$annual_time_step,
-#   family = stats::Gamma())
-# 
-# # Model diagnostics
-# pd <- plot_diagnostics(model_list = m_trend$model)
-# pd$all_plots[[3]] # first indicator
-# pd$all_plots[[4]]
-# pd$all_plots[[5]]
-# 
-# # Save diagnostic plots per indicator in a pdf
-# ml <- marrangeGrob(grobs = pd$all_plots, ncol = 1, nrow = 1)
-# 
-# # ggsave(file.path(analysis_plots_folder, 
-# #                  "Trend_diagnostics.pdf"), 
-# #                  ml, height = 8, width = 12)
-# 
-# ```
-# 
-# ```{r plot trends }
-# 
-# # Inspect trends
-# pt <- plot_trend(m_trend)
-# pt$TZA # shows trend of TZA indicator
-# # show all together
-# ml <- grid.arrange(grobs = pt, ncol = 3)
-# ml
-# # save as pdf
-# ggsave("Trend_plots.pdf", ml, height = 12, width = 15)
-# # show only significant trends
-# grid.arrange(
-#   grobs = pt[which(m_trend$p_val <= 0.05)],
-#   ncol = 2
-#     )
+m_trend <- model_trend(ind_tbl = ind_trend_inputs[ ,-1],
+  time = ind_trend_inputs$annual_time_step,
+  family = stats::Gamma())
+
+# Model diagnostics
+pd <- plot_diagnostics(model_list = m_trend$model)
+pd$all_plots[[1]] # first indicator
+pd$all_plots[[2]]
+pd$all_plots[[3]]
+
+# Save diagnostic plots per indicator in a pdf
+ml <- marrangeGrob(grobs = pd$all_plots, ncol = 1, nrow = 1)
+
+# ggsave(file.path(analysis_plots_folder,
+#                  "Trend_diagnostics.pdf"),
+#                  ml, height = 8, width = 12)
+
+```
+
+```{r plot trends }
+
+# Inspect trends
+pt <- plot_trend(m_trend)
+pt$RLI_annual # shows trend of TZA indicator
+# show all together
+ml <- grid.arrange(grobs = pt, ncol = 3)
+ml
+# save as pdf
+ggsave("Trend_plots.pdf", ml, height = 12, width = 15)
+# show only significant trends
+grid.arrange(
+  grobs = pt[which(m_trend$p_val <= 0.05)],
+  ncol = 2
+    )
 
 
 ```
 
 ```{r prepare data for pressure - response modelling }
 
-# dat_init <- ind_init(ind_tbl = ind_trend_inputs[ ,-1],
-#   press_tbl = pressure_inputs[ ,-1], time = ind_trend_inputs$annual_time_step,
-#     train = 0.9, random = FALSE)
+dat_init <- ind_init(ind_tbl = ind_trend_inputs[ ,-1],
+  press_tbl = pressure_inputs[ ,-1], time = ind_trend_inputs$annual_time_step,
+    train = 0.9, random = FALSE)
 
 ```
 
 ```{r simple gams }
 
-# m_gam <- model_gam(init_tbl = dat_init, k = 5,
-#     family = stats::Gamma(), excl_outlier = NULL)
-# 
-# # Model diagnostics
-# pd <- plot_diagnostics(model_list = m_gam$model)  # (might take a while)
-# ml <- marrangeGrob(grobs = pd$all_plots, ncol = 1, nrow = 1)
-# ggsave("GAM_diagnostics.pdf", ml, height = 8, width = 12)
-# 
-# # Any outlier?
-# m_gam$pres_outlier %>% purrr::compact(.)
-# # - get number of models with outliers detected
-# purrr::map_lgl(m_gam$pres_outlier, ~!is.null(.)) %>% sum()
-# # - which models and what observations?
-# m_gam %>%
-#     dplyr::select(id, ind, press, pres_outlier) %>%
-#     dplyr::filter(!purrr::map_lgl(m_gam$pres_outlier, .f = is.null)) %>%
-#     tidyr::unnest(pres_outlier)
-# 
-# # Exclude outlier in models (using the returned model output tibble as selector)
-# m_gam <- model_gam(init_tbl = dat_init, excl_outlier = m_gam$pres_outlier)
-# 
-# # Any temporal autocorrelation (TAC)
-# sum(m_gam$tac)
-# 
-# # - which models
-# m_gam %>%
-#     dplyr::select(id, ind, press, tac) %>%
-#     dplyr::filter(tac)
+m_gam <- model_gam(init_tbl = dat_init, k = 5,
+    family = stats::Gamma(), excl_outlier = NULL)
+
+# Model diagnostics
+pd <- plot_diagnostics(model_list = m_gam$model)  # (might take a while)
+ml <- marrangeGrob(grobs = pd$all_plots, ncol = 1, nrow = 1)
+ggsave("GAM_diagnostics.pdf", ml, height = 8, width = 12)
+
+# Any outlier?
+m_gam$pres_outlier %>% purrr::compact(.)
+# - get number of models with outliers detected
+purrr::map_lgl(m_gam$pres_outlier, ~!is.null(.)) %>% sum()
+# - which models and what observations?
+m_gam %>%
+    dplyr::select(id, ind, press, pres_outlier) %>%
+    dplyr::filter(!purrr::map_lgl(m_gam$pres_outlier, .f = is.null)) %>%
+    tidyr::unnest(pres_outlier)
+
+# Exclude outlier in models (using the returned model output tibble as selector)
+m_gam <- model_gam(init_tbl = dat_init, excl_outlier = m_gam$pres_outlier)
+
+# Any temporal autocorrelation (TAC)
+sum(m_gam$tac)
+
+# - which models
+m_gam %>%
+    dplyr::select(id, ind, press, tac) %>%
+    dplyr::filter(tac)
 
 ```
 
 ```{r GAMMs for temporally autocorrelated }
 
-# m_gamm <- model_gamm(init_tbl = dat_init,
-#   filter = m_gam$tac,
-#   family = Tweedie(p = 2)) # (apply GAMM only to rows where TAC detected)
-# 
-# # Again, any outlier?
-# purrr::map_lgl(m_gamm$pres_outlier, ~!is.null(.)) %>% sum()
-# 
-# # Select best GAMM from different correlation structures
-# # (based on AIC)
-# best_gamm <- select_model(gam_tbl = m_gam, gamm_tbl = m_gamm)
-# View(best_gamm)
-# 
-# # Still any temporal autocorrelation?
-# sum(best_gamm$tac) 
-# # - which models
-# best_gamm %>%
-#   dplyr::select(id, ind, press, tac, corrstruc) %>%
-#   dplyr::filter(tac) %>%
-#   print(n = 100)
-# 
-# # Inspect diagnostic plots of best GAMMs
-# pd <- plot_diagnostics(model_list = best_gamm$model)
-# ml <- marrangeGrob(grobs = pd$all_plots, ncol = 1, nrow = 1)
-# ggsave(file.path(analysis_plots_folder, "bestGAMM_diagnostics.pdf"), 
-#        ml, height = 8, width = 12)
+m_gamm <- model_gamm(init_tbl = dat_init,
+  filter = m_gam$tac, # (apply GAMM only to rows where TAC detected)
+  family = Tweedie(p = 2)) 
+
+# Again, any outlier?
+purrr::map_lgl(m_gamm$pres_outlier, ~!is.null(.)) %>% sum()
+
+# Select best GAMM from different correlation structures
+# (based on AIC)
+best_gamm <- select_model(gam_tbl = m_gam, gamm_tbl = m_gamm)
+View(best_gamm)
+
+# Still any temporal autocorrelation?
+sum(best_gamm$tac)
+# - which models
+best_gamm %>%
+  dplyr::select(id, ind, press, tac, corrstruc) %>%
+  dplyr::filter(tac) %>%
+  print(n = 100)
+
+# Inspect diagnostic plots of best GAMMs
+pd <- plot_diagnostics(model_list = best_gamm$model)
+ml <- marrangeGrob(grobs = pd$all_plots, ncol = 1, nrow = 1)
+ggsave(file.path(analysis_plots_folder, "bestGAMM_diagnostics.pdf"),
+       ml, height = 8, width = 12)
 
  
 
@@ -865,7 +908,7 @@ m_calc <- calc_deriv(init_tbl = dat_init, mod_tbl = m_merged,
 
 ```
 
-```{r model selection, eval = FALSE }
+```{r interactions, eval = FALSE }
 
 it <- select_interaction(mod_tbl = m_calc)
 # (creates combinations to test for)
