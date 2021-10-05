@@ -217,22 +217,24 @@ plot.Deriv <- function(x, alpha = 0.05, polygon = TRUE,
 #' @param mod - gamm object
 #' @param data - the input pressure response time step data for the model
 #' @param length - double - number of time steps you want to output
-#' @param scenario - string, name of scenario you modelled
-#' @param indicator - string, name of indicator you modelled
 #' @param term_string - string, name of model input variable you want to predict against
 #' @return a list with a ggplot of first derivatives and significant trends,
 #' and output data including observed, predicted, derivatives and confidence intervals
 
-get_derivs <- function(mod, data, length, scenario, indicator, term_string) {
-  
+get_derivs <- function(mod, data, length, term_string) {
+
+scenario <- data$scenario[1]
+indicator <- data$indicator[1]
+
 want <- seq(1, nrow(data), length.out = length)
 
 pdat <- with(data,
              data.frame(annual_time_step = annual_time_step[want]))
-             
-p2 <- predict(mod$gam, newdata = pdat, type = "terms", se.fit = TRUE,
-              response = TRUE)
-pdat <- transform(pdat, p2 = p2$fit[,1], se2 = p2$se.fit[,1])
+
+# p2 <- predict.gam(mod$gam, newdata = pdat, type = "terms", se.fit = TRUE, response = TRUE)     pdat <- transform(pdat, p2 = p2$fit[,1], se2 = p2$se.fit[,1])
+
+p2 <- predict.gam(mod$gam, newdata = pdat, se.fit = TRUE, response = TRUE)
+pdat <- cbind(pdat, p2 = p2$fit, se2 = p2$se.fit)
 
 df.res <- df.residual(mod$gam)
 crit.t <- qt(0.025, df.res, lower.tail = FALSE)
@@ -248,27 +250,19 @@ m2.dsig <- signifD(pdat$p2, d = m2.d[[Term]]$deriv,
                     m2.dci[[Term]]$upper, m2.dci[[Term]]$lower)
 
 ylim <- with(pdat, range(upper, lower, p2))
-ylab <- "test"
 
 selected_mod_df <- data %>% 
-                   dplyr::select(annual_time_step, response_var) %>% 
+                   dplyr::select(annual_time_step, indicator_score) %>% 
                    merge(pdat, by = "annual_time_step") %>% 
                    mutate(increasing = m2.dsig$incr,
                           decreasing = m2.dsig$decr)
 
-plot(p2 ~ annual_time_step, data = pdat, type = "n", ylab = ylab, ylim = ylim)
-lines(p2 ~ annual_time_step, data = pdat)
-lines(upper ~ annual_time_step, data = pdat, lty = "dashed")
-lines(lower ~ annual_time_step, data = pdat, lty = "dashed")
-lines(unlist(m2.dsig$incr) ~ annual_time_step, data = pdat, col = "blue", lwd = 3)
-lines(unlist(m2.dsig$decr) ~ annual_time_step, data = pdat, col = "red", lwd = 3)
-
 # Recreate with ggplot
 
 deriv_plot <- ggplot() +
-  # geom_point(data = selected_mod_df,
-  #            aes(x = annual_time_step, y = response_var),
-  #            alpha = 0.3) +
+  geom_point(data = selected_mod_df,
+             aes(x = annual_time_step, y = indicator_score),
+             alpha = 0.3) +
   geom_line(aes(x = selected_mod_df$annual_time_step,
                 y = selected_mod_df$p2)) +
   geom_line(aes(x = selected_mod_df$annual_time_step, 
@@ -276,7 +270,8 @@ deriv_plot <- ggplot() +
   geom_line(aes(x = selected_mod_df$annual_time_step, 
                 y = selected_mod_df$decreasing), col = "red", size = 2) +
   labs(title = paste(scenario,
-                     indicator, sep = " "))
+                     indicator, sep = " "),
+       ylab = indicator)
 
 return(list(selected_mod_df, deriv_plot))
 
@@ -442,8 +437,7 @@ scen <- "100_Land_use"
 response <- indicators_all_df %>% 
   filter(indicator == ind) %>% 
   filter(scenario == scen) %>% 
-  rename(response_var = indicator_score) %>% 
-  dplyr::select(annual_time_step, response_var)
+  dplyr::select(annual_time_step, indicator_score)
 
 predictor <- indicators_all_df %>% 
   filter(indicator == "total abundance harvested") %>% 
@@ -451,93 +445,137 @@ predictor <- indicators_all_df %>%
   mutate(indicator_score_std = exp(indicator_score_std)) %>% 
   rename(pressure_var_c = indicator_score_std,
          pressure_var_f = disturbance_factor) %>% 
-  dplyr::select(annual_time_step, cycle_var, pressure_var_c, pressure_var_f,
-                years_since_disturbance)
+  dplyr::select(annual_time_step, pressure_var_c, pressure_var_f,
+                years_since_disturbance, disturbance_phase)
 
 
 pr_gam_inputs <- response %>% 
   merge(predictor, by = "annual_time_step")
 
-pr_gam_inputs <- pr_gam_inputs %>% 
-                 merge(deriv_df, by = "annual_time_step")
 
 
 ```
+# Using MGCV All models
 
-# Model 0 - Temporal trend, no correlation structure
+```{r m all, echo = TRUE}
 
-```{r m, echo = TRUE}
+selected_mods <- list()
 
-# Prepare a gamm with no correlation structure
+for(i in seq_along(scenario_indicator_single)) {
 
-m <- gamm(response_var ~ s(annual_time_step),
+print(scenario_indicator_single[[i]]$scenario_indicator[1])
+  
+selected_mods[[i]] <- gamm(indicator_score ~ s(annual_time_step),
           select = TRUE,
-          data = pr_gam_inputs)
+          data = scenario_indicator_single[[i]],
+          correlation = corCAR1(form = ~ 1 | annual_time_step))
 
-# Check the autocorrelation of the residuals
+}
 
-mr <- residuals(m$gam, type = "response")
+names(selected_mods) <- names(scenario_indicator_single)
 
-acf(mr)
-pacf(mr)
-
-# Check the model fit
-
-gam.check(m$gam)
-
-# All look terrible
-## Gradually decreasing acf and sharply changing pacf suggest we need an AR1 
-## correlation structure
-
-```
-
-# Model 1 - Temporal trend accounting for autocorrelation using AR1 seasonal
-
-https://stats.stackexchange.com/questions/258229/how-to-specify-autocorrelation-in-gamm
-
-
-```{r m1, echo = TRUE }
-
-m1 <- gamm(response_var ~ s(annual_time_step), 
-                 data = pr_gam_inputs,
-                 correlation = corAR1(form = ~ 1|seasonal_var_f))
-
-m1r <- residuals(m1$gam, type = "response")
-
-acf(m1r)
-pacf(m1r)
+gam.check(selected_mods[[1]]$gam)
+names(selected_mods)[1] #LPI
+gam.check(selected_mods[[2]]$gam)
+names(selected_mods)[2] # RLI
+gam.check(selected_mods[[3]]$gam) 
+names(selected_mods)[3] # baseline abundance, doesn't matter if weird 
+gam.check(selected_mods[[4]]$gam)
+names(selected_mods)[4] #LPI
+gam.check(selected_mods[[5]]$gam)
+names(selected_mods)[5] #RLI
+gam.check(selected_mods[[6]]$gam) 
+names(selected_mods)[6] # total abundance harvested, may not matter either
+gam.check(selected_mods[[7]]$gam)
+names(selected_mods)[7] #LPI
+gam.check(selected_mods[[8]]$gam) 
+names(selected_mods)[8] # RLI annual carnivores, IMPORTANT, needs more work
+gam.check(selected_mods[[9]]$gam) 
+names(selected_mods)[9] # Abundance carnivores, may not matter
+gam.check(selected_mods[[10]]$gam) 
+names(selected_mods)[10] # LPI herbivores, IMPORTANT, needs more work
+gam.check(selected_mods[[11]]$gam)
+names(selected_mods)[11] # RLI
+gam.check(selected_mods[[12]]$gam) 
+names(selected_mods)[12] # Abundance harvested, may not matter
 
 ```
 
-# Model 2 - Temporal trend accounting for autocorrelation using AR1 cycle
+# Using INDperform
 
-```{r m2, echo = TRUE }
+```{r m all, echo = TRUE}
 
-m2 <- gamm(response_var ~ s(annual_time_step), 
-                 data = pr_gam_inputs,
-                 correlation = corAR1(form = ~ 1|cycle_var))
 
-m2r <- residuals(m2$gam, type = "response")
+selected_mods2 <- list()
 
-acf(m2r)
-pacf(m2r)
+for(i in seq_along(scenario_indicator_single)) {
+
+print(scenario_indicator_single[[i]]$scenario_indicator[1])
+  
+ind_trend_inputs <- scenario_indicator_single[[i]] %>%
+                    dplyr::select(annual_time_step, indicator_score, indicator) %>% 
+                    pivot_wider(names_from = indicator,
+                                values_from = indicator_score) %>%
+                    arrange(annual_time_step)
+  
+selected_mods2[[i]] <- model_trend(ind_tbl = ind_trend_inputs[ ,-1],
+  time = ind_trend_inputs$annual_time_step, k = 10, family = Tweedie(p =2))
+
+}
+
+names(selected_mods2) <- names(scenario_indicator_single)
+
+plot_trend(selected_mods2[[1]])
+plot_trend(selected_mods2[[2]])
+plot_trend(selected_mods2[[3]])
+plot_trend(selected_mods2[[4]])
+plot_trend(selected_mods2[[5]])
+plot_trend(selected_mods2[[6]])
+plot_trend(selected_mods2[[7]])
+plot_trend(selected_mods2[[8]])
+plot_trend(selected_mods2[[9]])
+plot_trend(selected_mods2[[10]])
+plot_trend(selected_mods2[[11]])
+plot_trend(selected_mods2[[12]])
 
 ```
 
-# Model 3 - Temporal trend accounting for autocorrelation using ARMA
+```{r breakpoints }
 
-```{r m3, echo = TRUE }
+breakpoint_plots <- list()
 
-m3 <- gamm(response_var ~ s(annual_time_step), 
-                 data = pr_gam_inputs,
-                 correlation = corARMA(form = ~ 1|cycle_var, p = 2, q = 2))
+for ( i in seq_along(scenario_indicator_single)) {
+  
+  # Get a list of indicator outputs for a single scenario
+  single_scenario <- scenario_indicator_single[[i]]
+  
+  scenario <- single_scenario$scenario[1]
+  
+  indicator <- single_scenario$indicator[1]
 
-m3r <- residuals(m3$gam, type = "response")
+  m_binseg <- cpt.mean(log(single_scenario$indicator_score), 
+                       penalty = "AIC", method = "BinSeg", Q = 2)
+  
+  plot(m_binseg, type = "l", xlab = "Index", cpt.width = 4, 
+  main = paste(scenario, indicator, sep = " "))
+  
+  cpt <- c(10, m_binseg@cpts)
+  
+  # breakpoint_plots[[i]] <- ggplot() +
+  #   geom_line(data = single_scenario[[j]],
+  #                                aes(x = annual_time_step,
+  #                                    y = indicator_score_std)) +
+  #   geom_point()
 
-acf(m3r)
-pacf(m3r)
+}
 
+breakpoint_plots[[1]]
+breakpoint_plots[[2]]
+breakpoint_plots[[3]]
+breakpoint_plots[[4]]
 ```
+
+
 # Model selection so far
 
 ```{r model selection 1, echo = TRUE }
@@ -554,17 +592,37 @@ gam.check(selected_mod$gam)
 
 ```{r model selection 1, echo = TRUE }
 
-fit_obs_df <- data.frame(annual_time_step = pr_gam_inputs$annual_time_step, 
-                   fitted = selected_mod$gam$fitted.values, 
-                   observed = pr_gam_inputs$response_var)
+fitted_observed_plots <- list()
 
-ggplot() + 
+for (i in seq_along(scenario_indicator_single)) {
+  
+fit_obs_df <- data.frame(annual_time_step = scenario_indicator_single[[i]]$annual_time_step, 
+                   fitted = selected_mods[[i]]$gam$fitted.values, 
+                   observed = scenario_indicator_single[[i]]$indicator_score)
+
+fitted_observed_plots[[i]] <- ggplot() + 
   geom_line(data = fit_obs_df, aes(annual_time_step, fitted)) + 
   geom_point(data = fit_obs_df, aes(annual_time_step, observed))
 
+}
+
+fitted_observed_plots[[1]]
+plot_trend(selected_mods2[[1]])
+fitted_observed_plots[[2]]
+fitted_observed_plots[[3]]
+fitted_observed_plots[[4]]
+fitted_observed_plots[[5]]
+fitted_observed_plots[[6]]
+fitted_observed_plots[[7]]
+fitted_observed_plots[[8]]
+fitted_observed_plots[[9]]
+fitted_observed_plots[[10]]
+fitted_observed_plots[[11]]
+fitted_observed_plots[[12]]
 
 ```
-# Calculate and plot first derivatives
+
+# 1st derivatives
 
 First derivatives show the rate of change in the indicator at a specific time 
 point. Values = 0 signify no trend, values > 0 signify a positive trend, and 
@@ -572,21 +630,28 @@ values < 0 signify a negative trend.
 
 ```{r first derivatives}
 
-selected_mods[[i]] <- selected_mod
-mod_inputs[[i]] <- pr_gam_inputs
-
 first_derivatives <- list()
 
-for (i in seq_along(scenario_indicator_mods)){
+for (i in seq_along(scenario_indicator_single)){
   
   first_derivatives[[i]] <- get_derivs(selected_mods[[i]],
-                                       mod_inputs[[i]],
+                                       scenario_indicator_single[[i]],
                                        290,
                                        "annual_time_step")
 }
 
-get_derivs(selected_mod, pr_gam_inputs, 290, 
-                   "land use", "LPI", "annual_time_step")
+first_derivatives[[1]][[2]]
+first_derivatives[[2]][[2]]
+first_derivatives[[3]][[2]]
+first_derivatives[[4]][[2]]
+first_derivatives[[5]][[2]]
+first_derivatives[[6]][[2]]
+first_derivatives[[7]][[2]]
+first_derivatives[[8]][[2]]
+first_derivatives[[9]][[2]]
+first_derivatives[[10]][[2]]
+first_derivatives[[11]][[2]]
+first_derivatives[[12]][[2]]
 
 ```
 
@@ -594,34 +659,109 @@ get_derivs(selected_mod, pr_gam_inputs, 290,
 
 # Using Jess' method
 
+test_plots <- list()
+
+d <- 2
+
+for (i in seq_along(scenario_indicator_single)) {
+  
+fit_obs_df <- data.frame(annual_time_step = scenario_indicator_single[[i]]$annual_time_step, 
+                   fitted = selected_mods[[i]]$gam$fitted.values, 
+                   observed = scenario_indicator_single[[i]]$indicator_score_std)
+
 deriv_func <- splinefun(x = fit_obs_df$annual_time_step, y = fit_obs_df$fitted)
-deriv_fitted <- as.data.frame(x = deriv_func(seq(1, 290, 1), deriv = 1))
+deriv_fitted <- as.data.frame(x = deriv_func(seq(1, 290, 1), deriv = d))
 
-deriv_df <- cbind(ts = fit_obs_df$annual_time_step,d = deriv_fitted)
+deriv_df <- cbind(ts = fit_obs_df$annual_time_step,d = deriv_fitted,
+                  observed = fit_obs_df$observed)
 
-ggplot(deriv_df, aes(ts, `deriv_func(seq(1, 290, 1), deriv = 1)`))+
-  geom_line()
+names(deriv_df) <- c("annual_time_step", "deriv", "observed")
+
+test_plots[[i]] <- ggplot() +
+                   #geom_point(data = deriv_df,aes(annual_time_step, observed)) +
+                   geom_line(data = deriv_df,aes(annual_time_step, deriv))
+
+
+
+}
+
+i <- i + 1
+test_plots[[i]]
+
 
 # Using gratia package
 
 library(gratia)
 
-gratia_derivs <- derivatives(selected_mod, order = 1, 
+between(0,- 1, 7)
+
+obs <- scenario_indicator_single[[i]]$indicator_score
+
+pdat <- data.frame(annual_time_step = seq(1,290,1))
+
+p2 <- predict.gam(selected_mods[[i]]$gam, pdat, 
+                  se.fit = TRUE, response = TRUE)
+
+pdat <- cbind(pdat, predicted = p2$fit, se2 = p2$se.fit, obs)
+
+df.res <- df.residual(selected_mods[[i]]$gam)
+crit.t <- qt(0.025, df.res, lower.tail = FALSE)
+pdat <- transform(pdat,
+                  upper_pred = predicted + (crit.t * se2),
+                  lower_pred = predicted - (crit.t * se2))
+
+gratia_derivs_1 <- as.data.frame(derivatives(selected_mods[[i]], order = 1, 
+                   n = 290, interval = "confidence") ) 
+
+temp <- cbind(pdat, gratia_derivs_1)
+
+indicator <- scenario_indicator_single[[i]]$indicator[1]
+scenario <- scenario_indicator_single[[i]]$scenario[1]
+
+derivatives_plot_data <- temp %>% 
+                   mutate(significant = ifelse(lower < 0 & upper > 0, FALSE, TRUE),
+                          positive_pred = ifelse(significant == TRUE & derivative > 0,
+                                            predicted,NA),
+                          negative_pred = ifelse(significant == TRUE & derivative < 0,
+                                            predicted, NA),
+                          positive_der = ifelse(significant == TRUE & derivative > 0,
+                                            derivative,NA),
+                          negative_der = ifelse(significant == TRUE & derivative < 0,
+                                            derivative, NA)) 
+
+ggplot(derivatives_plot_data) +
+  geom_ribbon(aes(x = annual_time_step, ymin = lower, ymax = upper),
+              alpha = 0.3) +
+  geom_line(aes(x = annual_time_step,
+                y = derivative)) +
+  geom_line(aes(x = annual_time_step,
+         y = positive_der), col = "blue")+
+  geom_line(aes(x = annual_time_step,
+         y = negative_der), col = "red") +
+  geom_hline(yintercept = 0, col = "green")
+
+
+
+ggplot(data = derivatives_plot_data) +
+  geom_point(aes(x = annual_time_step, y = obs), alpha = 0.2) +
+  geom_line(aes(x = annual_time_step, y = predicted)) +
+  geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred),
+              alpha = 0.3) +
+  geom_line(aes(x = annual_time_step, y = positive_pred), col = "blue") +
+  geom_line(aes(x = annual_time_step, y = negative_pred), col = "red") +
+  labs(y = indicator,
+       title = scenario) +
+  theme_classic()
+
+gratia_derivs_2 <- derivatives(selected_mods[[i]], order = 2, 
                     n = 290, interval = "confidence")
 
-draw(gratia_derivs)
-
-
-
-test <- get_derivs(selected_mod, pr_gam_inputs, 290, 
-                   "land use", "LPI", "annual_time_step")
-
-x <- test[[1]]
-test
+draw(gratia_derivs_1)
+draw(gratia_derivs_2)
 
 ```
 
-# Calculate and plot second derivatives
+# 2nd derivatives
 
 Second derivatives show when the indicator values have changed direction
 
