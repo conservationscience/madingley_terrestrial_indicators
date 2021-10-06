@@ -56,6 +56,7 @@ library(INDperform)
 library(ggpubr)
 library(cowplot)
 library(gridExtra)
+library(gratia)
 
 ```
 # Functions
@@ -519,7 +520,7 @@ ind_trend_inputs <- scenario_indicator_single[[i]] %>%
                     arrange(annual_time_step)
   
 selected_mods2[[i]] <- model_trend(ind_tbl = ind_trend_inputs[ ,-1],
-  time = ind_trend_inputs$annual_time_step, k = 10, family = Tweedie(p =2))
+  time = ind_trend_inputs$annual_time_step, family = Tweedie(p =2))
 
 }
 
@@ -628,72 +629,9 @@ First derivatives show the rate of change in the indicator at a specific time
 point. Values = 0 signify no trend, values > 0 signify a positive trend, and 
 values < 0 signify a negative trend.
 
-```{r first derivatives}
-
-first_derivatives <- list()
-
-for (i in seq_along(scenario_indicator_single)){
-  
-  first_derivatives[[i]] <- get_derivs(selected_mods[[i]],
-                                       scenario_indicator_single[[i]],
-                                       290,
-                                       "annual_time_step")
-}
-
-first_derivatives[[1]][[2]]
-first_derivatives[[2]][[2]]
-first_derivatives[[3]][[2]]
-first_derivatives[[4]][[2]]
-first_derivatives[[5]][[2]]
-first_derivatives[[6]][[2]]
-first_derivatives[[7]][[2]]
-first_derivatives[[8]][[2]]
-first_derivatives[[9]][[2]]
-first_derivatives[[10]][[2]]
-first_derivatives[[11]][[2]]
-first_derivatives[[12]][[2]]
-
-```
-
-```{r graveyard, echo = TRUE }
-
-# Using Jess' method
-
-test_plots <- list()
-
-d <- 2
-
-for (i in seq_along(scenario_indicator_single)) {
-  
-fit_obs_df <- data.frame(annual_time_step = scenario_indicator_single[[i]]$annual_time_step, 
-                   fitted = selected_mods[[i]]$gam$fitted.values, 
-                   observed = scenario_indicator_single[[i]]$indicator_score_std)
-
-deriv_func <- splinefun(x = fit_obs_df$annual_time_step, y = fit_obs_df$fitted)
-deriv_fitted <- as.data.frame(x = deriv_func(seq(1, 290, 1), deriv = d))
-
-deriv_df <- cbind(ts = fit_obs_df$annual_time_step,d = deriv_fitted,
-                  observed = fit_obs_df$observed)
-
-names(deriv_df) <- c("annual_time_step", "deriv", "observed")
-
-test_plots[[i]] <- ggplot() +
-                   #geom_point(data = deriv_df,aes(annual_time_step, observed)) +
-                   geom_line(data = deriv_df,aes(annual_time_step, deriv))
-
-
-
-}
-
-i <- i + 1
-test_plots[[i]]
-
+```{r 1st derivatives, echo = TRUE }
 
 # Using gratia package
-
-library(gratia)
-
-between(0,- 1, 7)
 
 obs <- scenario_indicator_single[[i]]$indicator_score
 
@@ -753,17 +691,52 @@ ggplot(data = derivatives_plot_data) +
        title = scenario) +
   theme_classic()
 
-gratia_derivs_2 <- derivatives(selected_mods[[i]], order = 2, 
-                    n = 290, interval = "confidence")
+```
 
-draw(gratia_derivs_1)
-draw(gratia_derivs_2)
+# Graveyard 
+```{r graveyard, echo = TRUE }
+
+# Using Jess' method
+
+test_plots <- list()
+
+d <- 2
+
+for (i in seq_along(scenario_indicator_single)) {
+  
+fit_obs_df <- data.frame(annual_time_step = scenario_indicator_single[[i]]$annual_time_step, 
+                   fitted = selected_mods[[i]]$gam$fitted.values, 
+                   observed = scenario_indicator_single[[i]]$indicator_score_std)
+
+deriv_func <- splinefun(x = fit_obs_df$annual_time_step, y = fit_obs_df$fitted)
+deriv_fitted <- as.data.frame(x = deriv_func(seq(1, 290, 1), deriv = d))
+
+deriv_df <- cbind(ts = fit_obs_df$annual_time_step,d = deriv_fitted,
+                  observed = fit_obs_df$observed)
+
+names(deriv_df) <- c("annual_time_step", "deriv", "observed")
+
+test_plots[[i]] <- ggplot() +
+                   #geom_point(data = deriv_df,aes(annual_time_step, observed)) +
+                   geom_line(data = deriv_df,aes(annual_time_step, deriv))
+
+
+
+}
+
+i <- i + 1
+test_plots[[i]]
+
+
+
+
 
 ```
 
 # 2nd derivatives
 
-Second derivatives show when the indicator values have changed direction
+Second derivatives show when the indicator values have changed direction.
+"The second derivative of the trend curbe I(t) at time t is a measure of the curvature of I at that time. If the second derivative is greater than zero, the curve is turning upward. If it is less than zero, the curve is turning downward. The magnitude of the second derivative signifies the tightness of the curvature. Values of approx 0 indicate the curve is linear and changing at a steady state. Years in which the second derivative is markedly different from zero are those in which something is happening to alter the rate of population change." (Fewster et al 2000)
 
 ```{r derivative 2, echo = TRUE }
 
@@ -774,6 +747,13 @@ deriv_df <- cbind(ts = fit_obs_df$annual_time_step,d = deriv_fitted)
 
 ggplot(deriv_df, aes(ts, `deriv_func(seq(1, 290, 1), deriv = 2)`))+
   geom_line()
+
+
+gratia_derivs_2 <- derivatives(selected_mods[[i]], order = 2, 
+                    n = 290, interval = "confidence")
+
+draw(gratia_derivs_1)
+draw(gratia_derivs_2)
 
 
 ```
