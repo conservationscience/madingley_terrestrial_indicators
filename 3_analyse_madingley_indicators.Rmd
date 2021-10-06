@@ -49,6 +49,7 @@ library(strucchange)
 library(datawizard)
 #devtools::install_github("saskiaotto/INDperform")
 library(INDperform)
+library(arules)
 
 ## Viz
 library(ggpubr)
@@ -70,6 +71,68 @@ function_name <- function(param){
 
 }
 
+
+#' @param data a data frame with columns 'group id', 'time_step', 'abundance'
+#' @param bintype a string representing how you want to bin the rates of change,
+#' can be either Available are: "interval" (equal interval width), "frequency" 
+#' (equal frequency), "cluster" (k-means clustering) and "fixed" 
+#' (categories specifies interval boundaries). Note that equal frequency does 
+#' not achieve perfect equally sized groups if the data contains duplicated values.
+#' @return a dataframe of the proportion of species in each rate of change bin
+#' per timestep
+
+bin_rates_of_change <- function(data, bintype){
+
+  require(arules)
+  
+  filtered_inputs <- data %>%
+    # Group by virtual species (vs)
+    group_by(group_id) %>% 
+    # Remove vs that have no individuals at any timestep
+    filter(!all(ave_abundance == 0)) %>% 
+    # Save a copy of original abundance values
+    # rename(abundance_original = abundance) %>%
+    # Identify rows where abundance == 0, and change all subsequent years to 0 too
+    # mutate(abundance = maintain_0_abundance(abundance_original)) 
+    mutate(abundance = ave_abundance) %>% 
+    dplyr::select(-ave_abundance)
+  
+  head(filtered_inputs)
+  
+  # Calculate LPI inputs and LPI
+  ## Based on McRae, L., Loh. J., Bubb, P.J., Baillie, J.E.M., Kapos, V.,
+  ## and Collen, B. 2008. The Living Planet Index - Guidance for
+  ## National and Regional Use. UNEP-WCMC, Cambridge, UK.
+  
+  lpi_inputs <- filtered_inputs %>%
+    # Calculate 1% of the mean population over time for each group
+    group_by(group_id) %>%
+    # Add 1% of the species mean abundance across all timesteps
+    # so we can take the log in the next step
+    mutate(abundance_adjusted = abundance +
+             (mean(abundance, na.rm = TRUE)*0.01)) %>%
+    # Calculate the rate of change since the previous year (dt)
+    # (equation 1 in Mcrae et al 2008)
+    mutate(current_abundance = abundance_adjusted, #abundance at current timestep
+           previous_abundance = lag(abundance_adjusted, 1)) %>%  #abundance at previous timestep
+    mutate(dt = log10(current_abundance/previous_abundance)) %>% # rate of change
+    ungroup(.) %>%
+    # mutate(dt_bins = ifelse(dt < 0.5, "<0.5",
+    #                  ifelse(dt > 0.4 & dt < 0.75, " 0.5 - 0.74",
+    #                  ifelse(dt > 0.74 & dt < 1, "0.75 - 0.99",
+    #                  ifelse(dt > 0.9999 & dt < 1.5,"1 - 1.4",
+    #                  ifelse(dt > 1.4, " > 1.4", NA)))))) %>% 
+    mutate(dt_bins = discretize(dt, bintype, 5)) %>% 
+    group_by(annual_time_step) %>% 
+    mutate(num_groups = n_distinct(group_id)) %>% 
+    group_by(annual_time_step, dt_bins) %>% 
+    filter(!is.na(dt_bins)) %>% 
+    summarise(prop_declining = n_distinct(group_id)/num_groups) %>% 
+    distinct(.)
+                       
+return(lpi_inputs)
+  
+}
 ```
 
 ```{r template chunk }
@@ -164,10 +227,6 @@ write.csv(indicators_all_df, file.path(analysis_inputs_folder,
 
 scenario_redlist_data_sampled <- readRDS(file.path(analysis_inputs, input_date, "scenario_redlist_data_annual_7.rds"))
 ```
-
-# Plot the raw indicator score, the standardized score, the differenced score and the temporal variance
-
-Using the annual RLI in Land use scenario as an example
 
 ```{r prep data}
 
@@ -303,63 +362,6 @@ loess_plots_1[[4]]
 
 ```
 
-# Visualise the differenced indicator values (the difference between indicator at time t and indicator at time t - 1)
-
-```{r plot differenced, eval = FALSE}
-
-differenced_plots <- list()
-
-for (i in seq_along(scenario_indicators)) {
-  
-  # Get a list of indicator outputs for a single scenario
-  single_scenario <- split(scenario_indicators[[i]], 
-                           scenario_indicators[[i]]$indicator)
-  
-  scenario <- single_scenario[[1]]$scenario[1]
-  
-  indicator_plots <- list()
-  
-  for (j in seq_along(single_scenario)) {
-  
-  # Get the indicator name
-  
-  indicator <- single_scenario[[j]]$indicator[1]
-
-
-indicator_plots[[j]] <- ggplot(data = single_scenario[[j]], 
-                               aes(x = annual_time_step,
-                                   y = indicator_score_diff)) +
-  geom_line() + 
-  theme(axis.text = element_text(size = 2),
-    axis.text.x = element_text(size = 6),
-    axis.text.y = element_text(size = 6)) +
-  labs(title = indicator,
-       x = "Annual time step",
-       y = "Differenced indicator score") 
-
-  }
-  
-  title <- ggdraw() + draw_label(scenarios_title[[i]])
-  
-  differenced_plots[[i]] <- plot_grid(title,
-                                         indicator_plots[[1]],
-                                         indicator_plots[[2]],
-                                         indicator_plots[[3]],
-                                         # indicator_plots[[4]],
-                                         # indicator_plots[[5]],
-                                         nrow = 2, align = "v")
-rm(indicator_plots, indicator)
-
-}
-
-differenced_plots[[1]]
-differenced_plots[[2]]
-differenced_plots[[3]]
-differenced_plots[[4]]
-
-```
-
-# Visualise breakpoints (tbc)
 
 ```{r breakpoints, eval = FALSE }
 # https://www.marinedatascience.co/blog/2019/09/28/comparison-of-change-point-detection-methods/
@@ -446,6 +448,7 @@ breakpoint_plots[[4]]
 # plot(qlr)
 
 ```
+
 # Visualise the frequency distribution of the indicator values & abundance of harvested groups
 
 ```{r frequency distribution, eval = FALSE }
@@ -504,7 +507,7 @@ distribution_plots_1[[4]]
 
 ```
 
-# Split the same distributions by disturbance & non-disturbance time steps
+# Indicator distributions coloured by disturbance & non-disturbance time steps
 
 ```{r frequency distribution by disturbance }
 
@@ -568,6 +571,7 @@ distribution_plots_2[[3]]
 distribution_plots_2[[4]]
 
 ```
+
 # Visualise red list status breakdown changes over time
 
 ```{r red list status plots}
@@ -635,7 +639,430 @@ scenario_rl_status_plots[[4]]
 
 ```
 
-# Visualise the temporal variance 
+# Visualise rates of change over time
+
+Note, current bins are not based on much, there might be a more meaningful way to split them. 
+
+```{r rate of change plots, warning=FALSE}
+
+#' @param data a data frame with columns 'group id', 'time_step', 'abundance'
+#' @param bintype a string representing how you want to bin the rates of change,
+#' can be either Available are: "interval" (equal interval width), "frequency" 
+#' (equal frequency), "cluster" (k-means clustering) and "fixed" 
+#' (categories specifies interval boundaries). Note that equal frequency does 
+#' not achieve perfect equally sized groups if the data contains duplicated values.
+#' @return a dataframe of the proportion of species in each rate of change bin
+#' per timestep
+
+set_breaks <- c(-Inf, -0.5, -0.02, -0.01, 0.01, 0.02, 0.5,Inf)
+
+bin_rates_of_change <- function(data, bintype){
+
+  require(arules)
+  
+  filtered_inputs <- data %>%
+    # Group by virtual species (vs)
+    group_by(group_id) %>% 
+    # Remove vs that have no individuals at any timestep
+    filter(!all(ave_abundance == 0)) %>% 
+    # Save a copy of original abundance values
+    # rename(abundance_original = abundance) %>%
+    # Identify rows where abundance == 0, and change all subsequent years to 0 too
+    # mutate(abundance = maintain_0_abundance(abundance_original)) 
+    mutate(abundance = ave_abundance) %>% 
+    dplyr::select(-ave_abundance)
+  
+  head(filtered_inputs)
+  
+  # Calculate LPI inputs and LPI
+  ## Based on McRae, L., Loh. J., Bubb, P.J., Baillie, J.E.M., Kapos, V.,
+  ## and Collen, B. 2008. The Living Planet Index - Guidance for
+  ## National and Regional Use. UNEP-WCMC, Cambridge, UK.
+  
+  lpi_inputs <- filtered_inputs %>%
+    # Calculate 1% of the mean population over time for each group
+    group_by(group_id) %>%
+    # Add 1% of the species mean abundance across all timesteps
+    # so we can take the log in the next step
+    mutate(abundance_adjusted = abundance +
+             (mean(abundance, na.rm = TRUE)*0.01)) %>%
+    # Calculate the rate of change since the previous year (dt)
+    # (equation 1 in Mcrae et al 2008)
+    mutate(current_abundance = abundance_adjusted, #abundance at current timestep
+           previous_abundance = lag(abundance_adjusted, 1)) %>%  #abundance at previous timestep
+    mutate(dt = log10(current_abundance/previous_abundance)) %>% # rate of change
+    ungroup(.) %>%
+    # mutate(dt_bins = as.factor(ifelse(dt <= -0.5, " < -0.5",
+    #                  ifelse(dt > -0.5 & dt <= -0.02, "-0.5 to -0.02",
+    #                  ifelse(dt > -0.02 & dt <= -0.01, "-0.02 to -0.01",
+    #                  ifelse(dt > -0.01 & dt <= 0.01, "-0.01 to 0.01",
+    #                  ifelse(dt > 0.01 & dt <= 0.02, "0.01 to 0.02",
+    #                  ifelse(dt > 0.02 & dt <= 0.5, "0.02 to 0.5",
+    #                  ifelse(dt > 0.5,"> 0.05", NA)))))))),
+    #        ordered = TRUE) %>%
+    mutate(dt_bins = discretize(dt, "fixed", 
+                                breaks =  c(-2.5, -0.5, -0.02, -0.01, 
+                                            0.01, 0.02, 0.5,2.5),
+                                ordered_result = TRUE),
+           decline_fac = as.character(dt_bins)) %>% 
+    group_by(annual_time_step) %>% 
+    mutate(num_groups = n_distinct(group_id)) %>% 
+    group_by(annual_time_step, dt_bins) %>% 
+    filter(!is.na(dt_bins)) %>% 
+    summarise(prop_declining = n_distinct(group_id)/num_groups) %>% 
+    distinct(.)
+
+# decline_fac <- factor(lpi_inputs$dt_bins,
+#       levels = c(" < -0.5", "-0.5 to -0.02", "-0.02 to -0.01", "-0.01 to 0.01",
+#                  "0.01 to 0.02", "0.02 to 0.5", "> 0.5"))
+#   
+# lpi_inputs <- cbind(lpi_inputs,
+#   decline_fac = decline_fac)
+  
+                       
+return(lpi_inputs)
+  
+}
+
+# * Bin rates of change and plot them ----
+
+rate_of_change_plots <- list()
+
+for (i in seq_along(scenario_redlist_data_sampled)) {
+  
+rate_change_data <- bin_rates_of_change(scenario_redlist_data_sampled[[i]],
+                                        "fixed") %>% 
+                                        mutate(scenario = scenarios[[i]])
+  
+rate_of_change_plots[[i]] <- ggplot(rate_change_data,
+                                    aes(x = annual_time_step, 
+                                        y = prop_declining, 
+                                        fill = dt_bins)) +
+    geom_area(alpha = 0.4) +
+      scale_fill_viridis_d(option = "plasma") +
+       theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_rect(fill = "grey80"),
+          legend.position = "bottom",
+         legend.title=element_text(size=10), 
+         legend.text=element_text(size=8),
+          axis.title.x = element_text(size=10),
+          axis.title.y = element_text(size=10),
+          axis.text.x = element_text(size=10),
+          axis.text.y = element_text(size=10),
+          axis.ticks.x = element_blank(), 
+          axis.ticks.y = element_blank()) +
+   labs(title = scenarios_title[[i]],
+        x = "Time (years)",
+        y = "Proportion of functional groups in decline category") +
+   guides(fill = guide_legend(title = "Rate of decline category"),
+          fill = guide_legend(nrow = 2))
+   
+  rm(rate_change_data)
+  
+}
+
+rate_of_change_plots[[1]]
+rate_of_change_plots[[2]]
+rate_of_change_plots[[3]]
+rate_of_change_plots[[4]]
+
+```
+
+# Functional group density over time
+
+Note this does not show relative abundance, it shows the proportion of abundance
+for each functional group in that time step, relative to it's total abundance
+over the entire time series.
+
+```{r plot density by functional group, warnings = FALSE}
+
+scenario_fg_abundance <- list()
+
+for (i in seq_along(scenario_redlist_data_sampled)) {
+  
+  scenario_fg_abundance[[i]] <- scenario_redlist_data_sampled[[i]] %>% 
+    mutate(scenario = scenarios[[i]]) %>% 
+    ungroup(.) %>% 
+    group_by(functional_group_name, annual_time_step) %>% 
+    mutate(indicator_score = mean(ave_abundance, na.rm = TRUE),
+           indicator = "total abundance",
+           ci_lower = NA,
+           ci_upper = NA,
+           replicate = NA) %>% 
+    ungroup(.) %>%                                 
+    dplyr::select(annual_time_step, 
+                  indicator_score,
+                  ci_lower,
+                  ci_upper,
+                  indicator,
+                  replicate,
+                  functional_group_name,
+                  scenario) %>% 
+    distinct(.) %>%
+    group_by(functional_group_name)  %>% 
+    mutate(indicator_score = indicator_score/first(indicator_score),
+           density = indicator_score/sum(indicator_score, na.rm = TRUE)) %>% 
+    ungroup(.) %>% 
+    group_by(annual_time_step) %>% 
+    mutate(total_density = sum(density, na.rm = TRUE)) %>% 
+    group_by(annual_time_step, functional_group_name) %>% 
+    mutate(perc_density = density/total_density)
+  
+}
+
+library(ggridges)
+
+func_group_perc_density_plots <- list()
+
+for (i in seq_along(scenario_fg_abundance)) {
+  
+func_group_perc_density_plots[[i]] <- ggplot(scenario_fg_abundance[[i]], 
+                            aes(x = annual_time_step, 
+                                y = functional_group_name,
+                                height = density,
+                                group = functional_group_name,
+                                color = functional_group_name,
+                                fill = functional_group_name)) + 
+      geom_density_ridges(stat = "identity", scale = 3, alpha = 0.6) +
+  theme_classic() +
+  labs(title = scenario_fg_abundance[[i]]$scenario[1])
+
+}
+
+func_group_perc_density_plots[[1]]
+func_group_perc_density_plots[[2]]
+func_group_perc_density_plots[[3]]
+func_group_perc_density_plots[[4]]
+
+```
+
+```{r species density, warnings = FALSE}
+
+# * Plot density of species ----
+
+scenario_species_abundance <- list()
+
+for ( i in seq_along(scenario_redlist_data_sampled)) {
+  
+  scenario_species_abundance[[i]] <- scenario_redlist_data_sampled[[i]] %>% 
+    mutate(scenario = scenarios[[i]]) %>% 
+    ungroup(.) %>% 
+    group_by(group_id, annual_time_step) %>% 
+    mutate(indicator_score = mean(ave_abundance, na.rm = TRUE),
+           indicator = "total abundance",
+           ci_lower = NA,
+           ci_upper = NA,
+           replicate = NA) %>% 
+    ungroup(.) %>%                                 
+    dplyr::select(annual_time_step, 
+                  indicator_score,
+                  ci_lower,
+                  ci_upper,
+                  indicator,
+                  replicate,
+                  group_id,
+                  functional_group_name,
+                  scenario) %>% 
+    distinct(.) %>%
+    group_by(group_id)  %>% 
+    mutate(indicator_score = indicator_score/first(indicator_score),
+           density = indicator_score/sum(indicator_score, na.rm = TRUE)) %>% 
+    ungroup(.)
+  
+}
+
+scenario_species_abundance_plots <- list()
+
+for(i in seq_along(scenario_species_abundance)) {
+  
+  split_data <- split(scenario_species_abundance[[i]], 
+                      scenario_species_abundance[[i]]$functional_group_name)
+  fg_plots <- list()
+  for (j in seq_along(split_data)){
+    
+    fg <- split_data[[j]]$functional_group_name[1]
+    
+    fg_plots[[j]] <- ggplot(split_data[[j]], 
+                            aes(x = annual_time_step, 
+                                y = group_id,
+                                height = density,
+                                group = group_id,
+                                color = group_id,
+                                fill = group_id)) + 
+      geom_density_ridges(stat = "identity", scale = 3, alpha = 0.6) +
+      theme_classic() +
+      theme(panel.background = element_rect(fill = "snow2"),
+            legend.position = "none",
+            strip.text = element_text(face="bold", size=9)) +
+      geom_vline(xintercept = 100, linetype = "dashed") +
+      # annotate(x=100,y=+Inf,label="Impact start",vjust=2,geom="label",
+      #          size = 3) +
+      geom_vline(xintercept = 200, linetype = "dashed") +
+      # annotate(x=200,y=+Inf,label="Impact end",vjust=2,geom="label",
+      #          size = 3) +
+      labs(x = "Annual time step",
+           y = "Density over time",
+           title = fg) + 
+      theme(plot.title = element_text(size = 10))  + 
+      theme(axis.text.x = element_text(size = 1))
+    
+   }
+  
+  scenario_species_abundance_plots[[i]] <- fg_plots
+  
+}
+```
+
+# Baseline - Species density over time
+
+```{r baseline spp density}
+
+p <- 4
+
+title <- ggdraw() + draw_label("Baseline", fontface='bold') 
+title2 <- ggdraw() + draw_label(" ", fontface='bold')  
+ 
+bl_spp_density <- plot_grid(title, title2,
+                            scenario_species_abundance_plots[[1]][[1]],
+                            scenario_species_abundance_plots[[1]][[2]],
+                            scenario_species_abundance_plots[[1]][[3]],
+                            scenario_species_abundance_plots[[1]][[4]],
+                            scenario_species_abundance_plots[[1]][[5]],
+                            scenario_species_abundance_plots[[1]][[6]],
+                            nrow = p, align = "v")
+
+bl_spp_density
+
+ggsave(file.path(analysis_plots_folder, "baseline_spp_density.pdf"),
+       bl_spp_density,  width = 10, height = 18, dpi = 300, 
+       units = "in",device = "pdf")
+
+```
+
+# Land use - Species density over time
+
+```{r land use spp density, out.width = '100%', out.height='60%'}
+
+title <- ggdraw() + draw_label("Land use", fontface='bold')  
+
+lu_spp_density <- plot_grid(title, title2,
+                            scenario_species_abundance_plots[[2]][[1]],
+                            scenario_species_abundance_plots[[2]][[2]],
+                            scenario_species_abundance_plots[[2]][[3]],
+                            scenario_species_abundance_plots[[2]][[4]],
+                            scenario_species_abundance_plots[[2]][[5]],
+                            scenario_species_abundance_plots[[2]][[6]],
+                            nrow = p, align = "v")
+
+lu_spp_density
+
+ggsave(file.path(analysis_plots_folder, "land_use_spp_density.pdf"),
+       lu_spp_density,  width = 10, height = 18, dpi = 300, 
+       units = "in",device = "pdf")
+
+```
+
+# Carnivore harvesting - Species density over time
+
+```{r carnivore spp density, out.width = '100%', out.height='60%' }
+
+title <- ggdraw() + draw_label("Carnivore harvesting", fontface='bold')  
+
+ca_spp_density <- plot_grid(title, title2,
+                            scenario_species_abundance_plots[[3]][[1]],
+                            scenario_species_abundance_plots[[3]][[2]],
+                            scenario_species_abundance_plots[[3]][[3]],
+                            scenario_species_abundance_plots[[3]][[4]],
+                            scenario_species_abundance_plots[[3]][[5]],
+                            scenario_species_abundance_plots[[3]][[6]],
+                            nrow = p, align = "v")
+
+ca_spp_density
+
+ggsave(file.path(analysis_plots_folder, "carnivore_spp_density.pdf"),
+       ca_spp_density,  width = 10, height = 18, dpi = 300, 
+       units = "in",device = "pdf")
+
+```
+
+# Herbivore harvesting - Species density over time
+
+```{r herbivore spp density, out.width = '100%', out.height='60%' }
+
+title <- ggdraw() + draw_label("Herbivore harvesting", fontface='bold')  
+
+he_spp_density <- plot_grid(title,
+                            title2,
+                            scenario_species_abundance_plots[[4]][[1]],
+                            scenario_species_abundance_plots[[4]][[2]],
+                            scenario_species_abundance_plots[[4]][[3]],
+                            scenario_species_abundance_plots[[4]][[4]],
+                            scenario_species_abundance_plots[[4]][[5]],
+                            scenario_species_abundance_plots[[4]][[6]],
+                            nrow = p, align = "v")
+he_spp_density
+
+ggsave(file.path(analysis_plots_folder, "herbivore_spp_density.pdf"),
+       he_spp_density,  width = 10, height = 18, dpi = 300, 
+       units = "in",device = "pdf")
+
+```
+
+```{r plot differenced, eval = FALSE}
+
+differenced_plots <- list()
+
+for (i in seq_along(scenario_indicators)) {
+  
+  # Get a list of indicator outputs for a single scenario
+  single_scenario <- split(scenario_indicators[[i]], 
+                           scenario_indicators[[i]]$indicator)
+  
+  scenario <- single_scenario[[1]]$scenario[1]
+  
+  indicator_plots <- list()
+  
+  for (j in seq_along(single_scenario)) {
+  
+  # Get the indicator name
+  
+  indicator <- single_scenario[[j]]$indicator[1]
+
+
+indicator_plots[[j]] <- ggplot(data = single_scenario[[j]], 
+                               aes(x = annual_time_step,
+                                   y = indicator_score_diff)) +
+  geom_line() + 
+  theme(axis.text = element_text(size = 2),
+    axis.text.x = element_text(size = 6),
+    axis.text.y = element_text(size = 6)) +
+  labs(title = indicator,
+       x = "Annual time step",
+       y = "Differenced indicator score") 
+
+  }
+  
+  title <- ggdraw() + draw_label(scenarios_title[[i]])
+  
+  differenced_plots[[i]] <- plot_grid(title,
+                                         indicator_plots[[1]],
+                                         indicator_plots[[2]],
+                                         indicator_plots[[3]],
+                                         # indicator_plots[[4]],
+                                         # indicator_plots[[5]],
+                                         nrow = 2, align = "v")
+rm(indicator_plots, indicator)
+
+}
+
+differenced_plots[[1]]
+differenced_plots[[2]]
+differenced_plots[[3]]
+differenced_plots[[4]]
+
+```
+
 
 ```{r plot temporal variance, warning=FALSE, error = FALSE, message=FALSE, eval = FALSE}
 
@@ -691,7 +1118,7 @@ variance_plots_3[[4]]
 
 ```
 
-```{r trend modeling example}
+```{r trend modeling example, eval = FALSE}
 
 # Using the demo data
 head(ind_ex)
@@ -738,7 +1165,7 @@ grid.arrange(
 
 ```
 
-```{r prepare data for trend modelling }
+```{r prepare data for trend modelling, eval = FALSE }
 
 # Get one scenario
 single_scenario <- indicators_all_df %>%
@@ -763,7 +1190,7 @@ pressure_inputs <- single_scenario %>%
 
 ```
 
-```{r model trends and plot diagnostics }
+```{r model trends and plot diagnostics, eval = FALSE }
 
 m_trend <- model_trend(ind_tbl = ind_trend_inputs[ ,-1],
   time = ind_trend_inputs$annual_time_step,
@@ -784,7 +1211,7 @@ ml <- marrangeGrob(grobs = pd$all_plots, ncol = 1, nrow = 1)
 
 ```
 
-```{r plot trends }
+```{r plot trends , eval = FALSE}
 
 # Inspect trends
 pt <- plot_trend(m_trend)
@@ -803,7 +1230,7 @@ grid.arrange(
 
 ```
 
-```{r prepare data for pressure - response modelling }
+```{r prepare data for pressure - response modelling, eval = FALSE }
 
 dat_init <- ind_init(ind_tbl = ind_trend_inputs[ ,-1],
   press_tbl = pressure_inputs[ ,-1], time = ind_trend_inputs$annual_time_step,
@@ -811,7 +1238,7 @@ dat_init <- ind_init(ind_tbl = ind_trend_inputs[ ,-1],
 
 ```
 
-```{r simple gams }
+```{r simple gams, eval = FALSE }
 
 m_gam <- model_gam(init_tbl = dat_init, k = 5,
     family = stats::Gamma(), excl_outlier = NULL)
@@ -844,7 +1271,7 @@ m_gam %>%
 
 ```
 
-```{r GAMMs for temporally autocorrelated }
+```{r GAMMs for temporally autocorrelated, eval = FALSE }
 
 m_gamm <- model_gamm(init_tbl = dat_init,
   filter = m_gam$tac, # (apply GAMM only to rows where TAC detected)
