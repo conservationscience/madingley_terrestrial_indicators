@@ -1039,17 +1039,17 @@ selected_mods_data[[i]] <- test_gam_data[[selected]]
 
 i <- 4
 
-kval <- 10
+data <- scenario_indicator_single[[i]]
 
-input_data <- scenario_indicator_single[[i]]
+model <- selected_mods[[i]]
 
-mod <- selected_mods[[i]]
-
-mod_data <- selected_mods_data[[i]]
+model_data <- selected_mods_data[[i]]
 
 numboots <- 10
 
 
+bootstrap_selected_model <- function(data, model, model_data, numboots) {
+  
 bootstrap_mods <- list()
 bootstrap_mod_data <- list()
 replicate <- list()
@@ -1057,12 +1057,12 @@ replicate <- list()
 for (k in 1:numboots) {
         
 # Take k number of random samples from the input data
-replicate[[k]] <- slice_sample(input_data, 
+replicate[[k]] <- slice_sample(data, 
                           prop = 1, replace = TRUE) 
         
 
 # Fit the model with the data
-bootstrap_mods[[k]] <- gam(indicator_score ~ s(annual_time_step, k = kval),
+bootstrap_mods[[k]] <- gam(indicator_score ~ s(annual_time_step, k = model$rank),
           select = TRUE,
           method = "REML",
           data = replicate[[k]])
@@ -1093,7 +1093,7 @@ pdat <- cbind(pdat1, predicted = p2$fit, se2 = p2$se.fit, obs,
 gratia_derivs_1 <- as.data.frame(derivatives(bootstrap_mods[[k]], order = 1, 
                    n = 290, interval = "confidence") ) %>% 
                    dplyr::select(derivative, lower, upper) %>% 
-                   rename(first_deriv = derivative,
+                   rename(first_derivative = derivative,
                           first_lower = lower,
                           first_upper = upper)
 
@@ -1101,7 +1101,7 @@ gratia_derivs_1 <- as.data.frame(derivatives(bootstrap_mods[[k]], order = 1,
 gratia_derivs_2 <- as.data.frame(derivatives(bootstrap_mods[[k]], order = 2, 
                    n = 290, interval = "confidence") ) %>% 
                    dplyr::select(derivative, lower, upper) %>% 
-                   rename(second_deriv = derivative,
+                   rename(second_derivative = derivative,
                           second_lower = lower,
                           second_upper = upper)
 
@@ -1120,65 +1120,100 @@ ci_df <- do.call(rbind, bootstrap_mod_data) %>%
                                       probs = 0.025),
                        predicted_upper = quantile(predicted, 
                                       probs = 0.975)) 
+
 first_deriv_df <- do.call(rbind, bootstrap_mod_data) %>% 
              #Group by timestep
              group_by(annual_time_step) %>% 
-             arrange(first_deriv) %>% 
-             summarise(first_lower = quantile(first_deriv, 
+             arrange(first_derivative) %>% 
+             summarise(first_lower = quantile(first_derivative, 
                                       probs = 0.025),
-                       first_upper = quantile(first_deriv, 
+                       first_upper = quantile(first_derivative, 
                                       probs = 0.975)) %>% 
-             merge(selected_mods_data[[i]][c("annual_time_step",
-                                             "predicted",
-                                               "derivative")],
+             merge(model_data[c("annual_time_step", "predicted",
+                                               "first_derivative")],
                    by = "annual_time_step") %>% 
              mutate(significant = ifelse(first_lower < 0 & first_upper > 0, 
                                          FALSE, TRUE),
-                    positive_pred = ifelse(significant == TRUE & derivative > 0,
+                    positive_trend = ifelse(significant == TRUE & first_derivative > 0,
                                             predicted,NA),
-                    negative_pred = ifelse(significant == TRUE & derivative < 0,
+                    negative_trend = ifelse(significant == TRUE & first_derivative < 0,
                                             predicted, NA),
-                    positive_der = ifelse(significant == TRUE & derivative > 0,
-                                            derivative,NA),
-                    negative_der = ifelse(significant == TRUE & derivative < 0,
-                                            derivative, NA)) 
+                    positive_der = ifelse(significant == TRUE & first_derivative > 0,
+                                            first_derivative,NA),
+                    negative_der = ifelse(significant == TRUE & first_derivative < 0,
+                                            first_derivative, NA)) %>% 
+            dplyr::select(-predicted)
 
 second_deriv_df <- do.call(rbind, bootstrap_mod_data) %>% 
              #Group by timestep
              group_by(annual_time_step) %>% 
-             arrange(second_deriv) %>% 
-             summarise(second_lower = quantile(second_deriv, 
+             arrange(second_derivative) %>% 
+             summarise(second_derivative = second_derivative,
+                       second_lower = quantile(second_derivative, 
                                       probs = 0.025),
-                       second_upper = quantile(second_deriv, 
+                       second_upper = quantile(second_derivative, 
                                       probs = 0.975))
 
 
-new <- selected_mods_data[[i]] %>% 
-     dplyr::select(annual_time_step, obs, predicted, deviance_residuals, derivative) %>% 
+new <- model_data %>% 
+     dplyr::select(annual_time_step, observed, predicted, deviance_residuals) %>% 
      merge(ci_df, by ="annual_time_step") %>% 
      merge(first_deriv_df, by ="annual_time_step") %>% 
      merge(second_deriv_df, by ="annual_time_step") %>% 
-             mutate(significant = ifelse(first_lower < 0 & first_upper > 0, 
+             mutate(significant_2 = ifelse(second_lower < 0 & second_upper > 0, 
                                          FALSE, TRUE),
-                    positive_pred = ifelse(significant == TRUE & derivative > 0,
+                    positive_trend = ifelse(significant_2 == TRUE & second_derivative > 0,
                                             predicted,NA),
-                    negative_pred = ifelse(significant == TRUE & derivative < 0,
+                    negative_trend = ifelse(significant_2 == TRUE & second_derivative < 0,
                                             predicted, NA),
-                    positive_der = ifelse(significant == TRUE & derivative > 0,
-                                            derivative,NA),
-                    negative_der = ifelse(significant == TRUE & derivative < 0,
-                                            derivative, NA))
+                    positive_der = ifelse(significant_2 == TRUE & second_derivative > 0,
+                                            second_derivative,NA),
+                    negative_der = ifelse(significant_2 == TRUE & second_derivative < 0,
+                                            second_derivative, NA))
 
-ggplot(data = new) +
-  geom_point(aes(x = annual_time_step, y = obs), alpha = 0.2) +
+}
+
+plot_bootstrapped_model <- function(data){
+  
+if(all(is.na(data$positive_trend))) {
+
+boot_plot <- ggplot(data = data) +
+            geom_point(aes(x = annual_time_step, y = observed), alpha = 0.2) +
+            geom_line(aes(x = annual_time_step, y = predicted)) +
+            geom_ribbon(aes(x = annual_time_step, ymin = predicted_lower, ymax = predicted_upper),
+                        alpha = 0.3) +
+            #geom_line(aes(x = annual_time_step, y = positive_trend), col = "blue") +
+            #geom_line(aes(x = annual_time_step, y = negative_trend), col = "red") +
+            labs(y = data$indicator[1],
+                           title = paste(data$scenario[1], 
+                                         data$indicator[1], "k =", 
+                                         data$kvalue[1], sep = " ")) +
+                      theme_classic()
+  
+} else {
+
+  boot_plot <- ggplot(data = data) +
+  geom_point(aes(x = annual_time_step, y = observed), alpha = 0.2) +
   geom_line(aes(x = annual_time_step, y = predicted)) +
   geom_ribbon(aes(x = annual_time_step, ymin = predicted_lower, ymax = predicted_upper),
               alpha = 0.3) +
-  geom_line(aes(x = annual_time_step, y = positive_pred), col = "blue") +
-  geom_line(aes(x = annual_time_step, y = negative_pred), col = "red") +
-  labs(y = indicator,
-       title = scenario) +
-  theme_classic()
+  geom_line(aes(x = annual_time_step, y = positive_trend), col = "blue") +
+  geom_line(aes(x = annual_time_step, y = negative_trend), col = "red") +
+  labs(y = data$indicator[1],
+                           title = paste(test_gam_data$scenario[1], 
+                                         test_gam_data$indicator[1], "k =", 
+                                         test_gam_data$kvalue[1], sep = " ")) +
+                      theme_classic()
+  
+  return(boot_plot)
+  }
+}
+
+test <- bootstrap_selected_model(scenario_indicator_single[[i]],
+                                 selected_mods[[i]], 
+                                 selected_mods_data[[i]], 100)
+
+plot_bootstrapped_model(test)
 
 ```
 
