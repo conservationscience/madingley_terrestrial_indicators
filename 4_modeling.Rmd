@@ -496,7 +496,9 @@ pdat <- transform(pdat,
 
 # Calculate the derivatives and add that too
 gratia_derivs_1 <- as.data.frame(derivatives(indicator_mods[[j]], order = 1, 
-                   n = 290, interval = "confidence") ) 
+                   n = 290, interval = "confidence") )
+
+
 
 # Bind it all together
 temp <- cbind(pdat, gratia_derivs_1)
@@ -1493,8 +1495,148 @@ selected_mods_data[[i]] <- indicator_mod_dfs_k[[selected]]
 
 # possibly some useful stuff https://fromthebottomoftheheap.net/2011/06/12/additive-modelling-and-the-hadcrut3v-global-mean-temperature-series/
 
+i <- 4
 
-mod <- selected_mods[[1]]
+kval <- 10
+
+input_data <- scenario_indicator_single[[i]]
+
+mod <- selected_mods[[i]]
+
+mod_data <- selected_mods_data[[i]]
+
+numboots <- 400
+
+
+bootstrap_mods <- list()
+bootstrap_mod_data <- list()
+replicate <- list()
+
+for (k in 1:numboots) {
+        
+# Take k number of random samples from the input data
+replicate[[k]] <- slice_sample(input_data, 
+                          prop = 1, replace = TRUE) 
+        
+
+# Fit the model with the data
+bootstrap_mods[[k]] <- gam(indicator_score ~ s(annual_time_step, k = kval),
+          select = TRUE,
+          method = "REML",
+          data = replicate[[k]])
+
+# Get the predicted values etc
+
+obs <- replicate[[k]]$indicator_score
+
+# Make a dataframe of predictor vals (ie timesteps)
+
+pdat1 <- data.frame(annual_time_step = seq(1,290,1))
+
+# Get predicted values for each time step
+p2 <- predict.gam(bootstrap_mods[[k]], pdat1,
+                  se.fit = TRUE, response = TRUE)
+
+# Get the deviance residuals
+deviance_residuals <- residuals(bootstrap_mods[[k]], type = "deviance", 
+                                response = TRUE)
+
+#Bind them together with observed vals
+
+pdat <- cbind(pdat1, predicted = p2$fit, se2 = p2$se.fit, obs, 
+              deviance_residuals) %>%  
+                  mutate(replicate = k)
+
+# Calculate the derivatives and add that too
+gratia_derivs_1 <- as.data.frame(derivatives(bootstrap_mods[[k]], order = 1, 
+                   n = 290, interval = "confidence") ) %>% 
+                   dplyr::select(derivative, lower, upper) %>% 
+                   rename(first_deriv = derivative,
+                          first_lower = lower,
+                          first_upper = upper)
+
+# Calculate the derivatives and add that too
+gratia_derivs_2 <- as.data.frame(derivatives(bootstrap_mods[[k]], order = 2, 
+                   n = 290, interval = "confidence") ) %>% 
+                   dplyr::select(derivative, lower, upper) %>% 
+                   rename(second_deriv = derivative,
+                          second_lower = lower,
+                          second_upper = upper)
+
+# Bind it all together
+bootstrap_mod_data[[k]] <- cbind(pdat, gratia_derivs_1, gratia_derivs_2)
+
+print(k)
+
+}
+
+ci_df <- do.call(rbind, bootstrap_mod_data) %>% 
+             #Group by timestep
+             group_by(annual_time_step) %>% 
+             arrange(predicted) %>% 
+             summarise(predicted_lower = quantile(predicted, 
+                                      probs = 0.025),
+                       predicted_upper = quantile(predicted, 
+                                      probs = 0.975)) 
+first_deriv_df <- do.call(rbind, bootstrap_mod_data) %>% 
+             #Group by timestep
+             group_by(annual_time_step) %>% 
+             arrange(first_deriv) %>% 
+             summarise(first_lower = quantile(first_deriv, 
+                                      probs = 0.025),
+                       first_upper = quantile(first_deriv, 
+                                      probs = 0.975)) %>% 
+             merge(selected_mods_data[[i]][c("annual_time_step",
+                                             "predicted",
+                                               "derivative")],
+                   by = "annual_time_step") %>% 
+             mutate(significant = ifelse(first_lower < 0 & first_upper > 0, 
+                                         FALSE, TRUE),
+                    positive_pred = ifelse(significant == TRUE & derivative > 0,
+                                            predicted,NA),
+                    negative_pred = ifelse(significant == TRUE & derivative < 0,
+                                            predicted, NA),
+                    positive_der = ifelse(significant == TRUE & derivative > 0,
+                                            derivative,NA),
+                    negative_der = ifelse(significant == TRUE & derivative < 0,
+                                            derivative, NA)) 
+
+second_deriv_df <- do.call(rbind, bootstrap_mod_data) %>% 
+             #Group by timestep
+             group_by(annual_time_step) %>% 
+             arrange(second_deriv) %>% 
+             summarise(second_lower = quantile(second_deriv, 
+                                      probs = 0.025),
+                       second_upper = quantile(second_deriv, 
+                                      probs = 0.975))
+
+
+new <- selected_mods_data[[i]] %>% 
+     dplyr::select(annual_time_step, obs, predicted, deviance_residuals, derivative) %>% 
+     merge(ci_df, by ="annual_time_step") %>% 
+     merge(first_deriv_df, by ="annual_time_step") %>% 
+     merge(second_deriv_df, by ="annual_time_step") %>% 
+             mutate(significant = ifelse(first_lower < 0 & first_upper > 0, 
+                                         FALSE, TRUE),
+                    positive_pred = ifelse(significant == TRUE & derivative > 0,
+                                            predicted,NA),
+                    negative_pred = ifelse(significant == TRUE & derivative < 0,
+                                            predicted, NA),
+                    positive_der = ifelse(significant == TRUE & derivative > 0,
+                                            derivative,NA),
+                    negative_der = ifelse(significant == TRUE & derivative < 0,
+                                            derivative, NA))
+
+ggplot(data = new) +
+  geom_point(aes(x = annual_time_step, y = obs), alpha = 0.2) +
+  geom_line(aes(x = annual_time_step, y = predicted)) +
+  geom_ribbon(aes(x = annual_time_step, ymin = predicted_lower, ymax = predicted_upper),
+              alpha = 0.3) +
+  geom_line(aes(x = annual_time_step, y = positive_pred), col = "blue") +
+  geom_line(aes(x = annual_time_step, y = negative_pred), col = "red") +
+  labs(y = indicator,
+       title = scenario) +
+  theme_classic()
 
 ```
 
@@ -1612,75 +1754,75 @@ pr_gam_inputs <- response %>%
 
 <!-- ``` -->
 
-<!-- # 1st derivatives -->
+# 1st derivatives
 
-<!-- First derivatives show the rate of change in the indicator at a specific time  -->
-<!-- point. Values = 0 signify no trend, values > 0 signify a positive trend, and  -->
-<!-- values < 0 signify a negative trend. -->
+First derivatives show the rate of change in the indicator at a specific time
+point. Values = 0 signify no trend, values > 0 signify a positive trend, and
+values < 0 signify a negative trend.
 
-<!-- ```{r 1st derivatives, echo = TRUE } -->
+```{r 1st derivatives, echo = TRUE, eval=FALSE }
 
-<!-- # Using gratia package -->
+# Using gratia package
 
-<!-- obs <- scenario_indicator_single[[i]]$indicator_score -->
+obs <- scenario_indicator_single[[i]]$indicator_score
 
-<!-- pdat <- data.frame(annual_time_step = seq(1,290,1)) -->
+pdat <- data.frame(annual_time_step = seq(1,290,1))
 
-<!-- p2 <- predict.gam(selected_mods[[i]]$gam, pdat,  -->
-<!--                   se.fit = TRUE, response = TRUE) -->
+p2 <- predict.gam(selected_mods[[i]]$gam, pdat,
+                  se.fit = TRUE, response = TRUE)
 
-<!-- pdat <- cbind(pdat, predicted = p2$fit, se2 = p2$se.fit, obs) -->
+pdat <- cbind(pdat, predicted = p2$fit, se2 = p2$se.fit, obs)
 
-<!-- df.res <- df.residual(selected_mods[[i]]$gam) -->
-<!-- crit.t <- qt(0.025, df.res, lower.tail = FALSE) -->
-<!-- pdat <- transform(pdat, -->
-<!--                   upper_pred = predicted + (crit.t * se2), -->
-<!--                   lower_pred = predicted - (crit.t * se2)) -->
+df.res <- df.residual(selected_mods[[i]]$gam)
+crit.t <- qt(0.025, df.res, lower.tail = FALSE)
+pdat <- transform(pdat,
+                  upper_pred = predicted + (crit.t * se2),
+                  lower_pred = predicted - (crit.t * se2))
 
-<!-- gratia_derivs_1 <- as.data.frame(derivatives(selected_mods[[i]], order = 1,  -->
-<!--                    n = 290, interval = "confidence") )  -->
+gratia_derivs_1 <- as.data.frame(derivatives(selected_mods[[i]], order = 1,
+                   n = 290, interval = "confidence") )
 
-<!-- temp <- cbind(pdat, gratia_derivs_1) -->
+temp <- cbind(pdat, gratia_derivs_1)
 
-<!-- indicator <- scenario_indicator_single[[i]]$indicator[1] -->
-<!-- scenario <- scenario_indicator_single[[i]]$scenario[1] -->
+indicator <- scenario_indicator_single[[i]]$indicator[1]
+scenario <- scenario_indicator_single[[i]]$scenario[1]
 
-<!-- derivatives_plot_data <- temp %>%  -->
-<!--                    mutate(significant = ifelse(lower < 0 & upper > 0, FALSE, TRUE), -->
-<!--                           positive_pred = ifelse(significant == TRUE & derivative > 0, -->
-<!--                                             predicted,NA), -->
-<!--                           negative_pred = ifelse(significant == TRUE & derivative < 0, -->
-<!--                                             predicted, NA), -->
-<!--                           positive_der = ifelse(significant == TRUE & derivative > 0, -->
-<!--                                             derivative,NA), -->
-<!--                           negative_der = ifelse(significant == TRUE & derivative < 0, -->
-<!--                                             derivative, NA))  -->
+derivatives_plot_data <- temp %>%
+                   mutate(significant = ifelse(lower < 0 & upper > 0, FALSE, TRUE),
+                          positive_pred = ifelse(significant == TRUE & derivative > 0,
+                                            predicted,NA),
+                          negative_pred = ifelse(significant == TRUE & derivative < 0,
+                                            predicted, NA),
+                          positive_der = ifelse(significant == TRUE & derivative > 0,
+                                            derivative,NA),
+                          negative_der = ifelse(significant == TRUE & derivative < 0,
+                                            derivative, NA))
 
-<!-- ggplot(derivatives_plot_data) + -->
-<!--   geom_ribbon(aes(x = annual_time_step, ymin = lower, ymax = upper), -->
-<!--               alpha = 0.3) + -->
-<!--   geom_line(aes(x = annual_time_step, -->
-<!--                 y = derivative)) + -->
-<!--   geom_line(aes(x = annual_time_step, -->
-<!--          y = positive_der), col = "blue")+ -->
-<!--   geom_line(aes(x = annual_time_step, -->
-<!--          y = negative_der), col = "red") + -->
-<!--   geom_hline(yintercept = 0, col = "green") -->
+ggplot(derivatives_plot_data) +
+  geom_ribbon(aes(x = annual_time_step, ymin = lower, ymax = upper),
+              alpha = 0.3) +
+  geom_line(aes(x = annual_time_step,
+                y = derivative)) +
+  geom_line(aes(x = annual_time_step,
+         y = positive_der), col = "blue")+
+  geom_line(aes(x = annual_time_step,
+         y = negative_der), col = "red") +
+  geom_hline(yintercept = 0, col = "green")
 
 
 
-<!-- ggplot(data = derivatives_plot_data) + -->
-<!--   geom_point(aes(x = annual_time_step, y = obs), alpha = 0.2) + -->
-<!--   geom_line(aes(x = annual_time_step, y = predicted)) + -->
-<!--   geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred), -->
-<!--               alpha = 0.3) + -->
-<!--   geom_line(aes(x = annual_time_step, y = positive_pred), col = "blue") + -->
-<!--   geom_line(aes(x = annual_time_step, y = negative_pred), col = "red") + -->
-<!--   labs(y = indicator, -->
-<!--        title = scenario) + -->
-<!--   theme_classic() -->
+ggplot(data = derivatives_plot_data) +
+  geom_point(aes(x = annual_time_step, y = obs), alpha = 0.2) +
+  geom_line(aes(x = annual_time_step, y = predicted)) +
+  geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred),
+              alpha = 0.3) +
+  geom_line(aes(x = annual_time_step, y = positive_pred), col = "blue") +
+  geom_line(aes(x = annual_time_step, y = negative_pred), col = "red") +
+  labs(y = indicator,
+       title = scenario) +
+  theme_classic()
 
-<!-- ``` -->
+```
 
 <!-- # Graveyard  -->
 <!-- ```{r graveyard, echo = TRUE } -->
