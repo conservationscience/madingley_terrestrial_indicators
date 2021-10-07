@@ -312,7 +312,8 @@ test_gam_data <- temp %>%
                                             first_derivative, NA),
                         indicator = indicator,
                         scenario = scenario,
-                        kvalue = model$rank) 
+                        kvalue = model$rank,
+                        r2 = summary.gam(model)$r.sq) 
 
 }
 ```
@@ -321,6 +322,28 @@ test_gam_data <- temp %>%
 
 plot_test_gam <- function(test_gam_data) {
 
+if(all(is.na(test_gam_data$positive_trend))) {
+
+gam_plot <- ggplot(data = test_gam_data) +
+            #geom_point(aes(x = annual_time_step, y = deviance_residuals), alpha = 0.2) +
+            geom_point(aes(x = annual_time_step, y = observed), alpha = 0.2) +
+            geom_rug(sides="b", aes(x = annual_time_step)) +
+            # Plot the smoothed indicator line
+            geom_line(aes(x = annual_time_step, y = predicted)) +
+            # Add the confidence intervals
+            geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred),
+                        alpha = 0.3) +
+            # Add the significant trends based on first derivative
+            #geom_line(aes(x = annual_time_step, y = positive_trend), col = "blue") +
+            geom_line(aes(x = annual_time_step, y = negative_trend), col = "red") +
+            labs(y = test_gam_data$indicator[1],
+                 title = paste(test_gam_data$scenario[1], 
+                               test_gam_data$indicator[1], "k =", 
+                               test_gam_data$kvalue[1], sep = " ")) +
+            theme_classic()
+  
+} else {
+  
 gam_plot <- ggplot(data = test_gam_data) +
             #geom_point(aes(x = annual_time_step, y = deviance_residuals), alpha = 0.2) +
             geom_point(aes(x = annual_time_step, y = observed), alpha = 0.2) +
@@ -341,6 +364,7 @@ gam_plot <- ggplot(data = test_gam_data) +
 
 return(gam_plot)
 
+  }
 }
 
 
@@ -492,8 +516,6 @@ test_df <- scenario_indicators[[2]] %>%
 # Land use
 ## LPI
 
-# 1st derivatives
-
 First derivatives show the rate of change in the indicator at a specific time
 point. Values = 0 signify no trend, values > 0 signify a positive trend, and
 values < 0 signify a negative trend.
@@ -547,13 +569,13 @@ test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
 }
 
-lpi_landuse_k_plots <- plot_grid(test_gam_plots[[1]],
+lpi_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
                                  test_gam_plots[[2]],
                                  test_gam_plots[[3]],
                                  test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-lpi_landuse_k_plots
+lpi_landuse_test_plots
 
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
@@ -591,86 +613,29 @@ m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
 
 indicator_mods <- list(m, m1, m2, m3)
 
-indicator_mod_plots_k <- list()
-indicator_mod_dfs_k <- list()
+test_gam_data <- list()
+test_gam_plots <- list()
 
 for (j in seq_along(indicator_mods)) {
-  
-# Get observed indicator values
 
-obs <- scenario_indicator_single[[i]]$indicator_score
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
 
-# Make a dataframe of predictor vals (ie timesteps)
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
-pdat1 <- data.frame(annual_time_step = seq(1,290,1))
-
-# Get predicted values for each time step
-p2 <- predict.gam(indicator_mods[[j]], pdat1, 
-                  se.fit = TRUE, response = TRUE)
-
-# Get the deviance residuals
-deviance_residuals <- residuals(indicator_mods[[j]], type = "deviance", 
-                                response = TRUE)
-
-#Bind them together with observed vals
-
-pdat <- cbind(pdat1, predicted = p2$fit, se2 = p2$se.fit, obs, 
-              deviance_residuals)
-
-#Get upper and lower bounds for predicted values (replace with bootstraps later)
-df.res <- df.residual(indicator_mods[[j]])
-crit.t <- qt(0.025, df.res, lower.tail = FALSE)
-pdat <- transform(pdat,
-                  upper_pred = predicted + (crit.t * se2),
-                  lower_pred = predicted - (crit.t * se2))
-
-# Calculate the derivatives and add that too
-gratia_derivs_1 <- as.data.frame(derivatives(indicator_mods[[j]], order = 1, 
-                   n = 290, interval = "confidence") ) 
-
-# Bind it all together
-temp <- cbind(pdat, gratia_derivs_1)
-
-indicator <- scenario_indicator_single[[i]]$indicator[1]
-
-# Make the final plot data
-indicator_mod_dfs_k[[j]] <- temp %>% 
-                   mutate(significant = ifelse(lower < 0 & upper > 0, FALSE, TRUE),
-                          positive_pred = ifelse(significant == TRUE & derivative > 0,
-                                            predicted,NA),
-                          negative_pred = ifelse(significant == TRUE & derivative < 0,
-                                            predicted, NA),
-                          positive_der = ifelse(significant == TRUE & derivative > 0,
-                                            derivative,NA),
-                          negative_der = ifelse(significant == TRUE & derivative < 0,
-                                            derivative, NA)) 
-
-#Make the plot
-indicator_mod_plots_k[[j]] <- ggplot(data = indicator_mod_dfs_k[[j]]) +
-            #geom_point(aes(x = annual_time_step, y = deviance_residuals), alpha = 0.2) +
-            geom_point(aes(x = annual_time_step, y = obs), alpha = 0.2) +
-            geom_rug(sides="b", aes(x = annual_time_step)) +
-            geom_line(aes(x = annual_time_step, y = predicted)) +
-            geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred),
-                        alpha = 0.3) +
-            geom_line(aes(x = annual_time_step, y = positive_pred), col = "blue") +
-            geom_line(aes(x = annual_time_step, y = negative_pred), col = "red") +
-            labs(y = indicator,
-                 title = paste(scenario, indicator, "k =", kvals[[j]], sep = " ")) +
-            theme_classic()
 }
 
-rli_landuse_k_plots <- plot_grid(indicator_mod_plots_k[[1]],
-                                 indicator_mod_plots_k[[2]],
-                                 indicator_mod_plots_k[[3]],
-                                 indicator_mod_plots_k[[4]],
+rli_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-rli_landuse_k_plots
+rli_landuse_test_plots
 
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- indicator_mod_dfs_k[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
 
 ```
 
@@ -704,87 +669,29 @@ m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
 
 indicator_mods <- list(m, m1, m2, m3)
 
-indicator_mod_plots_k <- list()
-indicator_mod_dfs_k <- list()
+test_gam_data <- list()
+test_gam_plots <- list()
 
 for (j in seq_along(indicator_mods)) {
-  
-# Get observed indicator values
 
-obs <- scenario_indicator_single[[i]]$indicator_score
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
 
-# Make a dataframe of predictor vals (ie timesteps)
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
-pdat1 <- data.frame(annual_time_step = seq(1,290,1))
-
-# Get predicted values for each time step
-p2 <- predict.gam(indicator_mods[[j]], pdat1, 
-                  se.fit = TRUE, response = TRUE)
-
-# Get the deviance residuals
-deviance_residuals <- residuals(indicator_mods[[j]], type = "deviance", 
-                                response = TRUE)
-
-#Bind them together with observed vals
-
-pdat <- cbind(pdat1, predicted = p2$fit, se2 = p2$se.fit, obs, 
-              deviance_residuals)
-
-#Get upper and lower bounds for predicted values (replace with bootstraps later)
-df.res <- df.residual(indicator_mods[[j]])
-crit.t <- qt(0.025, df.res, lower.tail = FALSE)
-pdat <- transform(pdat,
-                  upper_pred = predicted + (crit.t * se2),
-                  lower_pred = predicted - (crit.t * se2))
-
-# Calculate the derivatives and add that too
-gratia_derivs_1 <- as.data.frame(derivatives(indicator_mods[[j]], order = 1, 
-                   n = 290, interval = "confidence") ) 
-
-# Bind it all together
-temp <- cbind(pdat, gratia_derivs_1)
-
-indicator <- scenario_indicator_single[[i]]$indicator[1]
-
-# Make the final plot data
-indicator_mod_dfs_k[[j]] <- temp %>% 
-                   mutate(significant = ifelse(lower < 0 & upper > 0, FALSE, TRUE),
-                          positive_pred = ifelse(significant == TRUE & derivative > 0,
-                                            predicted,NA),
-                          negative_pred = ifelse(significant == TRUE & derivative < 0,
-                                            predicted, NA),
-                          positive_der = ifelse(significant == TRUE & derivative > 0,
-                                            derivative,NA),
-                          negative_der = ifelse(significant == TRUE & derivative < 0,
-                                            derivative, NA)) 
-
-#Make the plot
-indicator_mod_plots_k[[j]] <- ggplot(data = indicator_mod_dfs_k[[j]]) +
-            #geom_point(aes(x = annual_time_step, y = deviance_residuals), alpha = 0.2) +
-            geom_point(aes(x = annual_time_step, y = obs), alpha = 0.2) +
-            geom_rug(sides="b", aes(x = annual_time_step)) +
-            geom_line(aes(x = annual_time_step, y = predicted)) +
-            geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred),
-                        alpha = 0.3) +
-            geom_line(aes(x = annual_time_step, y = positive_pred), col = "blue") +
-            geom_line(aes(x = annual_time_step, y = negative_pred), col = "red") +
-            labs(y = indicator,
-                 title = paste(scenario, indicator, "k =", kvals[[j]], sep = " ")) +
-            theme_classic()
 }
 
-harv_landuse_k_plots <- plot_grid(indicator_mod_plots_k[[1]],
-                                 indicator_mod_plots_k[[2]],
-                                 indicator_mod_plots_k[[3]],
-                                 indicator_mod_plots_k[[4]],
+harvested_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-harv_landuse_k_plots
+harvested_landuse_test_plots
 
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- indicator_mod_dfs_k[[selected]]
-
+selected_mods_data[[i]] <- test_gam_data[[selected]]
 ```
 
 # Harvesting carnivores
@@ -820,87 +727,29 @@ m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
 
 indicator_mods <- list(m, m1, m2, m3)
 
-indicator_mod_plots_k <- list()
-indicator_mod_dfs_k <- list()
+test_gam_data <- list()
+test_gam_plots <- list()
 
 for (j in seq_along(indicator_mods)) {
-  
-# Get observed indicator values
 
-obs <- scenario_indicator_single[[i]]$indicator_score
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
 
-# Make a dataframe of predictor vals (ie timesteps)
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
-pdat1 <- data.frame(annual_time_step = seq(1,290,1))
-
-# Get predicted values for each time step
-p2 <- predict.gam(indicator_mods[[j]], pdat1, 
-                  se.fit = TRUE, response = TRUE)
-
-# Get the deviance residuals
-deviance_residuals <- residuals(indicator_mods[[j]], type = "deviance", 
-                                response = TRUE)
-
-#Bind them together with observed vals
-
-pdat <- cbind(pdat1, predicted = p2$fit, se2 = p2$se.fit, obs, 
-              deviance_residuals)
-
-#Get upper and lower bounds for predicted values (replace with bootstraps later)
-df.res <- df.residual(indicator_mods[[j]])
-crit.t <- qt(0.025, df.res, lower.tail = FALSE)
-pdat <- transform(pdat,
-                  upper_pred = predicted + (crit.t * se2),
-                  lower_pred = predicted - (crit.t * se2))
-
-# Calculate the derivatives and add that too
-gratia_derivs_1 <- as.data.frame(derivatives(indicator_mods[[j]], order = 1, 
-                   n = 290, interval = "confidence") ) 
-
-# Bind it all together
-temp <- cbind(pdat, gratia_derivs_1)
-
-indicator <- scenario_indicator_single[[i]]$indicator[1]
-
-# Make the final plot data
-indicator_mod_dfs_k[[j]] <- temp %>% 
-                   mutate(significant = ifelse(lower < 0 & upper > 0, FALSE, TRUE),
-                          positive_pred = ifelse(significant == TRUE & derivative > 0,
-                                            predicted,NA),
-                          negative_pred = ifelse(significant == TRUE & derivative < 0,
-                                            predicted, NA),
-                          positive_der = ifelse(significant == TRUE & derivative > 0,
-                                            derivative,NA),
-                          negative_der = ifelse(significant == TRUE & derivative < 0,
-                                            derivative, NA)) 
-
-#Make the plot
-indicator_mod_plots_k[[j]] <- ggplot(data = indicator_mod_dfs_k[[j]]) +
-            #geom_point(aes(x = annual_time_step, y = deviance_residuals), alpha = 0.2) +
-            geom_point(aes(x = annual_time_step, y = obs), alpha = 0.2) +
-            geom_rug(sides="b", aes(x = annual_time_step)) +
-            geom_line(aes(x = annual_time_step, y = predicted)) +
-            geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred),
-                        alpha = 0.3) +
-            geom_line(aes(x = annual_time_step, y = positive_pred), col = "blue") +
-            geom_line(aes(x = annual_time_step, y = negative_pred), col = "red") +
-            labs(y = indicator,
-                 title = paste(scenario, indicator, "k =", kvals[[j]], sep = " ")) +
-            theme_classic()
 }
 
-lpi_carnivore_k_plots <- plot_grid(indicator_mod_plots_k[[1]],
-                                 indicator_mod_plots_k[[2]],
-                                 indicator_mod_plots_k[[3]],
-                                 indicator_mod_plots_k[[4]],
+lpi_carnivore_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-lpi_carnivore_k_plots
+lpi_carnivore_test_plots
 
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- indicator_mod_dfs_k[[selected]]
-
+selected_mods_data[[i]] <- test_gam_data[[selected]]
 ```
 
 ## RLI
@@ -933,105 +782,29 @@ m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
 
 indicator_mods <- list(m, m1, m2, m3)
 
-indicator_mod_plots_k <- list()
-indicator_mod_dfs_k <- list()
+test_gam_data <- list()
+test_gam_plots <- list()
 
 for (j in seq_along(indicator_mods)) {
-  
-# Get observed indicator values
 
-obs <- scenario_indicator_single[[i]]$indicator_score
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
 
-# Make a dataframe of predictor vals (ie timesteps)
-
-pdat1 <- data.frame(annual_time_step = seq(1,290,1))
-
-# Get predicted values for each time step
-p2 <- predict.gam(indicator_mods[[j]], pdat1, 
-                  se.fit = TRUE, response = TRUE)
-
-# Get the deviance residuals
-deviance_residuals <- residuals(indicator_mods[[j]], type = "deviance", 
-                                response = TRUE)
-
-#Bind them together with observed vals
-
-pdat <- cbind(pdat1, predicted = p2$fit, se2 = p2$se.fit, obs, 
-              deviance_residuals)
-
-#Get upper and lower bounds for predicted values (replace with bootstraps later)
-df.res <- df.residual(indicator_mods[[j]])
-crit.t <- qt(0.025, df.res, lower.tail = FALSE)
-pdat <- transform(pdat,
-                  upper_pred = predicted + (crit.t * se2),
-                  lower_pred = predicted - (crit.t * se2))
-
-# Calculate the derivatives and add that too
-gratia_derivs_1 <- as.data.frame(derivatives(indicator_mods[[j]], order = 1, 
-                   n = 290, interval = "confidence") ) 
-
-# Bind it all together
-temp <- cbind(pdat, gratia_derivs_1)
-
-indicator <- scenario_indicator_single[[i]]$indicator[1]
-
-# Make the final plot data
-indicator_mod_dfs_k[[j]] <- temp %>% 
-                   mutate(significant = ifelse(lower < 0 & upper > 0, FALSE, TRUE),
-                          positive_pred = ifelse(significant == TRUE & derivative > 0,
-                                            predicted,NA),
-                          negative_pred = ifelse(significant == TRUE & derivative < 0,
-                                            predicted, NA),
-                          positive_der = ifelse(significant == TRUE & derivative > 0,
-                                            derivative,NA),
-                          negative_der = ifelse(significant == TRUE & derivative < 0,
-                                            derivative, NA)) 
-
-if(kvals[[j]] < 50) {
-
-#Make the plot
-indicator_mod_plots_k[[j]] <- ggplot(data = indicator_mod_dfs_k[[j]]) +
-            #geom_point(aes(x = annual_time_step, y = deviance_residuals), alpha = 0.2) +
-            geom_point(aes(x = annual_time_step, y = obs), alpha = 0.2) +
-            geom_rug(sides="b", aes(x = annual_time_step)) +
-            geom_line(aes(x = annual_time_step, y = predicted)) +
-            geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred),
-                        alpha = 0.3) +
-            labs(y = indicator,
-                 title = paste(scenario, indicator, "k =", kvals[[j]], sep = " ")) +
-            theme_classic()
-  
-} else {
-
-#Make the plot
-indicator_mod_plots_k[[j]] <- ggplot(data = indicator_mod_dfs_k[[j]]) +
-            #geom_point(aes(x = annual_time_step, y = deviance_residuals), alpha = 0.2) +
-            geom_point(aes(x = annual_time_step, y = obs), alpha = 0.2) +
-            geom_rug(sides="b", aes(x = annual_time_step)) +
-            geom_line(aes(x = annual_time_step, y = predicted)) +
-            geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred),
-                        alpha = 0.3) +
-            geom_line(aes(x = annual_time_step, y = positive_pred), col = "blue") +
-            geom_line(aes(x = annual_time_step, y = negative_pred), col = "red") +
-            labs(y = indicator,
-                 title = paste(scenario, indicator, "k =", kvals[[j]], sep = " ")) +
-            theme_classic()
-
-  }
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
 }
 
-rli_carnivore_k_plots <- plot_grid(indicator_mod_plots_k[[1]],
-                                 indicator_mod_plots_k[[2]],
-                                 indicator_mod_plots_k[[3]],
-                                 indicator_mod_plots_k[[4]],
+rli_carnivores_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-rli_carnivore_k_plots
+rli_carnivores_test_plots
 
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- indicator_mod_dfs_k[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
 
 ```
 
@@ -1065,87 +838,29 @@ m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
 
 indicator_mods <- list(m, m1, m2, m3)
 
-indicator_mod_plots_k <- list()
-indicator_mod_dfs_k <- list()
+test_gam_data <- list()
+test_gam_plots <- list()
 
 for (j in seq_along(indicator_mods)) {
-  
-# Get observed indicator values
 
-obs <- scenario_indicator_single[[i]]$indicator_score
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
 
-# Make a dataframe of predictor vals (ie timesteps)
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
-pdat1 <- data.frame(annual_time_step = seq(1,290,1))
-
-# Get predicted values for each time step
-p2 <- predict.gam(indicator_mods[[j]], pdat1, 
-                  se.fit = TRUE, response = TRUE)
-
-# Get the deviance residuals
-deviance_residuals <- residuals(indicator_mods[[j]], type = "deviance", 
-                                response = TRUE)
-
-#Bind them together with observed vals
-
-pdat <- cbind(pdat1, predicted = p2$fit, se2 = p2$se.fit, obs, 
-              deviance_residuals)
-
-#Get upper and lower bounds for predicted values (replace with bootstraps later)
-df.res <- df.residual(indicator_mods[[j]])
-crit.t <- qt(0.025, df.res, lower.tail = FALSE)
-pdat <- transform(pdat,
-                  upper_pred = predicted + (crit.t * se2),
-                  lower_pred = predicted - (crit.t * se2))
-
-# Calculate the derivatives and add that too
-gratia_derivs_1 <- as.data.frame(derivatives(indicator_mods[[j]], order = 1, 
-                   n = 290, interval = "confidence") ) 
-
-# Bind it all together
-temp <- cbind(pdat, gratia_derivs_1)
-
-indicator <- scenario_indicator_single[[i]]$indicator[1]
-
-# Make the final plot data
-indicator_mod_dfs_k[[j]] <- temp %>% 
-                   mutate(significant = ifelse(lower < 0 & upper > 0, FALSE, TRUE),
-                          positive_pred = ifelse(significant == TRUE & derivative > 0,
-                                            predicted,NA),
-                          negative_pred = ifelse(significant == TRUE & derivative < 0,
-                                            predicted, NA),
-                          positive_der = ifelse(significant == TRUE & derivative > 0,
-                                            derivative,NA),
-                          negative_der = ifelse(significant == TRUE & derivative < 0,
-                                            derivative, NA)) 
-
-#Make the plot
-indicator_mod_plots_k[[j]] <- ggplot(data = indicator_mod_dfs_k[[j]]) +
-            #geom_point(aes(x = annual_time_step, y = deviance_residuals), alpha = 0.2) +
-            geom_point(aes(x = annual_time_step, y = obs), alpha = 0.2) +
-            geom_rug(sides="b", aes(x = annual_time_step)) +
-            geom_line(aes(x = annual_time_step, y = predicted)) +
-            geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred),
-                        alpha = 0.3) +
-            geom_line(aes(x = annual_time_step, y = positive_pred), col = "blue") +
-            geom_line(aes(x = annual_time_step, y = negative_pred), col = "red") +
-            labs(y = indicator,
-                 title = paste(scenario, indicator, "k =", kvals[[j]], sep = " ")) +
-            theme_classic()
 }
 
-harv_carnivore_k_plots <- plot_grid(indicator_mod_plots_k[[1]],
-                                 indicator_mod_plots_k[[2]],
-                                 indicator_mod_plots_k[[3]],
-                                 indicator_mod_plots_k[[4]],
+harvested_carnivores_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-harv_carnivore_k_plots
+harvested_carnivores_test_plots
 
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- indicator_mod_dfs_k[[selected]]
-
+selected_mods_data[[i]] <- test_gam_data[[selected]]
 ```
 
 # Harvesting herbivores
@@ -1181,102 +896,29 @@ m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
 
 indicator_mods <- list(m, m1, m2, m3)
 
-indicator_mod_plots_k <- list()
-indicator_mod_dfs_k <- list()
+test_gam_data <- list()
+test_gam_plots <- list()
 
 for (j in seq_along(indicator_mods)) {
-  
-# Get observed indicator values
 
-obs <- scenario_indicator_single[[i]]$indicator_score
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
 
-# Make a dataframe of predictor vals (ie timesteps)
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
-pdat1 <- data.frame(annual_time_step = seq(1,290,1))
-
-# Get predicted values for each time step
-p2 <- predict.gam(indicator_mods[[j]], pdat1, 
-                  se.fit = TRUE, response = TRUE)
-
-# Get the deviance residuals
-deviance_residuals <- residuals(indicator_mods[[j]], type = "deviance", 
-                                response = TRUE)
-
-#Bind them together with observed vals
-
-pdat <- cbind(pdat1, predicted = p2$fit, se2 = p2$se.fit, obs, 
-              deviance_residuals)
-
-#Get upper and lower bounds for predicted values (replace with bootstraps later)
-df.res <- df.residual(indicator_mods[[j]])
-crit.t <- qt(0.025, df.res, lower.tail = FALSE)
-pdat <- transform(pdat,
-                  upper_pred = predicted + (crit.t * se2),
-                  lower_pred = predicted - (crit.t * se2))
-
-# Calculate the derivatives and add that too
-gratia_derivs_1 <- as.data.frame(derivatives(indicator_mods[[j]], order = 1, 
-                   n = 290, interval = "confidence") ) 
-
-# Bind it all together
-temp <- cbind(pdat, gratia_derivs_1)
-
-indicator <- scenario_indicator_single[[i]]$indicator[1]
-
-# Make the final plot data
-indicator_mod_dfs_k[[j]] <- temp %>% 
-                   mutate(significant = ifelse(lower < 0 & upper > 0, FALSE, TRUE),
-                          positive_pred = ifelse(significant == TRUE & derivative > 0,
-                                            predicted,NA),
-                          negative_pred = ifelse(significant == TRUE & derivative < 0,
-                                            predicted, NA),
-                          positive_der = ifelse(significant == TRUE & derivative > 0,
-                                            derivative,NA),
-                          negative_der = ifelse(significant == TRUE & derivative < 0,
-                                            derivative, NA)) 
-if (kvals[[j]] < 10) {
-  
-indicator_mod_plots_k[[j]] <- ggplot(data = indicator_mod_dfs_k[[j]]) +
-            #geom_point(aes(x = annual_time_step, y = deviance_residuals), alpha = 0.2) +
-            geom_point(aes(x = annual_time_step, y = obs), alpha = 0.2) +
-            geom_rug(sides="b", aes(x = annual_time_step)) +
-            geom_line(aes(x = annual_time_step, y = predicted)) +
-            geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred),
-                        alpha = 0.3) +
-            labs(y = indicator,
-                 title = paste(scenario, indicator, "k =", kvals[[j]], sep = " ")) +
-            theme_classic()
-  
-} else {
-  
-#Make the plot
-  
-indicator_mod_plots_k[[j]] <- ggplot(data = indicator_mod_dfs_k[[j]]) +
-            #geom_point(aes(x = annual_time_step, y = deviance_residuals), alpha = 0.2) +
-            geom_point(aes(x = annual_time_step, y = obs), alpha = 0.2) +
-            geom_rug(sides="b", aes(x = annual_time_step)) +
-            geom_line(aes(x = annual_time_step, y = predicted)) +
-            geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred),
-                        alpha = 0.3) +
-            geom_line(aes(x = annual_time_step, y = positive_pred), col = "blue") +
-            geom_line(aes(x = annual_time_step, y = negative_pred), col = "red") +
-            labs(y = indicator,
-                 title = paste(scenario, indicator, "k =", kvals[[j]], sep = " ")) +
-            theme_classic()
-  }
 }
 
-lpi_herbivore_k_plots <- plot_grid(indicator_mod_plots_k[[1]],
-                                 indicator_mod_plots_k[[2]],
-                                 indicator_mod_plots_k[[3]],
-                                 indicator_mod_plots_k[[4]],
+lpi_herbivores_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-lpi_herbivore_k_plots
+lpi_herbivores_test_plots
 
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- indicator_mod_dfs_k[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
 
 ```
 
@@ -1310,86 +952,29 @@ m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
 
 indicator_mods <- list(m, m1, m2, m3)
 
-indicator_mod_plots_k <- list()
-indicator_mod_dfs_k <- list()
+test_gam_data <- list()
+test_gam_plots <- list()
 
 for (j in seq_along(indicator_mods)) {
-  
-# Get observed indicator values
 
-obs <- scenario_indicator_single[[i]]$indicator_score
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
 
-# Make a dataframe of predictor vals (ie timesteps)
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
-pdat1 <- data.frame(annual_time_step = seq(1,290,1))
-
-# Get predicted values for each time step
-p2 <- predict.gam(indicator_mods[[j]], pdat1, 
-                  se.fit = TRUE, response = TRUE)
-
-# Get the deviance residuals
-deviance_residuals <- residuals(indicator_mods[[j]], type = "deviance", 
-                                response = TRUE)
-
-#Bind them together with observed vals
-
-pdat <- cbind(pdat1, predicted = p2$fit, se2 = p2$se.fit, obs, 
-              deviance_residuals)
-
-#Get upper and lower bounds for predicted values (replace with bootstraps later)
-df.res <- df.residual(indicator_mods[[j]])
-crit.t <- qt(0.025, df.res, lower.tail = FALSE)
-pdat <- transform(pdat,
-                  upper_pred = predicted + (crit.t * se2),
-                  lower_pred = predicted - (crit.t * se2))
-
-# Calculate the derivatives and add that too
-gratia_derivs_1 <- as.data.frame(derivatives(indicator_mods[[j]], order = 1, 
-                   n = 290, interval = "confidence") ) 
-
-# Bind it all together
-temp <- cbind(pdat, gratia_derivs_1)
-
-indicator <- scenario_indicator_single[[i]]$indicator[1]
-
-# Make the final plot data
-indicator_mod_dfs_k[[j]] <- temp %>% 
-                   mutate(significant = ifelse(lower < 0 & upper > 0, FALSE, TRUE),
-                          positive_pred = ifelse(significant == TRUE & derivative > 0,
-                                            predicted,NA),
-                          negative_pred = ifelse(significant == TRUE & derivative < 0,
-                                            predicted, NA),
-                          positive_der = ifelse(significant == TRUE & derivative > 0,
-                                            derivative,NA),
-                          negative_der = ifelse(significant == TRUE & derivative < 0,
-                                            derivative, NA)) 
-
-#Make the plot
-indicator_mod_plots_k[[j]] <- ggplot(data = indicator_mod_dfs_k[[j]]) +
-            #geom_point(aes(x = annual_time_step, y = deviance_residuals), alpha = 0.2) +
-            geom_point(aes(x = annual_time_step, y = obs), alpha = 0.2) +
-            geom_rug(sides="b", aes(x = annual_time_step)) +
-            geom_line(aes(x = annual_time_step, y = predicted)) +
-            geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred),
-                        alpha = 0.3) +
-            geom_line(aes(x = annual_time_step, y = positive_pred), col = "blue") +
-            geom_line(aes(x = annual_time_step, y = negative_pred), col = "red") +
-            labs(y = indicator,
-                 title = paste(scenario, indicator, "k =", kvals[[j]], sep = " ")) +
-            theme_classic()
 }
 
-rli_herbivore_k_plots <- plot_grid(indicator_mod_plots_k[[1]],
-                                 indicator_mod_plots_k[[2]],
-                                 indicator_mod_plots_k[[3]],
-                                 indicator_mod_plots_k[[4]],
+rli_herbivores_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-rli_herbivore_k_plots
+rli_herbivores_test_plots
 
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- indicator_mod_dfs_k[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
 
 ```
 
@@ -1423,87 +1008,29 @@ m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
 
 indicator_mods <- list(m, m1, m2, m3)
 
-indicator_mod_plots_k <- list()
-indicator_mod_dfs_k <- list()
+test_gam_data <- list()
+test_gam_plots <- list()
 
 for (j in seq_along(indicator_mods)) {
-  
-# Get observed indicator values
 
-obs <- scenario_indicator_single[[i]]$indicator_score
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
 
-# Make a dataframe of predictor vals (ie timesteps)
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
-pdat1 <- data.frame(annual_time_step = seq(1,290,1))
-
-# Get predicted values for each time step
-p2 <- predict.gam(indicator_mods[[j]], pdat1,
-                  se.fit = TRUE, response = TRUE)
-
-# Get the deviance residuals
-deviance_residuals <- residuals(indicator_mods[[j]], type = "deviance", 
-                                response = TRUE)
-
-#Bind them together with observed vals
-
-pdat <- cbind(pdat1, predicted = p2$fit, se2 = p2$se.fit, obs, 
-              deviance_residuals)
-
-#Get upper and lower bounds for predicted values (replace with bootstraps later)
-df.res <- df.residual(indicator_mods[[j]])
-crit.t <- qt(0.025, df.res, lower.tail = FALSE)
-pdat <- transform(pdat,
-                  upper_pred = predicted + (crit.t * se2),
-                  lower_pred = predicted - (crit.t * se2))
-
-# Calculate the derivatives and add that too
-gratia_derivs_1 <- as.data.frame(derivatives(indicator_mods[[j]], order = 1, 
-                   n = 290, interval = "confidence") ) 
-
-# Bind it all together
-temp <- cbind(pdat, gratia_derivs_1)
-
-indicator <- scenario_indicator_single[[i]]$indicator[1]
-
-# Make the final plot data
-indicator_mod_dfs_k[[j]] <- temp %>% 
-                   mutate(significant = ifelse(lower < 0 & upper > 0, FALSE, TRUE),
-                          positive_pred = ifelse(significant == TRUE & derivative > 0,
-                                            predicted,NA),
-                          negative_pred = ifelse(significant == TRUE & derivative < 0,
-                                            predicted, NA),
-                          positive_der = ifelse(significant == TRUE & derivative > 0,
-                                            derivative,NA),
-                          negative_der = ifelse(significant == TRUE & derivative < 0,
-                                            derivative, NA)) 
-
-#Make the plot
-indicator_mod_plots_k[[j]] <- ggplot(data = indicator_mod_dfs_k[[j]]) +
-            #geom_point(aes(x = annual_time_step, y = deviance_residuals), alpha = 0.2) +
-            geom_point(aes(x = annual_time_step, y = obs), alpha = 0.2) +
-            geom_rug(sides="b", aes(x = annual_time_step)) +
-            geom_line(aes(x = annual_time_step, y = predicted)) +
-            geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred),
-                        alpha = 0.3) +
-            geom_line(aes(x = annual_time_step, y = positive_pred), col = "blue") +
-            geom_line(aes(x = annual_time_step, y = negative_pred), col = "red") +
-            labs(y = indicator,
-                 title = paste(scenario, indicator, "k =", kvals[[j]], sep = " ")) +
-            theme_classic()
 }
 
-harv_herbivore_k_plots <- plot_grid(indicator_mod_plots_k[[1]],
-                                 indicator_mod_plots_k[[2]],
-                                 indicator_mod_plots_k[[3]],
-                                 indicator_mod_plots_k[[4]],
+harvested_carnivores_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-harv_herbivore_k_plots
+harvested_carnivores_test_plots
 
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- indicator_mod_dfs_k[[selected]]
-
+selected_mods_data[[i]] <- test_gam_data[[selected]]
 ```
 
 ```{r bootstrapping, eval = FALSE}
