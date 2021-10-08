@@ -7,6 +7,8 @@ output:
   pdf_document: default
 ---
 
+#' TODO: Fix axis labels + titles on bootstrapped plots
+
 ```{r setup, include=FALSE}
 
 # https://bookdown.org/yihui/rmarkdown/r-code.html
@@ -222,7 +224,7 @@ plot.Deriv <- function(x, alpha = 0.05, polygon = TRUE,
 
 ```
 
-```{r get test gam }
+```{r get test gam data }
 #' @param model - gam object
 #' @param data - the input pressure response time step data for the model
 #' @return a dataframe containing predicted, observed, first and second derivatives
@@ -241,13 +243,21 @@ pdat1 <- data.frame(annual_time_step = seq(1,290,1))
 p2 <- predict.gam(model, pdat1, 
                   se.fit = TRUE, response = TRUE)
 
-# Get the deviance residuals
-deviance_residuals <- residuals(model, type = "deviance", 
+p3 <- predict.gam(model, pdat1, 
+                  se.fit = TRUE)
+
+# # Get the deviance residuals
+deviance_residuals <- residuals(model, type = "working",
                                 response = TRUE)
+
+# fv <- predict(model,type="terms") ## get term estimates
+#      
+# ## compute partial residuals for first smooth...          
+# deviance_residuals <- residuals(model,type="working", response = TRUE) + fv[,1]
 
 #Bind them together with observed vals
 
-pdat <- cbind(pdat1, predicted = p2$fit, se2 = p2$se.fit, observed, 
+pdat <- cbind(pdat1, predicted = p2$fit, predicted_nr = p3$fit, se2 = p2$se.fit, observed, 
               deviance_residuals)
 
 #Get upper and lower bounds for predicted values (replace with bootstraps for selected model)
@@ -255,8 +265,8 @@ pdat <- cbind(pdat1, predicted = p2$fit, se2 = p2$se.fit, observed,
 df.res <- df.residual(model)
 crit.t <- qt(0.025, df.res, lower.tail = FALSE)
 pdat <- transform(pdat,
-                  upper_pred = predicted + (crit.t * se2),
-                  lower_pred = predicted - (crit.t * se2))
+                  upper_pred = predicted_nr + (crit.t * se2),
+                  lower_pred = predicted_nr - (crit.t * se2))
 
 # Calculate the derivatives and add that too
 derivs_1 <- as.data.frame(derivatives(model, order = 1, 
@@ -286,10 +296,10 @@ test_gam_data <- temp %>%
                                                   first_upper >= 0, FALSE, TRUE),
                         positive_trend = ifelse(first_significant == TRUE & 
                                                  first_derivative > 0,
-                                            predicted,NA),
+                                            predicted_nr,NA),
                         negative_trend = ifelse(first_significant == TRUE & 
                                                  first_derivative < 0,
-                                            predicted, NA),
+                                            predicted_nr, NA),
                         positive_der_1 = ifelse(first_significant == TRUE & 
                                                   first_derivative > 0,
                                             first_derivative,NA),
@@ -300,10 +310,10 @@ test_gam_data <- temp %>%
                                                   first_upper >= 0, FALSE, TRUE),
                         positive_tp = ifelse(second_significant == TRUE & 
                                              second_derivative > 0,
-                                            predicted,NA),
+                                            predicted_nr,NA),
                         negative_tp = ifelse(second_significant == TRUE & 
                                             second_derivative < 0,
-                                            predicted, NA),
+                                            predicted_nr, NA),
                         positive_der_2 = ifelse(second_significant == TRUE & 
                                                 second_derivative > 0,
                                             second_derivative,NA),
@@ -329,7 +339,7 @@ gam_plot <- ggplot(data = test_gam_data) +
             geom_point(aes(x = annual_time_step, y = observed), alpha = 0.2) +
             geom_rug(sides="b", aes(x = annual_time_step)) +
             # Plot the smoothed indicator line
-            geom_line(aes(x = annual_time_step, y = predicted)) +
+            geom_line(aes(x = annual_time_step, y = predicted_nr)) +
             # Add the confidence intervals
             geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred),
                         alpha = 0.3) +
@@ -349,7 +359,7 @@ gam_plot <- ggplot(data = test_gam_data) +
             geom_point(aes(x = annual_time_step, y = observed), alpha = 0.2) +
             geom_rug(sides="b", aes(x = annual_time_step)) +
             # Plot the smoothed indicator line
-            geom_line(aes(x = annual_time_step, y = predicted)) +
+            geom_line(aes(x = annual_time_step, y = predicted_nr)) +
             # Add the confidence intervals
             geom_ribbon(aes(x = annual_time_step, ymin = lower_pred, ymax = upper_pred),
                         alpha = 0.3) +
@@ -370,683 +380,7 @@ return(gam_plot)
 
 ```
 
-
-```{r data, results=FALSE }
-
-# Set up paths ----
-
-location <- 'Serengeti'
-
-indicators_project <- "N:/Quantitative-Ecology/Indicators-Project"
-
-# Analysis inputs are the outputs of 2_calculate_madingley_indicators.R
-
-analysis_inputs <- "N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/general/"
-
-# Inputs ----
-
-# Specify the date of inputs you want to use
-
-input_date <- "2021-09-30"
-
-# Get date to label outputs
-
-output_date <- Sys.Date() 
-
-scenarios_title <- list("Baseline", "Land use", 
-                  "Carnivore harvesting", 
-                  "Herbivore harvesting")
-
-disturbance_string <- c("pre-disturbance", "disturbance", "post-disturbance")
-
-disturbance_factor <- factor(disturbance_string, ordered = TRUE,
-                              levels = c("pre-disturbance", 
-                                         "disturbance", 
-                                         "post-disturbance"))
-
-# Set up output folders
-
-## Include a folder to store the version of inputs used to get the outputs
-
-analysis_inputs_folder <- file.path(indicators_project,  
-                           "/Serengeti/Outputs_from_analysis_code/Analysis_inputs",
-                           output_date)
-
-if( !dir.exists( file.path(analysis_inputs_folder) ) ) {
-  dir.create( file.path(analysis_inputs_folder), recursive = TRUE )
-  
-}
-
-analysis_outputs_folder <- file.path(indicators_project, 
-                                     "/Serengeti/Outputs_from_analysis_code/Analysis_outputs",
-                                     output_date)
-
-if( !dir.exists( file.path(analysis_outputs_folder) ) ) {
-  dir.create( file.path(analysis_outputs_folder), recursive = TRUE )
-  
-}
-
-analysis_plots_folder <- file.path(indicators_project, 
-                                     "/Serengeti/Outputs_from_analysis_code/Analysis_plots_folder",
-                                   output_date)
-
-if( !dir.exists( file.path(analysis_plots_folder) ) ) {
-  dir.create( file.path(analysis_plots_folder), recursive = TRUE )
-  
-}
-
-# Load indicator > scenario level data ----
-
-indicators_all_df <- readRDS(file.path(analysis_inputs, input_date, "all_indicators_output_dataframe.rds"))
-
-indicators_all_list <- flatten(readRDS(file.path(analysis_inputs,input_date, "all_indicators_output_list.rds")))
-
-# Get list of indicators
-
-indicators <- unique(indicators_all_df$indicator)
-
-# Get list of scenarios
-
-scenarios <- unique(indicators_all_df$scenario)
-
-# Save a copy of the inputs used to create outputs
-
-write.csv(indicators_all_df, file.path(analysis_inputs_folder,
-                                       paste(output_date, "input_data.csv",
-                                             sep = "_")))
-# Load red list data
-
-scenario_redlist_data_sampled <- readRDS(file.path(analysis_inputs, input_date, "scenario_redlist_data_annual_7.rds"))
-```
-
-
-```{r prep data, results = FALSE}
-# Standardize & difference the data as per Bestelmeyer 2011
-
-indicators_all_df <- indicators_all_df %>% 
-                     group_by(indicator, scenario) %>% 
-  filter(indicator == "RLI annual"|
-         indicator == "LPI"|
-         indicator == "total abundance harvested") %>% 
-                     mutate(indicator_score_std = standardize(indicator_score),
-                            indicator_score_diff = indicator_score_std - 
-                             lag(indicator_score_std, default = 0)) %>% 
-                     mutate(scenario_indicator = paste(scenario, indicator, 
-                                                       sep = "_"),
-                            variance = rollapply(indicator_score_diff,
-                               10,
-                               var,
-                               na.rm = TRUE,
-                               partial = TRUE,
-                               align = "left"),
-                            disturbance = as.integer(ifelse(annual_time_step > 99 &
-                                                 annual_time_step < 201,
-                                                 1, 0)),
-                            disturbance_factor = as.factor(ifelse(disturbance == 1,
-                                                 "disturbance", 
-                                                 "no disturbance")),
-                            years_since_disturbance = ifelse(annual_time_step < 100,
-                                                            1, (annual_time_step - 100)),
-                            disturbance_phase = as.integer(ifelse(annual_time_step < 100,
-                                                                  1,
-                                                 ifelse(annual_time_step > 99 &
-                                                 annual_time_step < 201,
-                                                 2, 3)))) %>%
-                     ungroup(.)
-
-# Split into a list of scenarios then indicators
-
-scenario_indicators <- split(indicators_all_df, indicators_all_df$scenario)
-
-# Or vice versa
-
-indicator_scenarios <- split(indicators_all_df, indicators_all_df$indicator)
-
-# Single indicator, single scenario
-
-scenario_indicator_single <- split(indicators_all_df, indicators_all_df$scenario_indicator)
-
-# Make a test df of one scenario, one indicator for building loop content
-
-test_df <- scenario_indicators[[2]] %>% 
-           filter(indicator == "LPI")
-
-```
-
-# Land use
-## LPI
-
-First derivatives show the rate of change in the indicator at a specific time
-point. Values = 0 signify no trend, values > 0 signify a positive trend, and
-values < 0 signify a negative trend.
-
-"The second derivative of the trend curve I(t) at time t is a measure of the curvature of I at that time. If the second derivative is greater than zero, the curve is turning upward. If it is less than zero, the curve is turning downward. The magnitude of the second derivative signifies the tightness of the curvature. Values of approx 0 indicate the curve is linear and changing at a steady state. Years in which the second derivative is markedly different from zero are those in which something is happening to alter the rate of population change." (Fewster et al 2000)
-
-```{r land use lpi, warnings = FALSE }
-
-selected_mods <- list()
-selected_mods_data <- list()
-
-i <- 4 #Ignore first 3 because they're baseline
-
-scenario <- "Land use"
-
-kvals <- c(4,10,50,100)
-
-m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-indicator_mods <- list(m, m1, m2, m3)
-
-# Extract observed, predicted, derivatives and plot for each test gam
-
-test_gam_data <- list()
-test_gam_plots <- list()
-
-for (j in seq_along(indicator_mods)) {
-
-test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
-                               indicator_mods[[j]])
-
-test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
-
-}
-
-lpi_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
-                                 test_gam_plots[[2]],
-                                 test_gam_plots[[3]],
-                                 test_gam_plots[[4]],
-                                 nrow = 2, align = "v")
-
-lpi_landuse_test_plots
-
-selected <- 2
-selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- test_gam_data[[selected]]
-
-```
-
-## RLI
-
-```{r land use rli, warnings = FALSE }
-
-i <- 5
-
-kvals <- c(4,10,50,100)
-
-m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-indicator_mods <- list(m, m1, m2, m3)
-
-test_gam_data <- list()
-test_gam_plots <- list()
-
-for (j in seq_along(indicator_mods)) {
-
-test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
-                               indicator_mods[[j]])
-
-test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
-
-}
-
-rli_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
-                                 test_gam_plots[[2]],
-                                 test_gam_plots[[3]],
-                                 test_gam_plots[[4]],
-                                 nrow = 2, align = "v")
-
-rli_landuse_test_plots
-
-selected <- 2
-selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- test_gam_data[[selected]]
-
-```
-
-## Harvested group
-
-```{r land use harvested, warnings = FALSE }
-
-i <- 6
-
-kvals <- c(4,10,50,100)
-
-m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-indicator_mods <- list(m, m1, m2, m3)
-
-test_gam_data <- list()
-test_gam_plots <- list()
-
-for (j in seq_along(indicator_mods)) {
-
-test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
-                               indicator_mods[[j]])
-
-test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
-
-}
-
-harvested_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
-                                 test_gam_plots[[2]],
-                                 test_gam_plots[[3]],
-                                 test_gam_plots[[4]],
-                                 nrow = 2, align = "v")
-
-harvested_landuse_test_plots
-
-selected <- 2
-selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- test_gam_data[[selected]]
-```
-
-# Harvesting carnivores
-## LPI
-
-```{r carnivores lpi, warnings = FALSE }
-
-i <- 7
-
-scenario <- "Harvesting carnivores"
-
-kvals <- c(4,10,50,100)
-
-m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-indicator_mods <- list(m, m1, m2, m3)
-
-test_gam_data <- list()
-test_gam_plots <- list()
-
-for (j in seq_along(indicator_mods)) {
-
-test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
-                               indicator_mods[[j]])
-
-test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
-
-}
-
-lpi_carnivore_test_plots <- plot_grid(test_gam_plots[[1]],
-                                 test_gam_plots[[2]],
-                                 test_gam_plots[[3]],
-                                 test_gam_plots[[4]],
-                                 nrow = 2, align = "v")
-
-lpi_carnivore_test_plots
-
-selected <- 2
-selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- test_gam_data[[selected]]
-```
-
-## RLI
-
-```{r carnivores rli, warnings = FALSE }
-
-i <- 8 
-
-kvals <- c(4,10,50,100)
-
-m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-indicator_mods <- list(m, m1, m2, m3)
-
-test_gam_data <- list()
-test_gam_plots <- list()
-
-for (j in seq_along(indicator_mods)) {
-
-test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
-                               indicator_mods[[j]])
-
-test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
-
-}
-
-rli_carnivores_test_plots <- plot_grid(test_gam_plots[[1]],
-                                 test_gam_plots[[2]],
-                                 test_gam_plots[[3]],
-                                 test_gam_plots[[4]],
-                                 nrow = 2, align = "v")
-
-rli_carnivores_test_plots
-
-selected <- 2
-selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- test_gam_data[[selected]]
-
-```
-
-## Harvested group
-
-```{r carnivores harvested, warnings = FALSE }
-
-i <- 9
-
-kvals <- c(4,10,50,100)
-
-m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-indicator_mods <- list(m, m1, m2, m3)
-
-test_gam_data <- list()
-test_gam_plots <- list()
-
-for (j in seq_along(indicator_mods)) {
-
-test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
-                               indicator_mods[[j]])
-
-test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
-
-}
-
-harvested_carnivores_test_plots <- plot_grid(test_gam_plots[[1]],
-                                 test_gam_plots[[2]],
-                                 test_gam_plots[[3]],
-                                 test_gam_plots[[4]],
-                                 nrow = 2, align = "v")
-
-harvested_carnivores_test_plots
-
-selected <- 2
-selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- test_gam_data[[selected]]
-```
-
-# Harvesting herbivores
-## LPI
-
-```{r herbivores lpi, warnings = FALSE }
-
-i <- 10
-
-scenario <- "Harvesting herbivores"
-
-kvals <- c(4,10,50,100)
-
-m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-indicator_mods <- list(m, m1, m2, m3)
-
-test_gam_data <- list()
-test_gam_plots <- list()
-
-for (j in seq_along(indicator_mods)) {
-
-test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
-                               indicator_mods[[j]])
-
-test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
-
-}
-
-lpi_herbivores_test_plots <- plot_grid(test_gam_plots[[1]],
-                                 test_gam_plots[[2]],
-                                 test_gam_plots[[3]],
-                                 test_gam_plots[[4]],
-                                 nrow = 2, align = "v")
-
-lpi_herbivores_test_plots
-
-selected <- 2
-selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- test_gam_data[[selected]]
-
-```
-
-## RLI
-
-```{r herbivores rli, warnings = FALSE }
-
-i <- 11
-
-kvals <- c(4,10,50,100)
-
-m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-indicator_mods <- list(m, m1, m2, m3)
-
-test_gam_data <- list()
-test_gam_plots <- list()
-
-for (j in seq_along(indicator_mods)) {
-
-test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
-                               indicator_mods[[j]])
-
-test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
-
-}
-
-rli_herbivores_test_plots <- plot_grid(test_gam_plots[[1]],
-                                 test_gam_plots[[2]],
-                                 test_gam_plots[[3]],
-                                 test_gam_plots[[4]],
-                                 nrow = 2, align = "v")
-
-rli_herbivores_test_plots
-
-selected <- 2
-selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- test_gam_data[[selected]]
-
-```
-
-## Harvested group
-
-```{r herbivores harvested, warnings = FALSE }
-
-i <- 12 
-
-kvals <- c(4,10,50,100)
-
-m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
-
-indicator_mods <- list(m, m1, m2, m3)
-
-test_gam_data <- list()
-test_gam_plots <- list()
-
-for (j in seq_along(indicator_mods)) {
-
-test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
-                               indicator_mods[[j]])
-
-test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
-
-}
-
-harvested_carnivores_test_plots <- plot_grid(test_gam_plots[[1]],
-                                 test_gam_plots[[2]],
-                                 test_gam_plots[[3]],
-                                 test_gam_plots[[4]],
-                                 nrow = 2, align = "v")
-
-harvested_carnivores_test_plots
-
-selected <- 2
-selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- test_gam_data[[selected]]
-```
-
-```{r bootstrapping, eval = FALSE}
-
-# possibly some useful stuff https://fromthebottomoftheheap.net/2011/06/12/additive-modelling-and-the-hadcrut3v-global-mean-temperature-series/
-
-i <- 4
-
-data <- scenario_indicator_single[[i]]
-
-model <- selected_mods[[i]]
-
-model_data <- selected_mods_data[[i]]
-
-numboots <- 10
-
+```{r bootstrap selected model}
 
 bootstrap_selected_model <- function(data, model, model_data, numboots) {
   
@@ -1191,6 +525,11 @@ new <- model_data %>%
 
 }
 
+
+```
+
+```{r plot bootstrapped model}
+
 plot_bootstrapped_model <- function(data){
   
 if(all(is.na(data$positive_trend))) {
@@ -1202,11 +541,7 @@ boot_plot <- ggplot(data = data) +
                         alpha = 0.3) +
             #geom_line(aes(x = annual_time_step, y = positive_trend), col = "blue") +
             #geom_line(aes(x = annual_time_step, y = negative_trend), col = "red") +
-            labs(y = data$indicator[1],
-                           title = paste(data$scenario[1], 
-                                         data$indicator[1], "k =", 
-                                         data$kvalue[1], sep = " ")) +
-                      theme_classic()
+                  theme_classic()
   
 } else {
 
@@ -1217,25 +552,995 @@ boot_plot <- ggplot(data = data) +
               alpha = 0.3) +
   geom_line(aes(x = annual_time_step, y = positive_trend), col = "blue") +
   geom_line(aes(x = annual_time_step, y = negative_trend), col = "red") +
-  labs(y = data$indicator[1],
-                           title = paste(data$scenario[1], 
-                                         data$indicator[1], "k =", 
-                                         data$kvalue[1], sep = " ")) +
                       theme_classic()
   
   return(boot_plot)
   }
 }
+```
 
-test <- bootstrap_selected_model(scenario_indicator_single[[i]],
-                                 selected_mods[[i]], 
-                                 selected_mods_data[[i]], 100)
+```{r data, results=FALSE }
 
-plot_test <- plot_bootstrapped_model(test)
+# Set up paths ----
 
-plot_test
+location <- 'Serengeti'
+
+indicators_project <- "N:/Quantitative-Ecology/Indicators-Project"
+
+# Analysis inputs are the outputs of 2_calculate_madingley_indicators.R
+
+analysis_inputs <- "N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/general/"
+
+# Inputs ----
+
+# Specify the date of inputs you want to use
+
+input_date <- "2021-09-30"
+
+# Specify how many bootstraps you want to use
+
+boots <- 400
+
+# Get date to label outputs
+
+output_date <- Sys.Date() 
+
+scenarios_title <- list("Baseline", "Land use", 
+                  "Carnivore harvesting", 
+                  "Herbivore harvesting")
+
+disturbance_string <- c("pre-disturbance", "disturbance", "post-disturbance")
+
+disturbance_factor <- factor(disturbance_string, ordered = TRUE,
+                              levels = c("pre-disturbance", 
+                                         "disturbance", 
+                                         "post-disturbance"))
+
+# Set up output folders
+
+## Include a folder to store the version of inputs used to get the outputs
+
+analysis_inputs_folder <- file.path(indicators_project,  
+                           "/Serengeti/Outputs_from_analysis_code/Analysis_inputs",
+                           output_date)
+
+if( !dir.exists( file.path(analysis_inputs_folder) ) ) {
+  dir.create( file.path(analysis_inputs_folder), recursive = TRUE )
+  
+}
+
+analysis_outputs_folder <- file.path(indicators_project, 
+                                     "/Serengeti/Outputs_from_analysis_code/Analysis_outputs",
+                                     output_date)
+
+if( !dir.exists( file.path(analysis_outputs_folder) ) ) {
+  dir.create( file.path(analysis_outputs_folder), recursive = TRUE )
+  
+}
+
+manuscript_plots_folder <- file.path(indicators_project, 
+                                     "/Serengeti/Outputs_from_analysis_code/manuscript_plots_folder",
+                                   output_date)
+
+if( !dir.exists( file.path(manuscript_plots_folder) ) ) {
+  dir.create( file.path(manuscript_plots_folder), recursive = TRUE )
+  
+}
+
+supporting_info_plots_folder <- file.path(indicators_project, 
+                                     "/Serengeti/Outputs_from_analysis_code/supporting_info_plots_folder",
+                                   output_date)
+
+if( !dir.exists( file.path(supporting_info_plots_folder) ) ) {
+  dir.create( file.path(supporting_info_plots_folder), recursive = TRUE )
+  
+}
+
+
+
+# Load indicator > scenario level data ----
+
+indicators_all_df <- readRDS(file.path(analysis_inputs, input_date, "all_indicators_output_dataframe.rds"))
+
+indicators_all_list <- flatten(readRDS(file.path(analysis_inputs,input_date, "all_indicators_output_list.rds")))
+
+# Get list of indicators
+
+indicators <- unique(indicators_all_df$indicator)
+
+# Get list of scenarios
+
+scenarios <- unique(indicators_all_df$scenario)
+
+# Save a copy of the inputs used to create outputs
+
+write.csv(indicators_all_df, file.path(analysis_inputs_folder,
+                                       paste(output_date, "input_data.csv",
+                                             sep = "_")))
+# Load red list data
+
+scenario_redlist_data_sampled <- readRDS(file.path(analysis_inputs, input_date, "scenario_redlist_data_annual_7.rds"))
+```
+
+
+```{r prep data, results = FALSE}
+# Standardize & difference the data as per Bestelmeyer 2011
+
+indicators_all_df <- indicators_all_df %>% 
+                     group_by(indicator, scenario) %>% 
+  filter(indicator == "RLI annual"|
+         indicator == "LPI"|
+         indicator == "total abundance harvested") %>% 
+                     mutate(indicator_score_std = standardize(indicator_score),
+                            indicator_score_diff = indicator_score_std - 
+                             lag(indicator_score_std, default = 0)) %>% 
+                     mutate(scenario_indicator = paste(scenario, indicator, 
+                                                       sep = "_"),
+                            variance = rollapply(indicator_score_diff,
+                               10,
+                               var,
+                               na.rm = TRUE,
+                               partial = TRUE,
+                               align = "left"),
+                            disturbance = as.integer(ifelse(annual_time_step > 99 &
+                                                 annual_time_step < 201,
+                                                 1, 0)),
+                            disturbance_factor = as.factor(ifelse(disturbance == 1,
+                                                 "disturbance", 
+                                                 "no disturbance")),
+                            years_since_disturbance = ifelse(annual_time_step < 100,
+                                                            1, (annual_time_step - 100)),
+                            disturbance_phase = as.integer(ifelse(annual_time_step < 100,
+                                                                  1,
+                                                 ifelse(annual_time_step > 99 &
+                                                 annual_time_step < 201,
+                                                 2, 3)))) %>%
+                     ungroup(.)
+
+# Split into a list of scenarios then indicators
+
+scenario_indicators <- split(indicators_all_df, indicators_all_df$scenario)
+
+# Or vice versa
+
+indicator_scenarios <- split(indicators_all_df, indicators_all_df$indicator)
+
+# Single indicator, single scenario
+
+scenario_indicator_single <- split(indicators_all_df, indicators_all_df$scenario_indicator)
+
+# Make a test df of one scenario, one indicator for building loop content
+
+test_df <- scenario_indicators[[2]] %>% 
+           filter(indicator == "LPI")
 
 ```
+
+# Land use test gams
+## LPI
+
+First derivatives show the rate of change in the indicator at a specific time
+point. Values = 0 signify no trend, values > 0 signify a positive trend, and
+values < 0 signify a negative trend.
+
+"The second derivative of the trend curve I(t) at time t is a measure of the curvature of I at that time. If the second derivative is greater than zero, the curve is turning upward. If it is less than zero, the curve is turning downward. The magnitude of the second derivative signifies the tightness of the curvature. Values of approx 0 indicate the curve is linear and changing at a steady state. Years in which the second derivative is markedly different from zero are those in which something is happening to alter the rate of population change." (Fewster et al 2000)
+
+```{r land use lpi, warnings = FALSE, message = FALSE }
+
+selected_mods <- list()
+selected_mods_data <- list()
+
+i <- 4 #Ignore first 3 because they're baseline
+
+scenario <- "Land use"
+
+kvals <- c(4,10,50,100)
+
+m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+indicator_mods <- list(m, m1, m2, m3)
+
+# Extract observed, predicted, derivatives and plot for each test gam
+
+test_gam_data <- list()
+test_gam_plots <- list()
+residual_plots <- list()
+
+for (j in seq_along(indicator_mods)) {
+  
+plot.gam(indicator_mods[[j]], residuals = TRUE)
+
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
+
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
+
+}
+
+residual_plots
+
+lpi_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
+                                 nrow = 2, align = "v")
+
+lpi_landuse_test_plots
+
+selected <- 2
+selected_mods[[i]] <- indicator_mods[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
+
+```
+
+## RLI
+
+```{r land use rli, warnings = FALSE, message = FALSE}
+
+i <- 5
+
+kvals <- c(4,10,50,100)
+
+m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+indicator_mods <- list(m, m1, m2, m3)
+
+test_gam_data <- list()
+test_gam_plots <- list()
+residual_plots <- list()
+
+for (j in seq_along(indicator_mods)) {
+  
+plot.gam(indicator_mods[[j]], residuals = TRUE)
+
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
+
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
+
+}
+
+rli_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
+                                 nrow = 2, align = "v")
+
+rli_landuse_test_plots
+
+selected <- 2
+selected_mods[[i]] <- indicator_mods[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
+
+
+
+harvested_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
+                                 nrow = 2, align = "v")
+
+harvested_landuse_test_plots
+
+selected <- 2
+selected_mods[[i]] <- indicator_mods[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
+```
+
+## Harvested group
+
+```{r land use rli, warnings = FALSE, message = FALSE}
+
+i <- 6
+
+kvals <- c(4,10,50,100)
+
+m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+indicator_mods <- list(m, m1, m2, m3)
+
+test_gam_data <- list()
+test_gam_plots <- list()
+residual_plots <- list()
+
+for (j in seq_along(indicator_mods)) {
+  
+plot.gam(indicator_mods[[j]], residuals = TRUE)
+
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
+
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
+
+}
+
+harvested_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
+                                 nrow = 2, align = "v")
+
+harvested_landuse_test_plots
+
+selected <- 2
+selected_mods[[i]] <- indicator_mods[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
+
+
+```
+
+
+# Harvesting carnivores test gams
+## LPI
+
+```{r carnivores lpi, warnings = FALSE, message = FALSE }
+
+i <- 7
+
+scenario <- "Harvesting carnivores"
+
+kvals <- c(4,10,50,100)
+
+m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+indicator_mods <- list(m, m1, m2, m3)
+
+test_gam_data <- list()
+test_gam_plots <- list()
+residual_plots <- list()
+
+for (j in seq_along(indicator_mods)) {
+  
+plot.gam(indicator_mods[[j]], residuals = TRUE)
+
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
+
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
+
+}
+
+lpi_carnivore_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
+                                 nrow = 2, align = "v")
+
+lpi_carnivore_test_plots
+
+selected <- 2
+selected_mods[[i]] <- indicator_mods[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
+```
+
+## RLI
+
+```{r carnivores rli, warnings = FALSE, message = FALSE }
+
+i <- 8 
+
+kvals <- c(4,10,50,100)
+
+m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+indicator_mods <- list(m, m1, m2, m3)
+
+test_gam_data <- list()
+test_gam_plots <- list()
+residual_plots <- list()
+
+for (j in seq_along(indicator_mods)) {
+  
+plot.gam(indicator_mods[[j]], residuals = TRUE)
+
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
+
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
+
+}
+
+rli_carnivores_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
+                                 nrow = 2, align = "v")
+
+rli_carnivores_test_plots
+
+selected <- 2
+selected_mods[[i]] <- indicator_mods[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
+
+```
+
+## Harvested group
+
+```{r carnivores harvested, warnings = FALSE, message = FALSE }
+
+i <- 9
+
+kvals <- c(4,10,50,100)
+
+m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+indicator_mods <- list(m, m1, m2, m3)
+
+test_gam_data <- list()
+test_gam_plots <- list()
+residual_plots <- list()
+
+for (j in seq_along(indicator_mods)) {
+  
+plot.gam(indicator_mods[[j]], residuals = TRUE)
+
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
+
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
+
+}
+
+harvested_carnivores_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
+                                 nrow = 2, align = "v")
+
+harvested_carnivores_test_plots
+
+selected <- 2
+selected_mods[[i]] <- indicator_mods[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
+```
+
+# Harvesting herbivores test gams
+## LPI
+
+```{r herbivores lpi, warnings = FALSE }
+
+i <- 10
+
+scenario <- "Harvesting herbivores"
+
+kvals <- c(4,10,50,100)
+
+m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+indicator_mods <- list(m, m1, m2, m3)
+
+test_gam_data <- list()
+test_gam_plots <- list()
+residual_plots <- list()
+
+for (j in seq_along(indicator_mods)) {
+  
+plot.gam(indicator_mods[[j]], residuals = TRUE)
+
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
+
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
+
+}
+
+lpi_herbivores_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
+                                 nrow = 2, align = "v")
+
+lpi_herbivores_test_plots
+
+selected <- 2
+selected_mods[[i]] <- indicator_mods[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
+
+```
+
+## RLI
+
+```{r herbivores rli, warnings = FALSE }
+
+i <- 11
+
+kvals <- c(4,10,50,100)
+
+m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+indicator_mods <- list(m, m1, m2, m3)
+
+test_gam_data <- list()
+test_gam_plots <- list()
+residual_plots <- list()
+
+for (j in seq_along(indicator_mods)) {
+  
+plot.gam(indicator_mods[[j]], residuals = TRUE)
+
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
+
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
+
+}
+
+residual_plots
+
+rli_herbivores_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
+                                 nrow = 2, align = "v")
+
+rli_herbivores_test_plots
+
+selected <- 2
+selected_mods[[i]] <- indicator_mods[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
+
+```
+
+## Harvested group
+
+```{r herbivores harvested, warnings = FALSE }
+
+i <- 12 
+
+kvals <- c(4,10,50,100)
+
+m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
+          select = TRUE,
+          method = "REML",
+          data = scenario_indicator_single[[i]])
+
+indicator_mods <- list(m, m1, m2, m3)
+
+test_gam_data <- list()
+test_gam_plots <- list()
+residual_plots <- list()
+
+for (j in seq_along(indicator_mods)) {
+  
+plot.gam(indicator_mods[[j]], residuals = TRUE)
+
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
+
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
+
+}
+
+residual_plots
+
+harvested_carnivores_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
+                                 nrow = 2, align = "v")
+
+harvested_carnivores_test_plots
+
+selected <- 2
+selected_mods[[i]] <- indicator_mods[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
+```
+
+# Land use selected model
+## LPI
+
+```{r model land use lpi, warnings = FALSE }
+
+bootstrapped_data <- list()
+bootstrapped_plots <- list()
+
+i <- 4
+
+bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
+                                 selected_mods[[i]], 
+                                 selected_mods_data[[i]], boots)
+
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+
+
+scenario <- scenario_indicator_single[[i]]$scenario[1]
+indicator <- scenario_indicator_single[[i]]$indicator[1]
+
+ggsave(file.path(manuscript_plots_folder, paste(scenario, indicator,
+                                                "bootstrapped_trend.png",
+                                                sep = "_")),
+       width = 10,
+       height = 5,
+       units = "cm",
+       bootstrapped_plots[[i]])
+
+bootstrapped_plots[[i]]
+
+```
+
+## RLI
+
+```{r model land use rli, warnings = FALSE }
+
+i <- 5
+
+bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
+                                 selected_mods[[i]], 
+                                 selected_mods_data[[i]], boots)
+
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+
+scenario <- scenario_indicator_single[[i]]$scenario[1]
+indicator <- scenario_indicator_single[[i]]$indicator[1]
+
+ggsave(file.path(manuscript_plots_folder, paste(scenario, indicator,
+                                                "bootstrapped_trend.png",
+                                                sep = "_")),
+       width = 10,
+       height = 5,
+       units = "cm",
+                 bootstrapped_plots[[i]])
+
+bootstrapped_plots[[i]]
+
+
+```
+
+## Harvested group
+
+```{r model land use harvested, warnings = FALSE }
+
+i <- 6
+
+bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
+                                 selected_mods[[i]], 
+                                 selected_mods_data[[i]], boots)
+
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+
+scenario <- scenario_indicator_single[[i]]$scenario[1]
+indicator <- scenario_indicator_single[[i]]$indicator[1]
+
+ggsave(file.path(manuscript_plots_folder, paste(scenario, indicator,
+                                                "bootstrapped_trend.png",
+                                                sep = "_")),
+       width = 10,
+       height = 5,
+       units = "cm",
+                 bootstrapped_plots[[i]])
+
+bootstrapped_plots[[i]]
+
+
+
+```
+
+# Harvesting carnivores selected model
+## LPI
+
+```{r model carnivores lpi, warnings = FALSE }
+
+i <- 7
+
+bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
+                                 selected_mods[[i]], 
+                                 selected_mods_data[[i]], boots)
+
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+
+scenario <- scenario_indicator_single[[i]]$scenario[1]
+indicator <- scenario_indicator_single[[i]]$indicator[1]
+
+ggsave(file.path(manuscript_plots_folder, paste(scenario, indicator,
+                                                "bootstrapped_trend.png",
+                                                sep = "_")),
+       width = 10,
+       height = 5,
+       units = "cm",
+                 bootstrapped_plots[[i]])
+
+bootstrapped_plots[[i]]
+
+
+```
+
+## RLI
+
+```{r model carnivores rli, warnings = FALSE }
+
+i <- 8 
+
+bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
+                                 selected_mods[[i]], 
+                                 selected_mods_data[[i]], boots)
+
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+
+scenario <- scenario_indicator_single[[i]]$scenario[1]
+indicator <- scenario_indicator_single[[i]]$indicator[1]
+
+ggsave(file.path(manuscript_plots_folder, paste(scenario, indicator,
+                                                "bootstrapped_trend.png",
+                                                sep = "_")),
+       width = 10,
+       height = 5,
+       units = "cm",
+                 bootstrapped_plots[[i]])
+
+bootstrapped_plots[[i]]
+
+```
+
+## Harvested group
+
+```{r model carnivores harvested, warnings = FALSE }
+
+i <- 9
+
+bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
+                                 selected_mods[[i]], 
+                                 selected_mods_data[[i]], boots)
+
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+
+scenario <- scenario_indicator_single[[i]]$scenario[1]
+indicator <- scenario_indicator_single[[i]]$indicator[1]
+
+ggsave(file.path(manuscript_plots_folder, paste(scenario, indicator,
+                                                "bootstrapped_trend.png",
+                                                sep = "_")),
+       width = 10,
+       height = 5,
+       units = "cm",
+                 bootstrapped_plots[[i]])
+
+bootstrapped_plots[[i]]
+
+
+```
+
+# Harvesting herbivores selected models
+## LPI
+
+```{r model herbivores lpi, warnings = FALSE }
+
+i <- 10
+
+bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
+                                 selected_mods[[i]], 
+                                 selected_mods_data[[i]], boots)
+
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+
+scenario <- scenario_indicator_single[[i]]$scenario[1]
+indicator <- scenario_indicator_single[[i]]$indicator[1]
+
+ggsave(file.path(manuscript_plots_folder, paste(scenario, indicator,
+                                                "bootstrapped_trend.png",
+                                                sep = "_")),
+       width = 10,
+       height = 5,
+       units = "cm",
+                 bootstrapped_plots[[i]])
+
+bootstrapped_plots[[i]]
+
+```
+
+## RLI
+
+```{r model herbivores rli, warnings = FALSE }
+
+i <- 11
+
+bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
+                                 selected_mods[[i]], 
+                                 selected_mods_data[[i]], boots)
+
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+
+scenario <- scenario_indicator_single[[i]]$scenario[1]
+indicator <- scenario_indicator_single[[i]]$indicator[1]
+
+ggsave(file.path(manuscript_plots_folder, paste(scenario, indicator,
+                                                "bootstrapped_trend.png",
+                                                sep = "_")),
+       width = 10,
+       height = 5,
+       units = "cm",
+                 bootstrapped_plots[[i]])
+
+bootstrapped_plots[[i]]
+
+```
+
+## Harvested group
+
+```{r model herbivores harvested, warnings = FALSE }
+
+i <- 12 
+
+bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
+                                 selected_mods[[i]], 
+                                 selected_mods_data[[i]], boots)
+
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+
+scenario <- scenario_indicator_single[[i]]$scenario[1]
+indicator <- scenario_indicator_single[[i]]$indicator[1]
+
+ggsave(file.path(manuscript_plots_folder, paste(scenario, indicator,
+                                                "bootstrapped_trend.png",
+                                                sep = "_")),
+       width = 10,
+       height = 5,
+       units = "cm",
+                 bootstrapped_plots[[i]])
+
+bootstrapped_plots[[i]]
+
+
+```
+
 
 ```{r prep gam inputs, results=FALSE }
 
