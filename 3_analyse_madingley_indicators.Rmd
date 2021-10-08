@@ -58,34 +58,21 @@ library(gridExtra)
 
 ```
 
-```{r functions, echo=FALSE, eval=FALSE}
+```{r bin_rates_of_change, echo=FALSE, eval=FALSE}
 
 #' Description
 
-#' @param 
-#' @param 
-#' @param 
-#' @return 
+#' @param data a data frame with columns 'group id', 'annual_time_step', 'ave_abundance'
+#' @param set_breals a vector of numbers specifying the binds for rates of change
+#' @return a dataframe of the identity and proportion of species in each rate of change bin
+#' per timestep. NOTE - this data needs the species identity removed to plot
+#' overall rates of change
 
-function_name <- function(param){
-
-}
-
-
-#' @param data a data frame with columns 'group id', 'time_step', 'abundance'
-#' @param bintype a string representing how you want to bin the rates of change,
-#' can be either Available are: "interval" (equal interval width), "frequency" 
-#' (equal frequency), "cluster" (k-means clustering) and "fixed" 
-#' (categories specifies interval boundaries). Note that equal frequency does 
-#' not achieve perfect equally sized groups if the data contains duplicated values.
-#' @return a dataframe of the proportion of species in each rate of change bin
-#' per timestep
-
-bin_rates_of_change <- function(data, bintype){
+bin_rates_of_change <- function(data, set_breaks){
 
   require(arules)
   
-  filtered_inputs <- data %>%
+    filtered_inputs <- data %>%
     # Group by virtual species (vs)
     group_by(group_id) %>% 
     # Remove vs that have no individuals at any timestep
@@ -99,7 +86,7 @@ bin_rates_of_change <- function(data, bintype){
   
   head(filtered_inputs)
   
-  # Calculate LPI inputs and LPI
+  # Calculate rates of change as if for the LPI
   ## Based on McRae, L., Loh. J., Bubb, P.J., Baillie, J.E.M., Kapos, V.,
   ## and Collen, B. 2008. The Living Planet Index - Guidance for
   ## National and Regional Use. UNEP-WCMC, Cambridge, UK.
@@ -116,21 +103,29 @@ bin_rates_of_change <- function(data, bintype){
     mutate(current_abundance = abundance_adjusted, #abundance at current timestep
            previous_abundance = lag(abundance_adjusted, 1)) %>%  #abundance at previous timestep
     mutate(dt = log10(current_abundance/previous_abundance)) %>% # rate of change
-    ungroup(.) %>%
-    # mutate(dt_bins = ifelse(dt < 0.5, "<0.5",
-    #                  ifelse(dt > 0.4 & dt < 0.75, " 0.5 - 0.74",
-    #                  ifelse(dt > 0.74 & dt < 1, "0.75 - 0.99",
-    #                  ifelse(dt > 0.9999 & dt < 1.5,"1 - 1.4",
-    #                  ifelse(dt > 1.4, " > 1.4", NA)))))) %>% 
-    mutate(dt_bins = discretize(dt, bintype, 5)) %>% 
+    ungroup(.) 
+  
+    # Look at the breakdown of change rates in yr 80
+  # y80 <- lpi_inputs %>% 
+  #        filter(annual_time_step == 80)
+  # 
+  # hist(y80$dt, 30)
+  # quantile(y80$dt)
+  
+  dt_bins <- lpi_inputs %>% 
+    group_by(annual_time_step) %>% 
+    mutate(dt_bins = discretize(dt, "fixed", breaks = set_breaks)) %>% 
     group_by(annual_time_step) %>% 
     mutate(num_groups = n_distinct(group_id)) %>% 
     group_by(annual_time_step, dt_bins) %>% 
     filter(!is.na(dt_bins)) %>% 
-    summarise(prop_declining = n_distinct(group_id)/num_groups) %>% 
+    summarise(group_id = group_id,
+              ave_abundance = abundance,
+              functional_group_name = functional_group_name,
+              prop_declining = n_distinct(group_id)/num_groups) %>% 
     distinct(.)
                        
-return(lpi_inputs)
+return(dt_bins)
   
 }
 ```
@@ -645,100 +640,29 @@ Note, current bins are not based on much, there might be a more meaningful way t
 
 ```{r rate of change plots, warning=FALSE}
 
-#' @param data a data frame with columns 'group id', 'time_step', 'abundance'
-#' @param bintype a string representing how you want to bin the rates of change,
-#' can be either Available are: "interval" (equal interval width), "frequency" 
-#' (equal frequency), "cluster" (k-means clustering) and "fixed" 
-#' (categories specifies interval boundaries). Note that equal frequency does 
-#' not achieve perfect equally sized groups if the data contains duplicated values.
-#' @return a dataframe of the proportion of species in each rate of change bin
-#' per timestep
-
-set_breaks <- c(-Inf, -0.5, -0.02, -0.01, 0.01, 0.02, 0.5,Inf)
-
-bin_rates_of_change <- function(data, bintype){
-
-  require(arules)
-  
-  filtered_inputs <- data %>%
-    # Group by virtual species (vs)
-    group_by(group_id) %>% 
-    # Remove vs that have no individuals at any timestep
-    filter(!all(ave_abundance == 0)) %>% 
-    # Save a copy of original abundance values
-    # rename(abundance_original = abundance) %>%
-    # Identify rows where abundance == 0, and change all subsequent years to 0 too
-    # mutate(abundance = maintain_0_abundance(abundance_original)) 
-    mutate(abundance = ave_abundance) %>% 
-    dplyr::select(-ave_abundance)
-  
-  head(filtered_inputs)
-  
-  # Calculate LPI inputs and LPI
-  ## Based on McRae, L., Loh. J., Bubb, P.J., Baillie, J.E.M., Kapos, V.,
-  ## and Collen, B. 2008. The Living Planet Index - Guidance for
-  ## National and Regional Use. UNEP-WCMC, Cambridge, UK.
-  
-  lpi_inputs <- filtered_inputs %>%
-    # Calculate 1% of the mean population over time for each group
-    group_by(group_id) %>%
-    # Add 1% of the species mean abundance across all timesteps
-    # so we can take the log in the next step
-    mutate(abundance_adjusted = abundance +
-             (mean(abundance, na.rm = TRUE)*0.01)) %>%
-    # Calculate the rate of change since the previous year (dt)
-    # (equation 1 in Mcrae et al 2008)
-    mutate(current_abundance = abundance_adjusted, #abundance at current timestep
-           previous_abundance = lag(abundance_adjusted, 1)) %>%  #abundance at previous timestep
-    mutate(dt = log10(current_abundance/previous_abundance)) %>% # rate of change
-    ungroup(.) %>%
-    # mutate(dt_bins = as.factor(ifelse(dt <= -0.5, " < -0.5",
-    #                  ifelse(dt > -0.5 & dt <= -0.02, "-0.5 to -0.02",
-    #                  ifelse(dt > -0.02 & dt <= -0.01, "-0.02 to -0.01",
-    #                  ifelse(dt > -0.01 & dt <= 0.01, "-0.01 to 0.01",
-    #                  ifelse(dt > 0.01 & dt <= 0.02, "0.01 to 0.02",
-    #                  ifelse(dt > 0.02 & dt <= 0.5, "0.02 to 0.5",
-    #                  ifelse(dt > 0.5,"> 0.05", NA)))))))),
-    #        ordered = TRUE) %>%
-    mutate(dt_bins = discretize(dt, "fixed", 
-                                breaks =  c(-2.5, -0.5, -0.02, -0.01, 
-                                            0.01, 0.02, 0.5,2.5),
-                                ordered_result = TRUE),
-           decline_fac = as.character(dt_bins)) %>% 
-    group_by(annual_time_step) %>% 
-    mutate(num_groups = n_distinct(group_id)) %>% 
-    group_by(annual_time_step, dt_bins) %>% 
-    filter(!is.na(dt_bins)) %>% 
-    summarise(prop_declining = n_distinct(group_id)/num_groups) %>% 
-    distinct(.)
-
-# decline_fac <- factor(lpi_inputs$dt_bins,
-#       levels = c(" < -0.5", "-0.5 to -0.02", "-0.02 to -0.01", "-0.01 to 0.01",
-#                  "0.01 to 0.02", "0.02 to 0.5", "> 0.5"))
-#   
-# lpi_inputs <- cbind(lpi_inputs,
-#   decline_fac = decline_fac)
-  
-                       
-return(lpi_inputs)
-  
-}
-
 # * Bin rates of change and plot them ----
 
+set_breaks <- c(-3,-0.0894307914, -0.0166148404, -0.0003499485, 
+                0.0147363530, 0.3069022173, 3)
+
 rate_of_change_plots <- list()
+rate_of_change_data <- list()
 
 for (i in seq_along(scenario_redlist_data_sampled)) {
   
-rate_change_data <- bin_rates_of_change(scenario_redlist_data_sampled[[i]],
-                                        "fixed") %>% 
+rate_of_change_data[[i]] <- bin_rates_of_change(scenario_redlist_data_sampled[[i]],
+                                        set_breaks) %>% 
                                         mutate(scenario = scenarios[[i]])
+
+plot_data <- rate_of_change_data[[i]] %>% 
+             dplyr::select(-group_id, - ave_abundance, - functional_group_name) %>% 
+             distinct(.)
   
-rate_of_change_plots[[i]] <- ggplot(rate_change_data,
+rate_of_change_plots[[i]] <- ggplot(plot_data,
                                     aes(x = annual_time_step, 
                                         y = prop_declining, 
                                         fill = dt_bins)) +
-    geom_area(alpha = 0.4) +
+    geom_bar(position="stack", stat="identity", alpha = 0.7) +
       scale_fill_viridis_d(option = "plasma") +
        theme(panel.grid.major = element_blank(),
           panel.grid.minor = element_blank(),
@@ -766,6 +690,46 @@ rate_of_change_plots[[1]]
 rate_of_change_plots[[2]]
 rate_of_change_plots[[3]]
 rate_of_change_plots[[4]]
+
+```
+
+```{r most declining spp}
+
+library(directlabels)
+
+declining_species_plots <- list()
+
+set.seed(354)
+
+for (i in seq_along(rate_of_change_data)) {
+  
+declining <- rate_of_change_data[[i]] %>% 
+             group_by(group_id) %>% 
+             filter(any(dt_bins == "[-3,-0.0894)")) %>% 
+             distinct(.)
+
+groups <- unique(declining$group_id)
+
+group_sample <- sample(groups, size = 12)
+group_sample <- as.data.frame(group_sample)
+
+declining <- declining[declining$group_id %in% group_sample$group_sample,] 
+
+
+declining_species_plots[[i]] <- ggplot(data = declining, aes(annual_time_step, 
+                                                             log(ave_abundance), 
+                             group = group_id, 
+                             col = dt_bins)) +
+  geom_line() +
+  theme(legend.position = "bottom") +
+  geom_dl(aes(label = group_id), method = "last.points", cex = 0.8) 
+
+}
+
+declining_species_plots[[1]]
+declining_species_plots[[2]]
+declining_species_plots[[3]]
+declining_species_plots[[4]]
 
 ```
 
