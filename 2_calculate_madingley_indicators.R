@@ -2967,25 +2967,31 @@ for (i in seq_along(scenario_annual)) {
       # Using the formula from p 35 (Complex patterns of decline) Guidelines 
       # for Using the IUCN Red List Categories and Criteria v14 August 2019 
       mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, timeframe[1])) %>%
+      # Where abundance = 0, make decline value = NA
       mutate(decline = ifelse(ave_abundance == 0, NA, decline)) %>% 
       # calculate the rate of change
       # assign red list risk status based on decline 
       # Using the thresholds from p 16 Categories A2 - A4 Guidelines 
       # for Using the IUCN Red List Categories and Criteria v14 August 2019
+      # https://www.iucnredlist.org/resources/redlistguidelines
+      # Category A2 is: Population reduction observed, estimated, inferred or 
+      # suspected where the causes of reduction may not have ceased/is not understood/
+      # is not reversible
       mutate(rl_status = ifelse(decline < 0.20, "LC",
-                         ifelse(decline >= 0.20 & decline < 0.30, "NT", 
-                         ifelse(decline >= 0.30 & decline < 0.50, "VU",
-                         ifelse(decline >= 0.50 & decline < 0.80, "EN",
-                         ifelse(decline >= 0.80, "CR",
-                         ifelse(is.na(decline), "EX", "TBD"))))))) %>%
+                                # NT should be used when population has declined by an 
+                                # estimated 20-25% in the 
+                                # last three generations (p 17 of categories v14 2019)
+                                ifelse(decline >= 0.20 & decline < 0.30, "NT", 
+                                       ifelse(decline >= 0.30 & decline < 0.50, "VU",
+                                              ifelse(decline >= 0.50 & decline < 0.80, "EN",
+                                                     ifelse(decline >= 0.80, "CR",
+                                                            ifelse(is.na(decline), "EX", "TBD"))))))) %>%
       arrange(group_id, annual_time_step) %>%
       # Replace all non-ex status with ex after first occurrence 
       mutate(rl_status = ifelse(ave_abundance == 0, "EX", rl_status),
              rl_status = ifelse(is.na(rl_status), lag(rl_status, 1),
                                 rl_status)) %>% 
-      mutate(extinct = ifelse(rl_status == "EX", 1, 0)) #%>% 
-      #group_by(group_id) #%>% 
-      #filter(annual_time_step != c(296, 297, 298, 299, 300)) # remove last 5 timesteps 
+      mutate(extinct = ifelse(rl_status == "EX", 1, 0)) 
     
   }
   
@@ -4044,6 +4050,8 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
 min(scenario_redlist_data_sampled[[1]]$annual_time_step)
 max(scenario_redlist_data_sampled[[1]]$annual_time_step)
 
+
+
 # lpi_input <- scenario_lpi_inputs[[1]]
 # head(lpi_input)
 # write.csv(lpi_input, file.path(indicator_outputs_folder, "lpi_input_example_annual.csv"))
@@ -4422,17 +4430,35 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
     group_by(functional_group_name)  %>% 
     mutate(indicator_score = indicator_score/first(indicator_score),
            density = indicator_score/sum(indicator_score, na.rm = TRUE)) %>% 
-    ungroup(.)
+    ungroup(.) %>% 
+    group_by(annual_time_step) %>% 
+    mutate(total_density = sum(density, na.rm = TRUE)) %>% 
+    group_by(annual_time_step, functional_group_name) %>% 
+    mutate(perc_density = density/total_density)
   
 }
 
 data <- scenario_fg_abundance[[3]]
 head(data)
 
-ggplot(data = data) +
-  geom_line(aes(x = annual_time_step, 
-                y = density,
-                col = functional_group_name)) 
+func_group_perc_density_plots <- list()
+
+for (i in seq_along(scenario_fg_abundance)) {
+  
+func_group_perc_density_plots[[i]] <- ggplot(data = scenario_fg_abundance[[i]]) +
+  geom_area(aes(x = annual_time_step, 
+                y = perc_density,
+                fill = functional_group_name), alpha = 0.6) +
+  theme_classic() +
+  labs(title = scenario_fg_abundance[[i]]$scenario[1])
+
+}
+
+func_group_perc_density_plots[[1]]
+func_group_perc_density_plots[[2]]
+func_group_perc_density_plots[[3]]
+func_group_perc_density_plots[[4]]
+
 
 # Plot abundance of functional groups
 
@@ -4571,6 +4597,7 @@ bl_spp_density <- plot_grid(scenario_species_abundance_plots[[1]][[1]],
                             nrow = 2, align = "v")
 
 bl_spp_density
+
 ggsave(file.path(indicator_outputs_folder, paste(today, scenarios[[i]],
                                                  "species_group_abundance.png",
                                                  sep = "_")),
@@ -4631,7 +4658,7 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
     mutate(trophic_group = word(functional_group_name, 1),
            scenario = scenarios[[i]]) %>% 
     group_by(trophic_group, annual_time_step) %>% 
-    mutate(indicator_score = mean(abundance, na.rm = TRUE),
+    mutate(indicator_score = mean(ave_abundance, na.rm = TRUE),
            indicator = "total abundance",
            ci_lower = NA,
            ci_upper = NA,
@@ -4649,7 +4676,10 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
     group_by(trophic_group)  %>% 
     mutate(indicator_score = indicator_score/first(indicator_score),
            density = indicator_score/sum(indicator_score, na.rm = TRUE)) %>% 
-    ungroup(.)
+    ungroup(.) %>% 
+    group_by(trophic_group, annual_time_step) %>% 
+    mutate(sum_abundance = sum(ave_abundance),
+           perc_abundance = sum_abundance/sum(sum_abundance))
   
   autotrophs <- scenario_auto_sampled[[i]] %>% 
     ungroup(.) %>% 
@@ -4657,7 +4687,7 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
     mutate(trophic_group = "autotroph",
            scenario = scenarios[[i]]) %>% 
     group_by(trophic_group, annual_time_step) %>% 
-    mutate(indicator_score = mean(abundance, na.rm = TRUE),
+    mutate(indicator_score = mean(ave_abundance, na.rm = TRUE),
            indicator = "total abundance",
            ci_lower = NA,
            ci_upper = NA,
@@ -4675,7 +4705,10 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
     group_by(trophic_group) %>% 
     mutate(indicator_score = indicator_score/first(indicator_score),
            density = indicator_score/sum(indicator_score, na.rm = TRUE)) %>% 
-    ungroup(.)
+    ungroup(.)%>% 
+    group_by(trophic_group, annual_time_step) %>% 
+    mutate(sum_abundance = sum(ave_abundance),
+           perc_abundance = sum_abundance/sum(sum_abundance))
   
   x <- rbind(heterotrophs, autotrophs)
   
@@ -4773,6 +4806,127 @@ ggsave(file.path(indicator_plots_folder, paste(today, "trophic_group_density.png
                                                sep = "_")),
        fig,  device = "png")
 
+# * Get proportion of abundance of trophic groups ----
+
+scenario_tg_prop_abundance <- list()
+
+for (i in seq_along(scenario_redlist_data_sampled)) {
+  
+  heterotrophs <- scenario_redlist_data_sampled[[i]] %>% 
+    ungroup(.) %>% 
+    mutate(trophic_group = word(functional_group_name, 1),
+           scenario = scenarios[[i]]) %>% 
+    dplyr::select(group_id,
+                  annual_time_step, 
+                  ave_abundance, 
+                  trophic_group,
+                  scenario)
+  
+  # autotrophs <- scenario_auto_sampled[[i]] %>% 
+  #   ungroup(.) %>% 
+  #   filter(group_id == "autotrophs") %>% 
+  #   mutate(trophic_group = "autotroph",
+  #          scenario = scenarios[[i]])%>% 
+  #   dplyr::select(group_id,
+  #                 annual_time_step, 
+  #                 ave_abundance, 
+  #                 trophic_group,
+  #                 scenario)
+  
+  # all_the_trophs <- rbind(heterotrophs, autotrophs)
+  
+  scenario_tg_prop_abundance[[i]] <- heterotrophs %>%  
+    group_by(annual_time_step, trophic_group) %>% 
+    mutate(sum_abundance = sum(ave_abundance),
+           indicator_score = sum_abundance/sum(sum_abundance)) %>% 
+    mutate(indicator = "percent abundance",
+           ci_lower = NA,
+           ci_upper = NA,
+           replicate = NA) %>% 
+    ungroup(.) %>%                                 
+    dplyr::select(annual_time_step, 
+                  indicator_score,
+                  ci_lower,
+                  ci_upper,
+                  indicator,
+                  replicate,
+                  scenario, 
+                  trophic_group) %>% 
+    distinct(.) 
+    
+    rm(all_the_trophs)
+    
+}
+
+trophic_proportion_plots <- list()
+
+for (i in seq_along(scenario_tg_prop_abundance)) {
+  
+  trophic_proportion_plots[[i]] <- ggplot(scenario_tg_prop_abundance[[i]], 
+                                          aes(x = annual_time_step, 
+                                              y= indicator_score, 
+                                              fill = trophic_group)) + 
+  geom_area(alpha=0.6 , size=1)
+
+}
+
+trophic_proportion_plots[[1]]
+trophic_proportion_plots[[2]]
+trophic_proportion_plots[[3]]
+trophic_proportion_plots[[4]]
+
+# * Get proportion of abundance of functional groups ----
+
+scenario_fg_prop_abundance <- list()
+
+for (i in seq_along(scenario_redlist_data_sampled)) {
+  
+  heterotrophs <- scenario_redlist_data_sampled[[i]] %>% 
+    ungroup(.) %>% 
+    mutate(scenario = scenarios[[i]]) %>% 
+    dplyr::select(group_id,
+                  annual_time_step, 
+                  ave_abundance, 
+                  functional_group_name,
+                  scenario)
+  
+  scenario_fg_prop_abundance[[i]] <- heterotrophs %>%  
+    group_by(annual_time_step, functional_group_name) %>% 
+    mutate(sum_abundance = sum(ave_abundance, na.rm = TRUE),
+           indicator_score = sum_abundance/sum(sum_abundance)) %>% 
+    mutate(indicator = "percent abundance",
+           ci_lower = NA,
+           ci_upper = NA,
+           replicate = NA) %>% 
+    ungroup(.) %>%                                 
+    dplyr::select(annual_time_step, 
+                  indicator_score,
+                  ci_lower,
+                  ci_upper,
+                  indicator,
+                  replicate,
+                  scenario, 
+                  functional_group_name) %>% 
+    distinct(.) 
+  
+}
+
+fgroup_proportion_plots <- list()
+
+for (i in seq_along(scenario_tg_prop_abundance)) {
+  
+  fgroup_proportion_plots[[i]] <- ggplot(scenario_fg_prop_abundance[[i]], 
+                                          aes(x = annual_time_step, 
+                                              y= indicator_score, 
+                                              fill = functional_group_name)) + 
+    geom_area(alpha=0.6 , size=1)
+  
+}
+
+fgroup_proportion_plots[[1]]
+fgroup_proportion_plots[[2]]
+fgroup_proportion_plots[[3]]
+fgroup_proportion_plots[[4]]
 
 # COMBINE INDICATORS ----
 
