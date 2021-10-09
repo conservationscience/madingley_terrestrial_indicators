@@ -34,6 +34,8 @@ have values for:
 -- Scenarios (3)
 --- Replicates (25)
 
+#' TODO: Add impact lines to everything
+
 ```{r libraries}
 
 ## Data wrangling
@@ -114,7 +116,8 @@ bin_rates_of_change <- function(data, set_breaks){
   
   dt_bins <- lpi_inputs %>% 
     group_by(annual_time_step) %>% 
-    mutate(dt_bins = discretize(dt, "fixed", breaks = set_breaks)) %>% 
+    mutate(dt_bins = discretize(dt, "fixed", breaks = set_breaks, 
+                                ordered_result = TRUE)) %>% 
     group_by(annual_time_step) %>% 
     mutate(num_groups = n_distinct(group_id)) %>% 
     group_by(annual_time_step, dt_bins) %>% 
@@ -195,6 +198,24 @@ analysis_plots_folder <- file.path(indicators_project,
 
 if( !dir.exists( file.path(analysis_plots_folder) ) ) {
   dir.create( file.path(analysis_plots_folder), recursive = TRUE )
+  
+}
+
+manuscript_plots_folder <- file.path(indicators_project, 
+                                     "/Serengeti/Outputs_from_analysis_code/manuscript_plots_folder",
+                                   output_date)
+
+if( !dir.exists( file.path(manuscript_plots_folder) ) ) {
+  dir.create( file.path(manuscript_plots_folder), recursive = TRUE )
+  
+}
+
+supporting_info_plots_folder <- file.path(indicators_project, 
+                                     "/Serengeti/Outputs_from_analysis_code/supporting_info_plots_folder",
+                                   output_date)
+
+if( !dir.exists( file.path(supporting_info_plots_folder) ) ) {
+  dir.create( file.path(supporting_info_plots_folder), recursive = TRUE )
   
 }
 
@@ -333,8 +354,7 @@ indicator_plots[[j]] <- ggplot() +
   labs(title = indicator,
        x = "Annual time step",
        y = "Indicator") +
-  geom_vline(xintercept = 100, col = "red") +
-  geom_vline(xintercept = 200, col = "blue")
+  geom_vline(xintercept=c(100,200), linetype="dotted") 
 
   }
   
@@ -571,6 +591,8 @@ distribution_plots_2[[4]]
 
 ```{r red list status plots}
 
+panel <- c("NA", "1", "2", "3")
+
 scenario_extinctions <- list()
 scenario_rl_status_plots <- list()
 
@@ -588,6 +610,8 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
           group_by(annual_time_step, rl_status_fac) %>% 
           filter(rl_status_fac != is.na(rl_status_fac)) %>% 
           summarise(red_list_status = n())
+  
+  scenario <- scenarios_title[[i]]
   
   # scenario_rl_status_plots[[i]] <- ggplot(scenario_extinctions[[i]], 
   #                                         aes(x = annual_time_step, 
@@ -610,20 +634,31 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
           panel.grid.minor = element_blank(),
           panel.background = element_rect(fill = "grey80"),
           legend.position = "bottom",
-         legend.title=element_text(size=14), 
-         legend.text=element_text(size=12),
-          axis.title.x = element_text(size=14),
-          axis.title.y = element_text(size=14),
-          axis.text.x = element_text(size=12),
-          axis.text.y = element_text(size=12),
+         legend.key.size = unit(0.25, 'cm'),
+         plot.title = element_text(size = 10, face = "bold"),
+         legend.title=element_text(size=6), 
+         legend.text=element_text(size=6),
+          axis.title.x = element_text(size=8),
+          axis.title.y = element_text(size=8),
+          axis.text.x = element_text(size=6),
+          axis.text.y = element_text(size=6),
           axis.ticks.x = element_blank(), 
           axis.ticks.y = element_blank()) +
-   labs(title = scenarios_title[[i]],
+   labs(title = panel[[i]],
         x = "Time (years)",
         y = "# species in Red List category") +
-   guides(fill=guide_legend(title="Red List Status"))
+   guides(fill=guide_legend(title="Red List Status", nrow = 1)) +
+  geom_vline(xintercept=c(100,200), linetype="dotted") 
    
   rm(scenario_redlist_data)
+  
+  ggsave(file.path(manuscript_plots_folder, paste(scenario,
+                                                "RL_status_stacked_area_plots.png",
+                                                sep = "_")),
+       width = 10,
+       height = 7,
+       units = "cm",
+       scenario_rl_status_plots[[i]])
   
 }
 
@@ -642,14 +677,19 @@ Note, current bins are not based on much, there might be a more meaningful way t
 
 # * Bin rates of change and plot them ----
 
-set_breaks <- c(-3,-0.0894307914, -0.0166148404, -0.0003499485, 
+set_breaks <- c(-3,-0.0894307914, -0.0166148404, -0.0003499485,
                 0.0147363530, 0.3069022173, 3)
+
+#set_breaks <- c(3, 0.3069022173,0.0147363530,-0.0003499485,-0.0166148404,-0.0894307914,-3)
 
 rate_of_change_plots <- list()
 rate_of_change_data <- list()
 
 for (i in seq_along(scenario_redlist_data_sampled)) {
   
+scenario <- scenarios_title[[i]]
+   
+   
 rate_of_change_data[[i]] <- bin_rates_of_change(scenario_redlist_data_sampled[[i]],
                                         set_breaks) %>% 
                                         mutate(scenario = scenarios[[i]])
@@ -662,25 +702,37 @@ rate_of_change_plots[[i]] <- ggplot(plot_data,
                                     aes(x = annual_time_step, 
                                         y = prop_declining, 
                                         fill = dt_bins)) +
-    geom_bar(position="stack", stat="identity", alpha = 0.7) +
-      scale_fill_viridis_d(option = "plasma") +
-       theme(panel.grid.major = element_blank(),
+    geom_area(position="stack", stat="identity", alpha = 0.7) +
+    scale_fill_viridis_d(option = "plasma") +
+    theme(panel.grid.major = element_blank(),
           panel.grid.minor = element_blank(),
           panel.background = element_rect(fill = "grey80"),
           legend.position = "bottom",
-         legend.title=element_text(size=10), 
-         legend.text=element_text(size=8),
-          axis.title.x = element_text(size=10),
-          axis.title.y = element_text(size=10),
-          axis.text.x = element_text(size=10),
-          axis.text.y = element_text(size=10),
+         legend.key.size = unit(0.25, 'cm'),
+         plot.title = element_text(size = 10, face = "bold"),
+         legend.title=element_text(size=6), 
+         legend.text=element_text(size=5),
+          axis.title.x = element_text(size=8),
+          axis.title.y = element_text(size=8),
+          axis.text.x = element_text(size=6),
+          axis.text.y = element_text(size=6),
           axis.ticks.x = element_blank(), 
           axis.ticks.y = element_blank()) +
-   labs(title = scenarios_title[[i]],
+   labs(title = panel[[i]],
         x = "Time (years)",
-        y = "Proportion of functional groups in decline category") +
-   guides(fill = guide_legend(title = "Rate of decline category"),
-          fill = guide_legend(nrow = 2))
+        y = "# Species in decline category") +
+   guides(fill = guide_legend(title = "Rate of decline category",
+                              nrow = 1)) +
+    geom_vline(xintercept=c(100,200), linetype="dotted") 
+
+
+  ggsave(file.path(manuscript_plots_folder, paste(scenario,
+                                                "decline_rate_stacked_bar_plots.png",
+                                                sep = "_")),
+       width = 14,
+       height = 9,
+       units = "cm",
+       rate_of_change_plots[[i]])
    
   rm(rate_change_data)
   
