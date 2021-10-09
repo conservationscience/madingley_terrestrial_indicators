@@ -8,6 +8,9 @@ output:
 ---
 
 #' TODO: Fix axis labels + titles on bootstrapped plots
+#' TODO: Add panel labels
+#' TODO: Change blue and red to other colours
+#' TODO: Add vector art for scenarios (lion, wildebeest, plant)
 
 ```{r setup, include=FALSE}
 
@@ -558,6 +561,8 @@ boot_plot <- ggplot(data = data) +
   }
 }
 ```
+
+# Inputs
 
 ```{r data, results=FALSE }
 
