@@ -2836,13 +2836,20 @@ for (i in seq_along(scenario_annual)) {
       # Using the formula from p 35 (Complex patterns of decline) Guidelines 
       # for Using the IUCN Red List Categories and Criteria v14 August 2019 
       mutate(decline = 1 - ave_abundance/dplyr::lag(ave_abundance, timeframe[1])) %>%
+      # Where abundance = 0, make decline value = NA
       mutate(decline = ifelse(ave_abundance == 0, NA, decline)) %>% 
       # calculate the rate of change
       # assign red list risk status based on decline 
       # Using the thresholds from p 16 Categories A2 - A4 Guidelines 
       # for Using the IUCN Red List Categories and Criteria v14 August 2019
       # https://www.iucnredlist.org/resources/redlistguidelines
+      # Category A2 is: Population reduction observed, estimated, inferred or 
+      # suspected where the causes of reduction may not have ceased/is not understood/
+      # is not reversible
       mutate(rl_status = ifelse(decline < 0.20, "LC",
+                         # NT should be used when population has declined by an 
+                         # estimated 20-25% in the 
+                         # last three generations (p 17 of categories v14 2019)
                          ifelse(decline >= 0.20 & decline < 0.30, "NT", 
                          ifelse(decline >= 0.30 & decline < 0.50, "VU",
                          ifelse(decline >= 0.50 & decline < 0.80, "EN",
