@@ -61,165 +61,7 @@ library(ggpubr)
 library(cowplot)
 library(gridExtra)
 library(gratia)
-
-```
-# Functions
-
-```{r functions, echo=FALSE, eval=FALSE}
-
-# Taken from https://gist.github.com/gavinsimpson/e73f011fdaaab4bb5a30
-
-Deriv <- function(mod, n = 200, eps = 1e-7, newdata, term) {
-    if(inherits(mod, "gamm"))
-        mod <- mod$gam
-    m.terms <- attr(terms(mod), "term.labels")
-    if(missing(newdata)) {
-        newD <- sapply(model.frame(mod)[, m.terms, drop = FALSE],
-                       function(x) seq(min(x), max(x), length = n))
-        names(newD) <- m.terms
-    } else {
-        newD <- newdata
-    }
-    newDF <- data.frame(newD) ## needs to be a data frame for predict
-    X0 <- predict(mod, newDF, type = "lpmatrix")
-    newDF <- newDF + eps
-    X1 <- predict(mod, newDF, type = "lpmatrix")
-    Xp <- (X1 - X0) / eps
-    Xp.r <- NROW(Xp)
-    Xp.c <- NCOL(Xp)
-    ## dims of bs
-    bs.dims <- sapply(mod$smooth, "[[", "bs.dim") - 1
-    ## number of smooth terms
-    t.labs <- attr(mod$terms, "term.labels")
-    ## match the term with the the terms in the model
-    if(!missing(term)) {
-        want <- grep(term, t.labs)
-        if(!identical(length(want), length(term)))
-            stop("One or more 'term's not found in model!")
-        t.labs <- t.labs[want]
-    }
-    nt <- length(t.labs)
-    ## list to hold the derivatives
-    lD <- vector(mode = "list", length = nt)
-    names(lD) <- t.labs
-    for(i in seq_len(nt)) {
-        Xi <- Xp * 0
-        want <- grep(t.labs[i], colnames(X1))
-        Xi[, want] <- Xp[, want]
-        df <- Xi %*% coef(mod)
-        df.sd <- rowSums(Xi %*% mod$Vp * Xi)^.5
-        lD[[i]] <- list(deriv = df, se.deriv = df.sd)
-    }
-    class(lD) <- "Deriv"
-    lD$gamModel <- mod
-    lD$eps <- eps
-    lD$eval <- newD - eps
-    lD ##return
-}
-
-confint.Deriv <- function(object, term, alpha = 0.05, ...) {
-    l <- length(object) - 3
-    term.labs <- names(object[seq_len(l)])
-    if(missing(term)) {
-        term <- term.labs
-    } else { ## how many attempts to get this right!?!?
-        ##term <- match(term, term.labs)
-        ##term <- term[match(term, term.labs)]
-        term <- term.labs[match(term, term.labs)]
-    }
-    if(any(miss <- is.na(term)))
-        stop(paste("'term'", term[miss], "not a valid model term."))
-    res <- vector(mode = "list", length = length(term))
-    names(res) <- term
-    residual.df <- df.residual(object$gamModel)
-    tVal <- qt(1 - (alpha/2), residual.df)
-    ##for(i in term.labs[term]) {
-    for(i in term) {
-        upr <- object[[i]]$deriv + tVal * object[[i]]$se.deriv
-        lwr <- object[[i]]$deriv - tVal * object[[i]]$se.deriv
-        res[[i]] <- list(upper = drop(upr), lower = drop(lwr))
-    }
-    res$alpha = alpha
-    res
-}
-
-signifD <- function(x, d, upper, lower, eval = 0) {
-    miss <- upper > eval & lower < eval
-    incr <- decr <- x
-    want <- d > eval
-    incr[!want | miss] <- NA
-    want <- d < eval
-    decr[!want | miss] <- NA
-    list(incr = incr, decr = decr)
-}
-
-plot.Deriv <- function(x, alpha = 0.05, polygon = TRUE,
-                       sizer = FALSE, term,
-                       eval = 0, lwd = 3,
-                       col = "lightgrey", border = col,
-                       ylab, xlab, main, ...) {
-    l <- length(x) - 3
-    ## get terms and check specified (if any) are in model
-    term.labs <- names(x[seq_len(l)])
-    if(missing(term)) {
-        term <- term.labs
-    } else {
-        term <- term.labs[match(term, term.labs)]
-    }
-    if(any(miss <- is.na(term)))
-        stop(paste("'term'", term[miss], "not a valid model term."))
-    if(all(miss))
-        stop("All terms in 'term' not found in model.")
-    l <- sum(!miss)
-    nplt <- n2mfrow(l)
-    tVal <- qt(1 - (alpha/2), df.residual(x$gamModel))
-    if(missing(ylab))
-        ylab <- expression(italic(hat(f)*"'"*(x)))
-    if(missing(xlab)) {
-        xlab <- attr(terms(x$gamModel), "term.labels")
-        names(xlab) <- xlab
-    }
-    if (missing(main)) {
-        main <- term
-        names(main) <- term
-    }
-    ## compute confidence interval
-    CI <- confint(x, term = term)
-    ## plots
-    layout(matrix(seq_len(l), nrow = nplt[1], ncol = nplt[2]))
-    for(i in term) {
-        upr <- CI[[i]]$upper
-        lwr <- CI[[i]]$lower
-        ylim <- range(upr, lwr)
-        plot(x$eval[,i], x[[i]]$deriv, type = "n",
-             ylim = ylim, ylab = ylab, xlab = xlab[i], main = main[i], ...)
-        if(isTRUE(polygon)) {
-            polygon(c(x$eval[,i], rev(x$eval[,i])),
-                    c(upr, rev(lwr)), col = col, border = border)
-        } else {
-            lines(x$eval[,i], upr, lty = "dashed")
-            lines(x$eval[,i], lwr, lty = "dashed")
-        }
-        abline(h = 0, ...)
-        if(isTRUE(sizer)) {
-            lines(x$eval[,i], x[[i]]$deriv, lwd = 1)
-            S <- signifD(x[[i]]$deriv, x[[i]]$deriv, upr, lwr,
-                         eval = eval)
-            lines(x$eval[,i], S$incr, lwd = lwd, col = "blue")
-            lines(x$eval[,i], S$decr, lwd = lwd, col = "red")
-        } else {
-            lines(x$eval[,i], x[[i]]$deriv, lwd = 2)
-        }
-    }
-    layout(1)
-    invisible(x)
-}
-
-# Using Gist from https://fromthebottomoftheheap.net/2014/05/15/identifying-periods-of-change-with-gams/
-
-
-
-
+library(kableExtra)
 
 ```
 
@@ -383,6 +225,50 @@ return(gam_plot)
 
 ```
 
+```{r compare trends}
+# Loop through each model and identify which time steps show a significant 
+# positive or negative trend
+
+compare_trends <- function(list_of_model_data) {
+
+trend_data <- list()
+
+for (j in seq_along(list_of_model_data)) {
+  
+trend_data[[j]] <- list_of_model_data[[j]] %>% 
+                   dplyr::select(annual_time_step, positive_trend, 
+                                 negative_trend) %>% 
+                   mutate(k_value = kvals[[j]],
+                          direction = ifelse(!is.na(positive_trend),
+                                             "positive",
+                                            ifelse(!is.na(negative_trend),
+                                             "negative", NA)))
+
+}
+
+# Convert  into a single data frame
+
+trend_df_all <- do.call(rbind, trend_data)
+
+# Check which time steps show a significant trend regardless of model
+# k value (ie are the robust significant changes at the expected time points?)
+
+direction_df <- trend_df_all %>% 
+                dplyr::select(annual_time_step, k_value, direction) %>% 
+                group_by(annual_time_step) %>% 
+                summarise(positive_across_all_models = sum(direction == "positive"),
+                          negative_across_all_models = sum(direction == "negative")) %>% 
+                filter(positive_across_all_models == 4|
+                       negative_across_all_models == 4) 
+
+return(direction_df)
+
+kable(direction_df)
+
+}
+
+```
+
 ```{r bootstrap selected model}
 
 bootstrap_selected_model <- function(data, model, model_data, numboots) {
@@ -520,7 +406,8 @@ second_deriv_df <- do.call(rbind, bootstrap_mod_data) %>%
 
 
 new <- model_data %>% 
-     dplyr::select(annual_time_step, observed, predicted, deviance_residuals) %>% 
+     dplyr::select(annual_time_step, observed, predicted, deviance_residuals, 
+                   indicator) %>% 
      merge(ci_df, by ="annual_time_step") %>% 
      merge(first_deriv_df, by ="annual_time_step") %>% 
      merge(second_deriv_df, by ="annual_time_step") %>% 
@@ -535,31 +422,87 @@ new <- model_data %>%
 
 plot_bootstrapped_model <- function(data){
   
+  indicator <- data$indicator[1]
+  
 if(all(is.na(data$positive_trend))) {
 
 boot_plot <- ggplot(data = data) +
-            geom_point(aes(x = annual_time_step, y = observed), alpha = 0.2) +
+    geom_rect(aes(xmin = 95, xmax = 105,
+                ymin = -Inf, ymax = Inf), col = "grey60", alpha = 0.5) +
+  #Add background shading
+  geom_rect(aes(xmin = 195, xmax = 205,
+                ymin = -Inf, ymax = Inf), col = "grey60", alpha = 0.5)+
+            geom_point(aes(x = annual_time_step, y = observed), alpha = 0.4, size = 1) +
+  geom_line(aes(x = annual_time_step, y = observed), alpha = 0.4) +
             geom_line(aes(x = annual_time_step, y = predicted)) +
-            geom_ribbon(aes(x = annual_time_step, ymin = predicted_lower, ymax = predicted_upper),
+            geom_ribbon(aes(x = annual_time_step, ymin = predicted_lower, 
+                            ymax = predicted_upper),
                         alpha = 0.3) +
             #geom_line(aes(x = annual_time_step, y = positive_trend), col = "blue") +
             #geom_line(aes(x = annual_time_step, y = negative_trend), col = "red") +
-                  theme_classic()
+                  theme_classic() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = "grey80"),
+        legend.position = "bottom",
+        legend.key.size = unit(0.25, 'cm'),
+        plot.title = element_text(size = 10, face = "bold"),
+        legend.title=element_text(size=6), 
+        legend.text=element_text(size=5),
+        axis.title.x = element_text(size=8),
+        axis.title.y = element_text(size=8),
+        axis.text.x = element_text(size=6),
+        axis.text.y = element_text(size=6),
+        axis.ticks.x = element_blank(), 
+        axis.ticks.y = element_blank()) +
+   labs(x = "Time (years)",
+        y = indicator) +
+   # guides(fill = guide_legend(title = "Rate of decline category",
+   #                            nrow = 1)) +
+    geom_vline(xintercept=c(100,200), linetype="dotted") 
   
 } else {
 
   boot_plot <- ggplot(data = data) +
-  geom_point(aes(x = annual_time_step, y = observed), alpha = 0.2) +
+      geom_rect(aes(xmin = 95, xmax = 105,
+                ymin = -Inf, ymax = Inf), col = "grey60", alpha = 0.5) +
+  #Add background shading
+  geom_rect(aes(xmin = 195, xmax = 205,
+                ymin = -Inf, ymax = Inf), col = "grey60", alpha = 0.5)+
+  geom_point(aes(x = annual_time_step, y = observed), alpha = 0.2, size = 1) + 
+  geom_line(aes(x = annual_time_step, y = observed), alpha = 0.4) +
   geom_line(aes(x = annual_time_step, y = predicted)) +
-  geom_ribbon(aes(x = annual_time_step, ymin = predicted_lower, ymax = predicted_upper),
+  geom_ribbon(aes(x = annual_time_step, ymin = predicted_lower, 
+                  ymax = predicted_upper),
               alpha = 0.3) +
-  geom_line(aes(x = annual_time_step, y = positive_trend), col = "blue") +
-  geom_line(aes(x = annual_time_step, y = negative_trend), col = "red") +
-                      theme_classic()
+  geom_line(aes(x = annual_time_step, y = positive_trend), col = "#2A788EFF") +
+  geom_line(aes(x = annual_time_step, y = negative_trend), col = "#440154FF") +
+                      theme_classic() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = "grey80"),
+        legend.position = "bottom",
+        legend.key.size = unit(0.25, 'cm'),
+        plot.title = element_text(size = 10, face = "bold"),
+        legend.title=element_text(size=6), 
+        legend.text=element_text(size=5),
+        axis.title.x = element_text(size=8),
+        axis.title.y = element_text(size=8),
+        axis.text.x = element_text(size=6),
+        axis.text.y = element_text(size=6),
+        axis.ticks.x = element_blank(), 
+        axis.ticks.y = element_blank()) +
+   labs(x = "Time (years)",
+        y = indicator) +
+   # guides(fill = guide_legend(title = "Rate of decline category",
+   #                            nrow = 1)) +
+    geom_vline(xintercept=c(100,200), linetype="dotted") 
   
   return(boot_plot)
+  
   }
 }
+
 ```
 
 # Inputs
@@ -734,6 +677,7 @@ values < 0 signify a negative trend.
 
 selected_mods <- list()
 selected_mods_data <- list()
+robust_trends <- list()
 
 i <- 4 #Ignore first 3 because they're baseline
 
@@ -789,6 +733,10 @@ lpi_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
                                  nrow = 2, align = "v")
 
 lpi_landuse_test_plots
+
+compare_trends(test_gam_data)
+
+lpi_land_use_trend <- compare_trends(test_gam_data)
 
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
@@ -849,19 +797,10 @@ rli_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
 
 rli_landuse_test_plots
 
-selected <- 2
-selected_mods[[i]] <- indicator_mods[[selected]]
-selected_mods_data[[i]] <- test_gam_data[[selected]]
 
+compare_trends(test_gam_data)
 
-
-harvested_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
-                                 test_gam_plots[[2]],
-                                 test_gam_plots[[3]],
-                                 test_gam_plots[[4]],
-                                 nrow = 2, align = "v")
-
-harvested_landuse_test_plots
+rli_landuse_trend <- compare_trends(test_gam_data)
 
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
@@ -870,7 +809,7 @@ selected_mods_data[[i]] <- test_gam_data[[selected]]
 
 ## Harvested group
 
-```{r land use rli, warnings = FALSE, message = FALSE}
+```{r havrested rli, warnings = FALSE, message = FALSE}
 
 i <- 6
 
@@ -920,6 +859,10 @@ harvested_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
                                  nrow = 2, align = "v")
 
 harvested_landuse_test_plots
+
+compare_trends(test_gam_data)
+
+harvested_landuse_trend <- compare_trends(test_gam_data)
 
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
@@ -985,6 +928,10 @@ lpi_carnivore_test_plots <- plot_grid(test_gam_plots[[1]],
 
 lpi_carnivore_test_plots
 
+compare_trends(test_gam_data)
+
+lpi_carnivore_trend <- compare_trends(test_gam_data)
+
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
 selected_mods_data[[i]] <- test_gam_data[[selected]]
@@ -1042,6 +989,10 @@ rli_carnivores_test_plots <- plot_grid(test_gam_plots[[1]],
                                  nrow = 2, align = "v")
 
 rli_carnivores_test_plots
+
+compare_trends(test_gam_data)
+
+rli_carnivore_trend <- compare_trends(test_gam_data)
 
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
@@ -1101,6 +1052,10 @@ harvested_carnivores_test_plots <- plot_grid(test_gam_plots[[1]],
                                  nrow = 2, align = "v")
 
 harvested_carnivores_test_plots
+
+compare_trends(test_gam_data)
+
+harvested_carnivore_trend <- compare_trends(test_gam_data)
 
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
@@ -1163,6 +1118,10 @@ lpi_herbivores_test_plots <- plot_grid(test_gam_plots[[1]],
 
 lpi_herbivores_test_plots
 
+compare_trends(test_gam_data)
+
+lpi_herbivore_trend <- compare_trends(test_gam_data)
+
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
 selected_mods_data[[i]] <- test_gam_data[[selected]]
@@ -1224,6 +1183,10 @@ rli_herbivores_test_plots <- plot_grid(test_gam_plots[[1]],
 
 rli_herbivores_test_plots
 
+compare_trends(test_gam_data)
+
+rli_herbivore_trend <- compare_trends(test_gam_data)
+
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
 selected_mods_data[[i]] <- test_gam_data[[selected]]
@@ -1284,6 +1247,10 @@ harvested_carnivores_test_plots <- plot_grid(test_gam_plots[[1]],
                                  nrow = 2, align = "v")
 
 harvested_carnivores_test_plots
+
+compare_trends(test_gam_data)
+
+harvested_herbivore_trend <- compare_trends(test_gam_data)
 
 selected <- 2
 selected_mods[[i]] <- indicator_mods[[selected]]
