@@ -703,7 +703,7 @@ harv_lims <- c(hamin,hamax)
 
 ```
 
-# Land use test gams
+# Baseline test gams
 ## LPI
 
 First derivatives show the rate of change in the indicator at a specific time
@@ -712,7 +712,7 @@ values < 0 signify a negative trend.
 
 "The second derivative of the trend curve I(t) at time t is a measure of the curvature of I at that time. If the second derivative is greater than zero, the curve is turning upward. If it is less than zero, the curve is turning downward. The magnitude of the second derivative signifies the tightness of the curvature. Values of approx 0 indicate the curve is linear and changing at a steady state. Years in which the second derivative is markedly different from zero are those in which something is happening to alter the rate of population change." (Fewster et al 2000)
 
-```{r land use lpi, warnings = FALSE, message = FALSE }
+```{r baseline lpi, warnings = FALSE, message = FALSE }
 
 selected_mods <- list()
 selected_mods_data <- list()
@@ -722,15 +722,237 @@ deviance_explained <- list()
 # Make first three items NULL (first 3 elements are taken up by baseline data 
 # which we aren't analysing here)
 
-robust_trends[[1]] <- NULL
-robust_trends[[2]] <- NULL
-robust_trends[[3]] <- NULL
+# robust_trends[[1]] <- NULL
+# robust_trends[[2]] <- NULL
+# robust_trends[[3]] <- NULL
+# 
+# deviance_explained[[1]] <- NULL
+# deviance_explained[[2]] <- NULL
+# deviance_explained[[3]] <- NULL
 
-deviance_explained[[1]] <- NULL
-deviance_explained[[2]] <- NULL
-deviance_explained[[3]] <- NULL
+i <- 1
 
-i <- 4 #Ignore first 3 because they're baseline
+scenario <- "Baseline"
+
+kvals <- c(10,25,50,100)
+
+ind_method <- "GCV.Cp"
+
+m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
+         select = TRUE,
+         method = ind_method,
+         data = scenario_indicator_single[[i]])
+
+m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
+          select = TRUE,
+          method = ind_method,
+          data = scenario_indicator_single[[i]])
+
+m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
+          select = TRUE,
+          method = ind_method,
+          data = scenario_indicator_single[[i]])
+
+m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
+          select = TRUE,
+          method = ind_method,
+          data = scenario_indicator_single[[i]])
+
+indicator_mods <- list(m, m1, m2, m3)
+
+# Extract observed, predicted, derivatives and plot for each test gam
+
+test_gam_data <- list()
+test_gam_plots <- list()
+residual_plots <- list()
+
+for (j in seq_along(indicator_mods)) {
+  
+plot.gam(indicator_mods[[j]], residuals = TRUE)
+
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
+
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
+
+}
+
+residual_plots
+
+lpi_baseline_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
+                                 nrow = 2, align = "v")
+
+lpi_baseline_test_plots
+
+robust_trends[[i]] <- compare_trends(test_gam_data)
+
+
+trend_years <- robust_trends[[i]] %>% 
+          filter(positive_across_all_models == 1|
+                   negative_across_all_models == 1)
+
+selected <- 1
+selected_mods[[i]] <- indicator_mods[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
+
+deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
+
+```
+
+## RLI
+
+```{r baseline rli, message=FALSE, warnings=FALSE}
+
+i <- 2
+
+m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
+         select = TRUE,
+         method = ind_method,
+         data = scenario_indicator_single[[i]])
+
+m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
+          select = TRUE,
+          method = ind_method,
+          data = scenario_indicator_single[[i]])
+
+m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
+          select = TRUE,
+          method = ind_method,
+          data = scenario_indicator_single[[i]])
+
+m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
+          select = TRUE,
+          method = ind_method,
+          data = scenario_indicator_single[[i]])
+
+indicator_mods <- list(m, m1, m2, m3)
+
+test_gam_data <- list()
+test_gam_plots <- list()
+residual_plots <- list()
+
+for (j in seq_along(indicator_mods)) {
+  
+plot.gam(indicator_mods[[j]], residuals = TRUE)
+
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
+
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
+
+}
+
+rli_baseline_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
+                                 nrow = 2, align = "v")
+
+rli_baseline_test_plots
+
+
+
+robust_trends[[i]] <- compare_trends(test_gam_data)
+
+
+trend_years <- robust_trends[[i]] %>% 
+          filter(positive_across_all_models == 1|
+                   negative_across_all_models == 1)
+
+selected <- 1
+selected_mods[[i]] <- indicator_mods[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
+
+deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
+
+```
+
+## Harvested group
+
+```{r baseline harvesed, warnings = FALSE, message = FALSE}
+
+i <- 3
+
+m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
+          select = TRUE,
+          method = ind_method,
+          data = scenario_indicator_single[[i]])
+
+m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
+          select = TRUE,
+          method = ind_method,
+          data = scenario_indicator_single[[i]])
+
+m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
+          select = TRUE,
+          method = ind_method,
+          data = scenario_indicator_single[[i]])
+
+m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
+          select = TRUE,
+          method = ind_method,
+          data = scenario_indicator_single[[i]])
+
+indicator_mods <- list(m, m1, m2, m3)
+
+test_gam_data <- list()
+test_gam_plots <- list()
+residual_plots <- list()
+
+for (j in seq_along(indicator_mods)) {
+  
+plot.gam(indicator_mods[[j]], residuals = TRUE)
+
+test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
+                               indicator_mods[[j]])
+
+test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
+
+}
+
+harvested_baseline_test_plots <- plot_grid(test_gam_plots[[1]],
+                                 test_gam_plots[[2]],
+                                 test_gam_plots[[3]],
+                                 test_gam_plots[[4]],
+                                 nrow = 2, align = "v")
+
+harvested_baseline_test_plots
+
+robust_trends[[i]] <- compare_trends(test_gam_data)
+
+
+trend_years <- robust_trends[[i]] %>% 
+          filter(positive_across_all_models == 1|
+                   negative_across_all_models == 1)
+
+selected <- 1
+selected_mods[[i]] <- indicator_mods[[selected]]
+selected_mods_data[[i]] <- test_gam_data[[selected]]
+
+deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
+
+```
+
+# Land use test gams
+## LPI
+
+```{r land use lpi, warnings = FALSE, message = FALSE }
+
+# Make first three items NULL (first 3 elements are taken up by baseline data 
+# which we aren't analysing here)
+
+# robust_trends[[1]] <- NULL
+# robust_trends[[2]] <- NULL
+# robust_trends[[3]] <- NULL
+# 
+# deviance_explained[[1]] <- NULL
+# deviance_explained[[2]] <- NULL
+# deviance_explained[[3]] <- NULL
+
+i <- 4 
 
 
 scenario <- "Land use"
@@ -1350,6 +1572,132 @@ selected_mods[[i]] <- indicator_mods[[selected]]
 selected_mods_data[[i]] <- test_gam_data[[selected]]
 
 deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
+
+```
+
+# Baseline selected model
+## LPI
+
+```{r model baseline lpi, warnings = FALSE }
+
+bootstrapped_data <- list()
+bootstrapped_plots <- list()
+
+i <- 1
+
+bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
+                                 selected_mods[[i]], 
+                                 selected_mods_data[[i]], boots) %>% 
+          merge(robust_trends[[i]], by = "annual_time_step", all = TRUE) %>% 
+          mutate(robust_positive_trend = ifelse(positive_across_all_models == 1,
+                                                predicted,NA)) %>% 
+          mutate(robust_negative_trend = ifelse(negative_across_all_models== 1,
+                                                predicted,NA))
+
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]], 
+                                                   lpi_lims)
+
+
+scenario <- scenario_indicator_single[[i]]$scenario[1]
+indicator <- scenario_indicator_single[[i]]$indicator[1]
+
+write.csv(bootstrapped_data[[i]], file.path(analysis_outputs_folder,
+                                            paste(scenario, indicator,
+                                                "bootstrapped_trends.csv",
+                                                sep = "_")))
+
+ggsave(file.path(manuscript_plots_folder, paste(scenario, indicator,
+                                                "bootstrapped_trend.png",
+                                                sep = "_")),
+       width = 10,
+       height = 5,
+       units = "cm",
+       bootstrapped_plots[[i]])
+
+bootstrapped_plots[[i]]
+
+```
+
+## RLI
+
+```{r model baseline rli, warnings = FALSE }
+
+i <- 2
+
+bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
+                                 selected_mods[[i]], 
+                                 selected_mods_data[[i]], boots)%>% 
+          merge(robust_trends[[i]], by = "annual_time_step", all = TRUE) %>% 
+          mutate(robust_positive_trend = ifelse(positive_across_all_models == 1,
+                                                predicted,NA)) %>% 
+          mutate(robust_negative_trend = ifelse(negative_across_all_models== 1,
+                                                predicted,NA))
+
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]],
+                                                   rli_lims)
+
+scenario <- scenario_indicator_single[[i]]$scenario[1]
+indicator <- scenario_indicator_single[[i]]$indicator[1]
+
+write.csv(bootstrapped_data[[i]], file.path(analysis_outputs_folder,
+                                            paste(scenario, indicator,
+                                                "bootstrapped_trends.csv",
+                                                sep = "_")))
+
+ggsave(file.path(manuscript_plots_folder, paste(scenario, indicator,
+                                                "bootstrapped_trend.png",
+                                                sep = "_")),
+       width = 10,
+       height = 5,
+       units = "cm",
+                 bootstrapped_plots[[i]])
+
+bootstrapped_plots[[i]]
+
+
+```
+
+## Harvested group
+
+```{r model baseline harvested, warnings = FALSE }
+
+i <- 3
+
+# hmax <- get_max(scenario_indicator_single[[i]], "total_abundance_harvested")
+# hmin <- get_min(scenario_indicator_single[[i]], "total_abundance_harvested")
+
+bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
+                                 selected_mods[[i]], 
+                                 selected_mods_data[[i]], boots) %>% 
+          merge(robust_trends[[i]], by = "annual_time_step", all = TRUE) %>% 
+          mutate(robust_positive_trend = ifelse(positive_across_all_models == 1,
+                                                predicted,NA)) %>% 
+          mutate(robust_negative_trend = ifelse(negative_across_all_models== 1,
+                                                predicted,NA))
+
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]],
+                                                   harv_lims)
+
+scenario <- scenario_indicator_single[[i]]$scenario[1]
+indicator <- scenario_indicator_single[[i]]$indicator[1]
+
+write.csv(bootstrapped_data[[i]], file.path(analysis_outputs_folder,
+                                            paste(scenario, indicator,
+                                                "bootstrapped_trends.csv",
+                                                sep = "_")))
+
+
+ggsave(file.path(manuscript_plots_folder, paste(scenario, indicator,
+                                                "bootstrapped_trend.png",
+                                                sep = "_")),
+       width = 10,
+       height = 5,
+       units = "cm",
+                 bootstrapped_plots[[i]])
+
+bootstrapped_plots[[i]]
+
+
 
 ```
 
