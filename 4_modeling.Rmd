@@ -69,7 +69,28 @@ library(kableExtra)
 
 ```
 
+```{r ggplot theme}
+
+boot_theme <- theme(panel.background = element_blank(),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              legend.position = "bottom",
+              legend.key.size = unit(0.25, 'cm'),
+              plot.title = element_text(size = 10, face = "bold"),
+              legend.title=element_text(size=6), 
+              legend.text=element_text(size=5),
+              axis.line = element_line(colour = "black"),
+              axis.title.x = element_text(size=8),
+              axis.title.y = element_text(size=8),
+              axis.text.x = element_text(size=8),
+              axis.text.y = element_text(size=8),
+              axis.ticks.x = element_blank(), 
+              axis.ticks.y = element_blank())
+
+```
+
 ```{r get test gam data }
+
 #' @param model - gam object
 #' @param data - the input pressure response time step data for the model
 #' @return a dataframe containing predicted, observed, first and second derivatives
@@ -85,15 +106,17 @@ observed <- data$indicator_score
 pdat1 <- data.frame(annual_time_step = seq(1,290,1))
 
 # Get predicted values for each time step
-p2 <- predict.gam(model, pdat1, 
+# p2 <- predict.gam(model, pdat1, 
+#                   se.fit = TRUE, response = TRUE)
+
+p2 <- predict(model, pdat1, 
                   se.fit = TRUE, response = TRUE)
 
 p3 <- predict.gam(model, pdat1, 
                   se.fit = TRUE)
 
 # # Get the deviance residuals
-deviance_residuals <- residuals(model, type = "working",
-                                response = TRUE)
+deviance_residuals <- residuals(model, type = "working")
 
 # fv <- predict(model,type="terms") ## get term estimates
 #      
@@ -420,165 +443,70 @@ new <- model_data %>%
 
 ```{r plot bootstrapped model}
 
-plot_bootstrapped_model <- function(data, dev_explained){
+plot_bootstrapped_model <- function(data, ylimits){
   
 indicator <- data$indicator[1]
 
-boot_theme <- theme_classic +
-        theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        legend.position = "bottom",
-        legend.key.size = unit(0.25, 'cm'),
-        plot.title = element_text(size = 10, face = "bold"),
-        legend.title=element_text(size=6), 
-        legend.text=element_text(size=5),
-        axis.title.x = element_text(size=8),
-        axis.title.y = element_text(size=8),
-        axis.text.x = element_text(size=8),
-        axis.text.y = element_text(size=8),
-        axis.ticks.x = element_blank(), 
-        axis.ticks.y = element_blank())
-  
+boot_base_plot <- ggplot(data = data) +
+                  geom_rect(aes(xmin = 95, xmax = 105,
+                                ymin = -Inf, ymax = Inf), fill = "grey70", 
+                            alpha = 0.4) +
+                  geom_rect(aes(xmin = 195, xmax = 205,
+                                ymin = -Inf, ymax = Inf), fill = "grey70", 
+                            alpha = 0.4)+
+                  geom_point(aes(x = annual_time_step, y = observed), 
+                                       alpha = 0.2, size = 1) +
+                  geom_line(aes(x = annual_time_step, y = observed), 
+                            alpha = 0.2) +
+                  geom_line(aes(x = annual_time_step, y = predicted)) +
+                  geom_ribbon(aes(x = annual_time_step, ymin = predicted_lower, 
+                                            ymax = predicted_upper),
+                                        alpha = 0.3) +
+                  labs(x = "Time (years)",
+                        y = indicator) + 
+                  geom_vline(xintercept=c(100,200), linetype = "dotted") +
+                  coord_cartesian(ylim = ylimits)
+                # + annotate("text", x = 295, y = 1.1, 
+                #            label = paste("Dev. explained =",
+                #                          dev_explained,sep = " "), 
+                #            size = 4)
+
 if(all(is.na(data$positive_trend))) {
 
-boot_plot <- ggplot(data = data) +
-    geom_rect(aes(xmin = 95, xmax = 105,
-                ymin = -Inf, ymax = Inf), fill = "grey70", alpha = 0.3) +
-  #Add background shading
-  geom_rect(aes(xmin = 195, xmax = 205,
-                ymin = -Inf, ymax = Inf), fill = "grey70", alpha = 0.3)+
-            geom_point(aes(x = annual_time_step, y = observed), alpha = 0.4, size = 1) +
-  geom_line(aes(x = annual_time_step, y = observed), alpha = 0.4) +
-  geom_line(aes(x = annual_time_step, y = predicted)) +
-  geom_ribbon(aes(x = annual_time_step, ymin = predicted_lower, 
-                            ymax = predicted_upper),
-                        alpha = 0.3) +
-   geom_line(aes(x = annual_time_step, y = negative_trend), col = "#440154FF") +
-                   theme_classic() +
-   annotate("text", x = 295, y = 1.1, label = paste("Dev. explained =",
-                                                    dev_explained, 
-                                                    sep = " "), size = 4) +
-  theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        legend.position = "bottom",
-        legend.key.size = unit(0.25, 'cm'),
-        plot.title = element_text(size = 10, face = "bold"),
-        legend.title=element_text(size=6), 
-        legend.text=element_text(size=5),
-        axis.title.x = element_text(size=8),
-        axis.title.y = element_text(size=8),
-        axis.text.x = element_text(size=6),
-        axis.text.y = element_text(size=6),
-        axis.ticks.x = element_blank(), 
-        axis.ticks.y = element_blank()) +
-    labs(x = "Time (years)",
-        y = indicator) +
-    geom_vline(xintercept=c(100,200), linetype="dotted") 
+boot_plot <-  boot_base_plot +
+              geom_line(aes(x = annual_time_step, y = negative_trend), 
+                        col = "#440154FF") +
+              boot_theme 
   
 } else if(all(is.na(data$robust_positive_trend))) {
 
-boot_plot <- ggplot(data = data) +
-    geom_rect(aes(xmin = 95, xmax = 105,
-                ymin = -Inf, ymax = Inf), fill = "grey70", alpha = 0.3) +
-  #Add background shading
-  geom_rect(aes(xmin = 195, xmax = 205,
-                ymin = -Inf, ymax = Inf), fill = "grey70", alpha = 0.3)+
-            geom_point(aes(x = annual_time_step, y = observed), alpha = 0.4, size = 1) +
-  geom_line(aes(x = annual_time_step, y = observed), alpha = 0.4) +
-  geom_line(aes(x = annual_time_step, y = predicted)) +
-  geom_ribbon(aes(x = annual_time_step, ymin = predicted_lower, 
-                            ymax = predicted_upper),
-                        alpha = 0.3) +
-  geom_line(aes(x = annual_time_step, y = positive_trend), col = "#2A788EFF") +
+boot_plot <- boot_base_plot +
+   geom_line(aes(x = annual_time_step, y = positive_trend), col = "#2A788EFF") +
   geom_line(aes(x = annual_time_step, y = negative_trend), col = "#440154FF") +
-  geom_line(aes(x = annual_time_step, y = robust_negative_trend), col = "#440154FF", size = 2) +
-   annotate("text", x = 295, y = 1.1, label = paste("Dev. explained =",
-                                                    dev_explained, 
-                                                    sep = " "), size = 6) +
-                    theme_classic() +
-  theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        legend.position = "bottom",
-        legend.key.size = unit(0.25, 'cm'),
-        plot.title = element_text(size = 10, face = "bold"),
-        legend.title=element_text(size=6), 
-        legend.text=element_text(size=5),
-        axis.title.x = element_text(size=8),
-        axis.title.y = element_text(size=8),
-        axis.text.x = element_text(size=6),
-        axis.text.y = element_text(size=6),
-        axis.ticks.x = element_blank(), 
-        axis.ticks.y = element_blank()) +
-   labs(x = "Time (years)",
-        y = indicator) +
-   # guides(fill = guide_legend(title = "Rate of decline category",
-   #                            nrow = 1)) +
-    geom_vline(xintercept=c(100,200), linetype="dotted") 
+  geom_line(aes(x = annual_time_step, y = robust_negative_trend), 
+            col = "#440154FF", size = 2) +
+  boot_theme  
+ 
   
 } else if (all(is.na(data$robust_negative_trend))) {
 
-boot_plot <- ggplot(data = data) +
-    geom_rect(aes(xmin = 95, xmax = 105,
-                ymin = -Inf, ymax = Inf), fill = "grey70", alpha = 0.3) +
-  #Add background shading
-  geom_rect(aes(xmin = 195, xmax = 205,
-                ymin = -Inf, ymax = Inf), fill = "grey70", alpha = 0.3)+
-            geom_point(aes(x = annual_time_step, y = observed), alpha = 0.4, size = 1) +
-  geom_line(aes(x = annual_time_step, y = observed), alpha = 0.4) +
-  geom_line(aes(x = annual_time_step, y = predicted)) +
-  geom_ribbon(aes(x = annual_time_step, ymin = predicted_lower, 
-                            ymax = predicted_upper),
-                        alpha = 0.3) +
-                   theme_classic() +
+boot_plot <- boot_base_plot +
    geom_line(aes(x = annual_time_step, y = positive_trend), col = "#2A788EFF") +
   geom_line(aes(x = annual_time_step, y = negative_trend), col = "#440154FF") +
-  geom_line(aes(x = annual_time_step, y = robust_positive_trend), col = "#2A788EFF", size = 2) +
-   annotate("text", x = 295, y = 1.1, label = paste("Dev. explained =",
-                                                    dev_explained, 
-                                                    sep = " "), size = 6) +
-  theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        legend.position = "bottom",
-        legend.key.size = unit(0.25, 'cm'),
-        plot.title = element_text(size = 10, face = "bold"),
-        legend.title=element_text(size=6), 
-        legend.text=element_text(size=5),
-        axis.title.x = element_text(size=8),
-        axis.title.y = element_text(size=8),
-        axis.text.x = element_text(size=6),
-        axis.text.y = element_text(size=6),
-        axis.ticks.x = element_blank(), 
-        axis.ticks.y = element_blank()) +
-   labs(x = "Time (years)",
-        y = indicator) +
-   # guides(fill = guide_legend(title = "Rate of decline category",
-   #                            nrow = 1)) +
-    geom_vline(xintercept=c(100,200), linetype="dotted") 
-  
+  geom_line(aes(x = annual_time_step, y = robust_positive_trend), 
+            col = "#2A788EFF", size = 2) +
+  boot_theme 
+ 
 } else {
 
-  boot_plot <- ggplot(data = data) +
-      geom_rect(aes(xmin = 95, xmax = 105,
-                ymin = -Inf, ymax = Inf), fill = "grey70", alpha = 0.3) +
-  #Add background shading
-  geom_rect(aes(xmin = 195, xmax = 205,
-                ymin = -Inf, ymax = Inf), fill = "grey70", alpha = 0.3)+
-  geom_point(aes(x = annual_time_step, y = observed), alpha = 0.2, size = 1) + 
-  geom_line(aes(x = annual_time_step, y = observed), alpha = 0.4) +
-  geom_line(aes(x = annual_time_step, y = predicted)) +
-  geom_ribbon(aes(x = annual_time_step, ymin = predicted_lower, 
-                  ymax = predicted_upper),
-              alpha = 0.3) +
+  boot_plot <- boot_base_plot +
   geom_line(aes(x = annual_time_step, y = positive_trend), col = "#2A788EFF") +
   geom_line(aes(x = annual_time_step, y = negative_trend), col = "#440154FF") +
-  geom_line(aes(x = annual_time_step, y = robust_positive_trend), col = "#2A788EFF", size = 2) +
-  geom_line(aes(x = annual_time_step, y = robust_negative_trend), col = "#440154FF", size = 2) +
-  annotate("text", x = 295, y = 1.2, label = paste("Dev. explained =",
-                                                    dev_explained, 
-                                                    sep = " "), size = 6) +
-  labs(x = "Time (years)", y = indicator) +
-  geom_vline(xintercept=c(100,200), linetype="dotted") +
-  boot_theme
+  geom_line(aes(x = annual_time_step, y = robust_positive_trend), 
+            col = "#2A788EFF", size = 2) +
+  geom_line(aes(x = annual_time_step, y = robust_negative_trend), 
+            col = "#440154FF", size = 2) +
+  boot_theme 
   
   return(boot_plot)
   
@@ -609,7 +537,7 @@ input_date <- "2021-09-30"
 
 # Specify how many bootstraps you want to use
 
-boots <- 400
+boots <- 1
 
 # Get date to label outputs
 
@@ -741,8 +669,37 @@ scenario_indicator_single <- split(indicators_all_df, indicators_all_df$scenario
 
 # Make a test df of one scenario, one indicator for building loop content
 
-test_df <- scenario_indicators[[2]] %>% 
-           filter(indicator == "LPI")
+test_df <- indicators_all_df %>% 
+           filter(indicator == "total abundance harvested") %>% 
+           filter(scenario != "000_Baseline")
+
+# Get the ylimits for indicator plots
+
+# Specify y - limits of indicators
+
+df <- indicators_all_df %>% 
+      dplyr::filter(indicator  == "RLI annual") %>% 
+      filter(scenario != "000_Baseline")
+
+rlmin <- min(df$indicator_score) 
+rlmax <- max(df$indicator_score)
+rli_lims <- c(rlmin,rlmax)
+
+df <- indicators_all_df %>% 
+      dplyr::filter(indicator  == "LPI") %>% 
+      filter(scenario != "000_Baseline")
+
+lpmin <- min(df$indicator_score)
+lpmax <- max(df$indicator_score)
+lpi_lims <- c(lpmin,lpmax)
+
+df <- indicators_all_df %>% 
+      dplyr::filter(indicator  == "total abundance harvested") %>% 
+      filter(scenario != "000_Baseline")
+
+hamin <- min(df$indicator_score)
+hamax <- max(df$indicator_score)
+harv_lims <- c(hamin,hamax)
 
 ```
 
@@ -778,26 +735,28 @@ i <- 4 #Ignore first 3 because they're baseline
 
 scenario <- "Land use"
 
-kvals <- c(4,10,50,100)
+kvals <- c(10,25,50,100)
+
+ind_method <- "GCV.Cp"
 
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
-          select = TRUE,
-          method = "REML",
-          data = scenario_indicator_single[[i]])
+         select = TRUE,
+         method = ind_method,
+         data = scenario_indicator_single[[i]])
 
 m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 indicator_mods <- list(m, m1, m2, m3)
@@ -836,9 +795,7 @@ trend_years <- robust_trends[[i]] %>%
           filter(positive_across_all_models == 1|
                    negative_across_all_models == 1)
 
-kable(trend_years)
-
-selected <- 2
+selected <- 1
 selected_mods[[i]] <- indicator_mods[[selected]]
 selected_mods_data[[i]] <- test_gam_data[[selected]]
 
@@ -852,26 +809,24 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 
 i <- 5
 
-kvals <- c(4,10,50,100)
-
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
-          select = TRUE,
-          method = "GCV.Cp",
-          data = scenario_indicator_single[[i]])
+         select = TRUE,
+         method = ind_method,
+         data = scenario_indicator_single[[i]])
 
 m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
           select = TRUE,
-          method = "GCV.Cp",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
           select = TRUE,
-          method = "GCV.Cp",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
           select = TRUE,
-          method = "GCV.Cp",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 indicator_mods <- list(m, m1, m2, m3)
@@ -908,9 +863,7 @@ trend_years <- robust_trends[[i]] %>%
           filter(positive_across_all_models == 1|
                    negative_across_all_models == 1)
 
-kable(trend_years)
-
-selected <- 2
+selected <- 1
 selected_mods[[i]] <- indicator_mods[[selected]]
 selected_mods_data[[i]] <- test_gam_data[[selected]]
 
@@ -924,26 +877,24 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 
 i <- 6
 
-kvals <- c(4,10,50,100)
-
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 indicator_mods <- list(m, m1, m2, m3)
@@ -978,9 +929,7 @@ trend_years <- robust_trends[[i]] %>%
           filter(positive_across_all_models == 1|
                    negative_across_all_models == 1)
 
-kable(trend_years)
-
-selected <- 2
+selected <- 1
 selected_mods[[i]] <- indicator_mods[[selected]]
 selected_mods_data[[i]] <- test_gam_data[[selected]]
 
@@ -998,26 +947,25 @@ i <- 7
 
 scenario <- "Harvesting carnivores"
 
-kvals <- c(4,10,50,100)
 
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 indicator_mods <- list(m, m1, m2, m3)
@@ -1054,9 +1002,7 @@ trend_years <- robust_trends[[i]] %>%
           filter(positive_across_all_models == 1|
                    negative_across_all_models == 1)
 
-kable(trend_years)
-
-selected <- 2
+selected <- 1
 selected_mods[[i]] <- indicator_mods[[selected]]
 selected_mods_data[[i]] <- test_gam_data[[selected]]
 
@@ -1070,26 +1016,24 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 
 i <- 8 
 
-kvals <- c(4,10,50,100)
-
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 indicator_mods <- list(m, m1, m2, m3)
@@ -1125,9 +1069,7 @@ trend_years <- robust_trends[[i]] %>%
           filter(positive_across_all_models == 1|
                    negative_across_all_models == 1)
 
-kable(trend_years)
-
-selected <- 2
+selected <- 1
 selected_mods[[i]] <- indicator_mods[[selected]]
 selected_mods_data[[i]] <- test_gam_data[[selected]]
 
@@ -1141,26 +1083,24 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 
 i <- 9
 
-kvals <- c(4,10,50,100)
-
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 indicator_mods <- list(m, m1, m2, m3)
@@ -1196,9 +1136,7 @@ trend_years <- robust_trends[[i]] %>%
           filter(positive_across_all_models == 1|
                    negative_across_all_models == 1)
 
-kable(trend_years)
-
-selected <- 2
+selected <- 1
 selected_mods[[i]] <- indicator_mods[[selected]]
 selected_mods_data[[i]] <- test_gam_data[[selected]]
 
@@ -1215,26 +1153,24 @@ i <- 10
 
 scenario <- "Harvesting herbivores"
 
-kvals <- c(4,10,50,100)
-
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 indicator_mods <- list(m, m1, m2, m3)
@@ -1268,9 +1204,8 @@ robust_trends[[i]] <- compare_trends(test_gam_data)
 trend_years <- robust_trends[[i]] %>% 
           filter(positive_across_all_models == 1|
                    negative_across_all_models == 1)
-kable(trend_years)
 
-selected <- 2
+selected <- 1
 selected_mods[[i]] <- indicator_mods[[selected]]
 selected_mods_data[[i]] <- test_gam_data[[selected]]
 
@@ -1284,26 +1219,24 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 
 i <- 11
 
-kvals <- c(4,10,50,100)
-
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 indicator_mods <- list(m, m1, m2, m3)
@@ -1341,9 +1274,8 @@ trend_years <- robust_trends[[i]] %>%
           filter(positive_across_all_models == 1|
                    negative_across_all_models == 1)
 
-kable(trend_years)
 
-selected <- 2
+selected <- 1
 selected_mods[[i]] <- indicator_mods[[selected]]
 selected_mods_data[[i]] <- test_gam_data[[selected]]
 
@@ -1357,26 +1289,24 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 
 i <- 12 
 
-kvals <- c(4,10,50,100)
-
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 m3 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[4]]),
           select = TRUE,
-          method = "REML",
+          method = ind_method,
           data = scenario_indicator_single[[i]])
 
 indicator_mods <- list(m, m1, m2, m3)
@@ -1415,9 +1345,7 @@ trend_years <- robust_trends[[i]] %>%
                    negative_across_all_models == 1)
 
 
-kable(trend_years)
-
-selected <- 2
+selected <- 1
 selected_mods[[i]] <- indicator_mods[[selected]]
 selected_mods_data[[i]] <- test_gam_data[[selected]]
 
@@ -1445,7 +1373,7 @@ bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]
                                                 predicted,NA))
 
 bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]], 
-                                                   deviance_explained[[i]])
+                                                   lpi_lims)
 
 
 scenario <- scenario_indicator_single[[i]]$scenario[1]
@@ -1483,7 +1411,8 @@ bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]
           mutate(robust_negative_trend = ifelse(negative_across_all_models== 1,
                                                 predicted,NA))
 
-bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]],
+                                                   rli_lims)
 
 scenario <- scenario_indicator_single[[i]]$scenario[1]
 indicator <- scenario_indicator_single[[i]]$indicator[1]
@@ -1512,6 +1441,9 @@ bootstrapped_plots[[i]]
 
 i <- 6
 
+# hmax <- get_max(scenario_indicator_single[[i]], "total_abundance_harvested")
+# hmin <- get_min(scenario_indicator_single[[i]], "total_abundance_harvested")
+
 bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
                                  selected_mods[[i]], 
                                  selected_mods_data[[i]], boots) %>% 
@@ -1521,7 +1453,8 @@ bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]
           mutate(robust_negative_trend = ifelse(negative_across_all_models== 1,
                                                 predicted,NA))
 
-bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]],
+                                                   harv_lims)
 
 scenario <- scenario_indicator_single[[i]]$scenario[1]
 indicator <- scenario_indicator_single[[i]]$indicator[1]
@@ -1562,7 +1495,8 @@ bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]
           mutate(robust_negative_trend = ifelse(negative_across_all_models== 1,
                                                 predicted,NA))
 
-bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]],
+                                                   lpi_lims)
 
 scenario <- scenario_indicator_single[[i]]$scenario[1]
 indicator <- scenario_indicator_single[[i]]$indicator[1]
@@ -1600,7 +1534,8 @@ bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]
           mutate(robust_negative_trend = ifelse(negative_across_all_models== 1,
                                                 predicted,NA))
 
-bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]],
+                                                   rli_lims)
 
 scenario <- scenario_indicator_single[[i]]$scenario[1]
 indicator <- scenario_indicator_single[[i]]$indicator[1]
@@ -1628,6 +1563,14 @@ bootstrapped_plots[[i]]
 
 i <- 9
 
+df <- indicators_all_df %>% 
+      dplyr::filter(indicator  == "total abundance harvested") %>% 
+      filter(scenario == "200_Harvesting_carnivores")
+
+hmin <- min(df$indicator_score)
+hmax <- max(df$indicator_score)
+
+
 bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
                                  selected_mods[[i]], 
                                  selected_mods_data[[i]], boots) %>% 
@@ -1637,7 +1580,8 @@ bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]
           mutate(robust_negative_trend = ifelse(negative_across_all_models== 1,
                                                 predicted,NA))
 
-bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]],
+                                                   c(hmin,hmax))
 
 scenario <- scenario_indicator_single[[i]]$scenario[1]
 indicator <- scenario_indicator_single[[i]]$indicator[1]
@@ -1676,7 +1620,8 @@ bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]
           mutate(robust_negative_trend = ifelse(negative_across_all_models== 1,
                                                 predicted,NA))
 
-bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]],
+                                                   lpi_lims)
 
 scenario <- scenario_indicator_single[[i]]$scenario[1]
 indicator <- scenario_indicator_single[[i]]$indicator[1]
@@ -1714,7 +1659,8 @@ bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]
           mutate(robust_negative_trend = ifelse(negative_across_all_models== 1,
                                                 predicted,NA))
 
-bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]],
+                                                   rli_lims)
 
 scenario <- scenario_indicator_single[[i]]$scenario[1]
 indicator <- scenario_indicator_single[[i]]$indicator[1]
@@ -1742,6 +1688,9 @@ bootstrapped_plots[[i]]
 
 i <- 12 
 
+# hmax <- get_max(scenario_indicator_single[[i]], "total_abundance_harvested")
+# hmin <- get_min(scenario_indicator_single[[i]], "total_abundance_harvested")
+
 bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
                                  selected_mods[[i]], 
                                  selected_mods_data[[i]], boots) %>% 
@@ -1751,7 +1700,8 @@ bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]
           mutate(robust_negative_trend = ifelse(negative_across_all_models== 1,
                                                 predicted,NA))
 
-bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]])
+bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]],
+                                                   harv_lims)
 
 scenario <- scenario_indicator_single[[i]]$scenario[1]
 indicator <- scenario_indicator_single[[i]]$indicator[1]
