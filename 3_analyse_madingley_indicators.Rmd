@@ -933,11 +933,11 @@ for(i in seq_along(scenario_species_abundance)) {
     
     fg_plots[[j]] <- ggplot(split_data[[j]], 
                             aes(x = annual_time_step, 
-                                y = mass_range_kg,
+                                y = group_id,
                                 height = density,
-                                group = mass_range_kg,
-                                color = mass_range_kg,
-                                fill = mass_range_kg)) + 
+                                group = group_id,
+                                color = group_id,
+                                fill = group_id)) + 
       geom_density_ridges(stat = "identity", scale = 1, alpha = 0.6) +
       theme_classic() +
       theme(panel.background = element_rect(fill = "snow2"),
@@ -961,7 +961,7 @@ for(i in seq_along(scenario_species_abundance)) {
   
 }
 
-scenario_species_abundance_plots[[1]][[1]]
+scenario_species_abundance_plots[[1]][[4]]
 ```
 
 # Baseline - Species density over time
@@ -988,7 +988,7 @@ ggsave(file.path(supporting_info_plots_folder, "baseline_spp_density.pdf"),
        bl_spp_density,  width = 10, height = 18, dpi = 300, 
        units = "in",device = "pdf")
 
-scenario_species_abundance_plots[[1]][[1]]
+scenario_species_abundance_plots[[1]][[5]]
 
 ```
 
@@ -1088,9 +1088,11 @@ scenario_important_abundance[[i]] <-  subset_data %>%
       merge(important_list[[i]][c("group_id", "reason")], by = "group_id") %>% 
       mutate(scenario = important_list[[i]]$scenario[1]) %>% 
       ungroup(.) %>% 
-      dplyr::select(annual_time_step, group_id, ave_abundance, scenario, reason) %>% 
+      dplyr::select(annual_time_step, group_id, ave_abundance, scenario, reason,
+                    rl_status) %>% 
       distinct(.) %>% 
-      mutate(indicator_score = ave_abundance,
+      group_by(group_id) %>% 
+      mutate(indicator_score = standardize(ave_abundance),
              indicator = reason,
              ci_lower = NA,
              ci_upper = NA,
@@ -1103,7 +1105,8 @@ scenario_important_abundance[[i]] <-  subset_data %>%
                     ci_upper,
                     indicator,
                     replicate,
-                    scenario) %>% 
+                    scenario,
+                    rl_status) %>% 
       distinct(.)
 
 }
@@ -1111,6 +1114,62 @@ scenario_important_abundance[[i]] <-  subset_data %>%
 test <- scenario_important_abundance[[2]]
 
 saveRDS(scenario_important_abundance, file.path(analysis_inputs, input_date, "scenario_important_group_abundance.rds"))
+
+```
+
+# Plot red list status of important groups
+
+```{r rli status plots}
+
+rl_status_change_plots <- list()
+
+for (i in seq_along(scenario_important_abundance)) {
+  
+data <- scenario_important_abundance[[i]] %>% 
+        filter(indicator == "harvested group")
+
+rl_status_fac <- factor(data$rl_status,
+      levels = c("LC", "NT", "VU", "EN", "CR", "EX"))
+  
+data2 <- cbind(data,
+         rl_status_fac = rl_status_fac)
+
+if(scenario_important_abundance[[i]]$scenario[1] == "000_Baseline") {
+  
+  rl_status_change_plots[[i]] <- ggplot(data2, aes(annual_time_step,indicator_score,
+                 col = rl_status_fac, group = group_id)) +
+  geom_line() +
+  theme(legend.position = "bottom") +
+  facet_wrap(~ indicator, nrow = 3) +
+  scale_colour_viridis_d(option = "plasma") +
+  geom_vline(xintercept=c(100,200), linetype="dotted")+
+  plot_theme
+
+  
+} else if(scenario_important_abundance[[i]]$scenario[1] == "100_Land_use") {
+  
+  rl_status_change_plots[[i]] <- NULL
+  
+} else {
+
+rl_status_change_plots[[i]] <- ggplot(data2, aes(annual_time_step,indicator_score,
+                 col = rl_status_fac, group = group_id)) +
+  geom_line() +
+  theme(legend.position = "bottom") +
+  facet_wrap(~ indicator, nrow = 3) +
+  scale_colour_viridis_d(option = "plasma") +
+  facet_wrap( ~ group_id, nrow = 2) +
+  geom_vline(xintercept=c(100,200), linetype="dotted") +
+  plot_theme
+
+  }
+}
+
+rl_status_change_plots[[1]]
+rl_status_change_plots[[2]]
+rl_status_change_plots[[3]]
+rl_status_change_plots[[4]]
+
 
 ```
 
