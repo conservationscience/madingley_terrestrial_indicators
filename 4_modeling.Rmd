@@ -430,11 +430,11 @@ second_deriv_df <- do.call(rbind, bootstrap_mod_data) %>%
 
 new <- model_data %>% 
      dplyr::select(annual_time_step, observed, predicted, deviance_residuals, 
-                   indicator) %>% 
+                   indicator, scenario, kvalue) %>% 
      merge(ci_df, by ="annual_time_step") %>% 
      merge(first_deriv_df, by ="annual_time_step") %>% 
-     merge(second_deriv_df, by ="annual_time_step") %>% 
-     merge(model_data[c("annual_time_step", "kvalue")], by = "annual_time_step")
+     merge(second_deriv_df, by ="annual_time_step") #%>% 
+    # merge(model_data[c("annual_time_step", "kvalue")], by = "annual_time_step")
 
 }
 
@@ -1663,8 +1663,12 @@ bootstrapped_plots[[i]]
 
 i <- 3
 
-# hmax <- get_max(scenario_indicator_single[[i]], "total_abundance_harvested")
-# hmin <- get_min(scenario_indicator_single[[i]], "total_abundance_harvested")
+df <- indicators_all_df %>% 
+      dplyr::filter(indicator  == "total abundance harvested") %>% 
+      filter(scenario == "000_Baseline")
+
+hmin <- min(df$indicator_score)
+hmax <- max(df$indicator_score)
 
 bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]],
                                  selected_mods[[i]], 
@@ -1676,7 +1680,7 @@ bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]
                                                 predicted,NA))
 
 bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]],
-                                                   harv_lims)
+                                                   c(hmin, hmax))
 
 scenario <- scenario_indicator_single[[i]]$scenario[1]
 indicator <- scenario_indicator_single[[i]]$indicator[1]
@@ -2072,34 +2076,19 @@ bootstrapped_plots[[i]]
 
 ```
 
+# Get periods of change
 
-```{r prep gam inputs, results=FALSE }
+```{r periods of change, results=FALSE }
 
-# * LPI ----
-# *** Prep inputs ----
-
-unique(indicators_all_df$indicator)
-unique(indicators_all_df$scenario)
-ind <- "LPI"
-scen <- "100_Land_use"
-
-response <- indicators_all_df %>% 
-  filter(indicator == ind) %>% 
-  filter(scenario == scen) %>% 
-  dplyr::select(annual_time_step, indicator_score)
-
-predictor <- indicators_all_df %>% 
-  filter(indicator == "total abundance harvested") %>% 
-  filter(scenario == scen) %>% 
-  mutate(indicator_score_std = exp(indicator_score_std)) %>% 
-  rename(pressure_var_c = indicator_score_std,
-         pressure_var_f = disturbance_factor) %>% 
-  dplyr::select(annual_time_step, pressure_var_c, pressure_var_f,
-                years_since_disturbance, disturbance_phase)
-
-
-pr_gam_inputs <- response %>% 
-  merge(predictor, by = "annual_time_step")
+all_boot_data <- do.call(rbind, bootstrapped_data) %>% 
+                 dplyr::select(annual_time_step, scenario, indicator,
+                               robust_positive_trend, robust_negative_trend) %>%
+                 filter_at(vars(robust_positive_trend,
+                                robust_negative_trend),any_vars(!is.na(.)))
+test <- all_boot_data %>% 
+        filter(scenario == "100_Land_use") %>% 
+        pivot_wider(names_from = indicator,
+                    values_from = robust_positive_trend)
 
 
 
