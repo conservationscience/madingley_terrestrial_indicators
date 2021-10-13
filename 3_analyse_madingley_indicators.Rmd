@@ -35,6 +35,7 @@ have values for:
 --- Replicates (25)
 
 #' TODO: Add impact lines to everything
+#' TODO: Move the important groups code to the indicator calculation script
 
 ```{r libraries}
 
@@ -49,8 +50,6 @@ library(changepoint)
 library(MASS)
 library(strucchange)
 library(datawizard)
-#devtools::install_github("saskiaotto/INDperform")
-library(INDperform)
 library(arules)
 
 ## Viz
@@ -60,7 +59,7 @@ library(gridExtra)
 
 ```
 
-```{r bin_rates_of_change, echo=FALSE, eval=FALSE}
+```{r bin_rates_of_change, echo=FALSE}
 
 #' Description
 
@@ -133,6 +132,25 @@ return(dt_bins)
 }
 ```
 
+```{r ggplot theme}
+
+plot_theme <- theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_rect(fill = "grey80"),
+          legend.position = "bottom",
+         legend.key.size = unit(0.25, 'cm'),
+         plot.title = element_text(size = 10, face = "bold"),
+         legend.title=element_text(size=6), 
+         legend.text=element_text(size=5),
+          axis.title.x = element_text(size=8),
+          axis.title.y = element_text(size=8),
+          axis.text.x = element_text(size=6),
+          axis.text.y = element_text(size=6),
+          axis.ticks.x = element_blank(), 
+          axis.ticks.y = element_blank())
+
+```
+
 ```{r template chunk }
 
 ```
@@ -192,14 +210,14 @@ if( !dir.exists( file.path(analysis_outputs_folder) ) ) {
   
 }
 
-analysis_plots_folder <- file.path(indicators_project, 
-                                     "/Serengeti/Outputs_from_analysis_code/Analysis_plots_folder",
-                                   output_date)
-
-if( !dir.exists( file.path(analysis_plots_folder) ) ) {
-  dir.create( file.path(analysis_plots_folder), recursive = TRUE )
-  
-}
+# analysis_plots_folder <- file.path(indicators_project, 
+#                                      "/Serengeti/Outputs_from_analysis_code/Analysis_plots_folder",
+#                                    output_date)
+# 
+# if( !dir.exists( file.path(analysis_plots_folder) ) ) {
+#   dir.create( file.path(analysis_plots_folder), recursive = TRUE )
+#   
+# }
 
 manuscript_plots_folder <- file.path(indicators_project, 
                                      "/Serengeti/Outputs_from_analysis_code/manuscript_plots_folder",
@@ -239,9 +257,18 @@ scenarios <- unique(indicators_all_df$scenario)
 write.csv(indicators_all_df, file.path(analysis_inputs_folder,
                                        paste(output_date, "input_data.csv",
                                              sep = "_")))
+# disable scientific notation
+
+options(scipen = 999)
+
+# Get group information
+
+groups <- read.csv(file.path(analysis_inputs, input_date, "groups.csv"))
+
 # Load red list data
 
-scenario_redlist_data_sampled <- readRDS(file.path(analysis_inputs, input_date, "scenario_redlist_data_annual_7.rds"))
+scenario_redlist_data_sampled_raw <- readRDS(file.path(analysis_inputs, input_date, "scenario_redlist_data_annual_7.rds"))
+
 ```
 
 ```{r prep data}
@@ -291,6 +318,25 @@ scenario_indicator_single <- split(indicators_all_df,
 
 test_df <- scenario_indicators[[2]] %>% 
            filter(indicator == "LPI")
+
+# Add range massbins to the spp data
+
+
+temp <- groups %>% 
+        dplyr::select(group_id, mass_lower, mass_upper) %>% 
+        mutate(mass_lower_kg = mass_lower/1000,
+               mass_upper_kg = mass_upper/1000,
+               mass_range_kg = paste(mass_lower_kg, mass_upper_kg, sep = "-"))
+
+for(i in seq_along(scenario_redlist_data_sampled_raw)) {
+  
+
+scenario_redlist_data_sampled[[i]] <- scenario_redlist_data_sampled_raw[[i]] %>% 
+         merge(temp[c("group_id", "mass_range_kg")], by = "group_id")
+
+}
+
+rm(temp, scenario_redlist_data_sampled_raw)
 
 ```
 
@@ -644,8 +690,7 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
           axis.text.y = element_text(size=6),
           axis.ticks.x = element_blank(), 
           axis.ticks.y = element_blank()) +
-   labs(title = panel[[i]],
-        x = "Time (years)",
+   labs(x = "Time (years)",
         y = "# species in Red List category") +
    guides(fill=guide_legend(title="Red List Status", nrow = 1)) +
   geom_vline(xintercept=c(100,200), linetype="dotted") 
@@ -704,26 +749,12 @@ rate_of_change_plots[[i]] <- ggplot(plot_data,
                                         fill = dt_bins)) +
     geom_area(position="stack", stat="identity", alpha = 0.7) +
     scale_fill_viridis_d(option = "plasma") +
-    theme(panel.grid.major = element_blank(),
-          panel.grid.minor = element_blank(),
-          panel.background = element_rect(fill = "grey80"),
-          legend.position = "bottom",
-         legend.key.size = unit(0.25, 'cm'),
-         plot.title = element_text(size = 10, face = "bold"),
-         legend.title=element_text(size=6), 
-         legend.text=element_text(size=5),
-          axis.title.x = element_text(size=8),
-          axis.title.y = element_text(size=8),
-          axis.text.x = element_text(size=6),
-          axis.text.y = element_text(size=6),
-          axis.ticks.x = element_blank(), 
-          axis.ticks.y = element_blank()) +
-   labs(title = panel[[i]],
-        x = "Time (years)",
+   labs(x = "Time (years)",
         y = "# Species in decline category") +
    guides(fill = guide_legend(title = "Rate of decline category",
                               nrow = 1)) +
-    geom_vline(xintercept=c(100,200), linetype="dotted") 
+    geom_vline(xintercept=c(100,200), linetype="dotted") +
+  plot_theme
 
 
   ggsave(file.path(manuscript_plots_folder, paste(scenario,
@@ -879,7 +910,8 @@ for ( i in seq_along(scenario_redlist_data_sampled)) {
                   replicate,
                   group_id,
                   functional_group_name,
-                  scenario) %>% 
+                  scenario,
+                  mass_range_kg) %>% 
     distinct(.) %>%
     group_by(group_id)  %>% 
     mutate(indicator_score = indicator_score/first(indicator_score),
@@ -901,12 +933,12 @@ for(i in seq_along(scenario_species_abundance)) {
     
     fg_plots[[j]] <- ggplot(split_data[[j]], 
                             aes(x = annual_time_step, 
-                                y = group_id,
+                                y = mass_range_kg,
                                 height = density,
-                                group = group_id,
-                                color = group_id,
-                                fill = group_id)) + 
-      geom_density_ridges(stat = "identity", scale = 3, alpha = 0.6) +
+                                group = mass_range_kg,
+                                color = mass_range_kg,
+                                fill = mass_range_kg)) + 
+      geom_density_ridges(stat = "identity", scale = 1, alpha = 0.6) +
       theme_classic() +
       theme(panel.background = element_rect(fill = "snow2"),
             legend.position = "none",
@@ -928,6 +960,8 @@ for(i in seq_along(scenario_species_abundance)) {
   scenario_species_abundance_plots[[i]] <- fg_plots
   
 }
+
+scenario_species_abundance_plots[[1]][[1]]
 ```
 
 # Baseline - Species density over time
@@ -950,9 +984,11 @@ bl_spp_density <- plot_grid(title, title2,
 
 bl_spp_density
 
-ggsave(file.path(analysis_plots_folder, "baseline_spp_density.pdf"),
+ggsave(file.path(supporting_info_plots_folder, "baseline_spp_density.pdf"),
        bl_spp_density,  width = 10, height = 18, dpi = 300, 
        units = "in",device = "pdf")
+
+scenario_species_abundance_plots[[1]][[1]]
 
 ```
 
@@ -973,7 +1009,7 @@ lu_spp_density <- plot_grid(title, title2,
 
 lu_spp_density
 
-ggsave(file.path(analysis_plots_folder, "land_use_spp_density.pdf"),
+ggsave(file.path(supporting_info_plots_folder, "land_use_spp_density.pdf"),
        lu_spp_density,  width = 10, height = 18, dpi = 300, 
        units = "in",device = "pdf")
 
@@ -996,7 +1032,7 @@ ca_spp_density <- plot_grid(title, title2,
 
 ca_spp_density
 
-ggsave(file.path(analysis_plots_folder, "carnivore_spp_density.pdf"),
+ggsave(file.path(supporting_info_plots_folder, "carnivore_spp_density.pdf"),
        ca_spp_density,  width = 10, height = 18, dpi = 300, 
        units = "in",device = "pdf")
 
@@ -1019,9 +1055,62 @@ he_spp_density <- plot_grid(title,
                             nrow = p, align = "v")
 he_spp_density
 
-ggsave(file.path(analysis_plots_folder, "herbivore_spp_density.pdf"),
+ggsave(file.path(supporting_info_plots_folder, "herbivore_spp_density.pdf"),
        he_spp_density,  width = 10, height = 18, dpi = 300, 
        units = "in",device = "pdf")
+
+```
+
+# Get important groups (based on the plots above)
+
+```{r get important groups}
+
+# This input file was made by hand after eyeballing the plots above to see which
+# groups affect dynamics
+
+important_groups <- read.csv(file.path(analysis_inputs,
+                                       "2021-09-30",
+                                       "important_groups.csv"))
+
+important_list <- split(important_groups, important_groups$scenario)
+
+scenario_important_abundance <- list()
+
+for (i in seq_along(scenario_redlist_data_sampled)) {
+  
+ig <- important_list[[i]]$group_id
+
+# Get just the groups important for that scenario
+subset_data <- scenario_redlist_data_sampled[[i]][
+  scenario_redlist_data_sampled[[i]]$group_id %in% ig, ]
+
+scenario_important_abundance[[i]] <-  subset_data %>% 
+      merge(important_list[[i]][c("group_id", "reason")], by = "group_id") %>% 
+      mutate(scenario = important_list[[i]]$scenario[1]) %>% 
+      ungroup(.) %>% 
+      dplyr::select(annual_time_step, group_id, ave_abundance, scenario, reason) %>% 
+      distinct(.) %>% 
+      mutate(indicator_score = ave_abundance,
+             indicator = reason,
+             ci_lower = NA,
+             ci_upper = NA,
+             replicate = NA) %>% #this is a misuse of replicate column
+      ungroup(.) %>% 
+      dplyr::select(annual_time_step,
+                    group_id,
+                    indicator_score,
+                    ci_lower,
+                    ci_upper,
+                    indicator,
+                    replicate,
+                    scenario) %>% 
+      distinct(.)
+
+}
+
+test <- scenario_important_abundance[[2]]
+
+saveRDS(scenario_important_abundance, file.path(analysis_inputs, input_date, "scenario_important_group_abundance.rds"))
 
 ```
 
