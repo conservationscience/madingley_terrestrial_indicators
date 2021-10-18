@@ -328,6 +328,8 @@ temp <- groups %>%
                mass_upper_kg = mass_upper/1000,
                mass_range_kg = paste(mass_lower_kg, mass_upper_kg, sep = "-"))
 
+scenario_redlist_data_sampled <- list()
+
 for(i in seq_along(scenario_redlist_data_sampled_raw)) {
   
 
@@ -671,11 +673,15 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
  scenario_rl_status_plots[[i]] <- ggplot( scenario_extinctions[[i]],
                                           aes(x=annual_time_step, y=red_list_status, 
                                               fill=rl_status_fac)) +
-    geom_area(  ) +
-    scale_fill_manual(values = c("#FDE725FF","#7AD151FF","#22A884FF","#2A788EFF",
-                                 "#414487FF","#440154FF")) +
-    scale_color_manual(values = c("#FDE725FF","#7AD151FF","#22A884FF","#2A788EFF",
-                                 "#414487FF","#440154FF")) +
+    geom_area( alpha = 0.7 ) +
+   # scale_fill_manual(values = c("#440154FF", "#414487FF","#2A788EFF",
+   #                                "#22A884FF","#7AD151FF","#FDE725FF")) +
+   # scale_color_manual(values = c("#440154FF", "#414487FF","#2A788EFF",
+   #                                "#22A884FF","#7AD151FF","#FDE725FF")) +
+   scale_fill_manual(values = c("#07071DFF", "#400F73FF","#802582FF",
+                                  "#D6456CFF","#FA815FFF","#FECC8FFF")) +
+   scale_color_manual(values = c("#07071DFF", "#400F73FF","#802582FF",
+                                  "#D6456CFF","#FA815FFF","#FECC8FFF")) +
    theme(panel.grid.major = element_blank(),
           panel.grid.minor = element_blank(),
           panel.background = element_rect(fill = "grey80"),
@@ -722,8 +728,10 @@ Note, current bins are not based on much, there might be a more meaningful way t
 
 # * Bin rates of change and plot them ----
 
-set_breaks <- c(-3,-0.0894307914, -0.0166148404, -0.0003499485,
+set_breaks <- c(-3,-0.0894307914, -0.0166148404, 0,
                 0.0147363530, 0.3069022173, 3)
+
+set_breaks <- round(set_breaks, 4)
 
 #set_breaks <- c(3, 0.3069022173,0.0147363530,-0.0003499485,-0.0166148404,-0.0894307914,-3)
 
@@ -748,17 +756,17 @@ rate_of_change_plots[[i]] <- ggplot(plot_data,
                                         y = prop_declining, 
                                         fill = dt_bins)) +
     geom_area(position="stack", stat="identity", alpha = 0.7) +
-    scale_fill_viridis_d(option = "plasma") +
+    scale_fill_viridis_d() +
    labs(x = "Time (years)",
-        y = "# Species in decline category") +
-   guides(fill = guide_legend(title = "Rate of decline category",
+        y = "# Species in change category") +
+   guides(fill = guide_legend(title = "Rate of change category",
                               nrow = 1)) +
     geom_vline(xintercept=c(100,200), linetype="dotted") +
   plot_theme
 
 
   ggsave(file.path(manuscript_plots_folder, paste(scenario,
-                                                "decline_rate_stacked_bar_plots.png",
+                                                "change_rate_stacked_bar_plots.png",
                                                 sep = "_")),
        width = 14,
        height = 9,
@@ -871,7 +879,7 @@ func_group_perc_density_plots[[i]] <- ggplot(scenario_fg_abundance[[i]],
                                 group = functional_group_name,
                                 color = functional_group_name,
                                 fill = functional_group_name)) + 
-      geom_density_ridges(stat = "identity", scale = 3, alpha = 0.6) +
+      geom_density_ridges(stat = "identity", scale = 0.8, alpha = 0.6) +
   theme_classic() +
   labs(title = scenario_fg_abundance[[i]]$scenario[1])
 
@@ -1085,11 +1093,11 @@ subset_data <- scenario_redlist_data_sampled[[i]][
   scenario_redlist_data_sampled[[i]]$group_id %in% ig, ]
 
 scenario_important_abundance[[i]] <-  subset_data %>% 
-      merge(important_list[[i]][c("group_id", "reason")], by = "group_id") %>% 
+      merge(important_list[[i]][c("group_id", "reason", "X")], by = "group_id") %>% 
       mutate(scenario = important_list[[i]]$scenario[1]) %>% 
       ungroup(.) %>% 
       dplyr::select(annual_time_step, group_id, ave_abundance, scenario, reason,
-                    rl_status) %>% 
+                    rl_status, X) %>% 
       distinct(.) %>% 
       group_by(group_id) %>% 
       mutate(indicator_score = standardize(ave_abundance),
@@ -1106,27 +1114,36 @@ scenario_important_abundance[[i]] <-  subset_data %>%
                     indicator,
                     replicate,
                     scenario,
-                    rl_status) %>% 
+                    rl_status, X) %>% 
       distinct(.)
 
 }
 
-test <- scenario_important_abundance[[2]]
-
 saveRDS(scenario_important_abundance, file.path(analysis_inputs, input_date, "scenario_important_group_abundance.rds"))
 
+
+test <- do.call(rbind, scenario_important_abundance)
+#test <- scenario_important_abundance[[3]]
+test_plot <- ggplot(test, aes(annual_time_step, indicator_score, group = group_id,
+                 col = X)) +
+  geom_smooth(method = 'loess', span = 0.25) +
+  facet_wrap( ~ scenario)
+
+ggsave(file.path(manuscript_plots_folder, "trophic_group_abundance.png"),
+       test_plot,  width = 10, height = 8, dpi = 300, 
+       units = "in",device = "png")
+
 ```
+# Plot red list status trajectory against abundance
 
-# Plot red list status of important groups
+```{r rli trajectory plots}
 
-```{r rli status plots}
+all_abundance <- do.call(rbind, scenario_important_abundance)
 
-rl_status_change_plots <- list()
-
-for (i in seq_along(scenario_important_abundance)) {
-  
-data <- scenario_important_abundance[[i]] %>% 
-        filter(indicator == "harvested group")
+data <- all_abundance %>% 
+        dplyr::filter(scenario == "100_Land_use" & group_id == "13.16.6"|
+               scenario == "300_Harvesting_herbivores"& group_id == "10.68"|
+               scenario == "200_Harvesting_carnivores"& group_id == "10.69")
 
 rl_status_fac <- factor(data$rl_status,
       levels = c("LC", "NT", "VU", "EN", "CR", "EX"))
@@ -1134,44 +1151,44 @@ rl_status_fac <- factor(data$rl_status,
 data2 <- cbind(data,
          rl_status_fac = rl_status_fac)
 
-if(scenario_important_abundance[[i]]$scenario[1] == "000_Baseline") {
-  
-  rl_status_change_plots[[i]] <- ggplot(data2, aes(annual_time_step,indicator_score,
+plot <- ggplot(data2, aes(annual_time_step,indicator_score,
                  col = rl_status_fac, group = group_id)) +
   geom_line() +
   theme(legend.position = "bottom") +
-  facet_wrap(~ indicator, nrow = 3) +
-  scale_colour_viridis_d(option = "plasma") +
-  geom_vline(xintercept=c(100,200), linetype="dotted")+
-  plot_theme
-
+  facet_wrap(~ group_id, nrow = 3) +
+  # scale_color_manual(values = c("#440154FF", "#414487FF","#2A788EFF",
+  #                                 "#22A884FF","#7AD151FF","#FDE725FF")) +
+  scale_color_manual(values = c("#07071DFF", "#400F73FF","#802582FF",
+                                  "#D6456CFF","#FA815FFF","#FECC8FFF")) +
+  theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_rect(fill = "grey80"),
+          legend.position = "bottom",
+         legend.key.size = unit(0.25, 'cm'),
+         plot.title = element_text(size = 10, face = "bold"),
+         legend.title=element_text(size=6), 
+         legend.text=element_text(size=6),
+          axis.title.x = element_text(size=8),
+          axis.title.y = element_text(size=8),
+          axis.text.x = element_text(size=6),
+          axis.text.y = element_text(size=6),
+          axis.ticks.x = element_blank(), 
+          axis.ticks.y = element_blank()) +
+   labs(x = "Time (years)",
+        y = "Standardized abundance") +
+  guides(fill=guide_legend(title="Red List Status", nrow = 1)) +
+  geom_vline(xintercept=c(100,200), linetype="dotted") 
   
-} else if(scenario_important_abundance[[i]]$scenario[1] == "100_Land_use") {
-  
-  rl_status_change_plots[[i]] <- NULL
-  
-} else {
 
-rl_status_change_plots[[i]] <- ggplot(data2, aes(annual_time_step,indicator_score,
-                 col = rl_status_fac, group = group_id)) +
-  geom_line() +
-  theme(legend.position = "bottom") +
-  facet_wrap(~ indicator, nrow = 3) +
-  scale_colour_viridis_d(option = "plasma") +
-  facet_wrap( ~ group_id, nrow = 2) +
-  geom_vline(xintercept=c(100,200), linetype="dotted") +
-  plot_theme
+plot
 
-  }
-}
-
-rl_status_change_plots[[1]]
-rl_status_change_plots[[2]]
-rl_status_change_plots[[3]]
-rl_status_change_plots[[4]]
+ggsave(file.path(manuscript_plots_folder, "red_list_v_abundance.png"),
+       plot,  width = 10, height = 8, dpi = 300, 
+       units = "in",device = "png")
 
 
 ```
+
 
 ```{r plot differenced, eval = FALSE}
 

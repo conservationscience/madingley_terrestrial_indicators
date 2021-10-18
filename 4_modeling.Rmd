@@ -71,7 +71,7 @@ library(kableExtra)
 
 ```{r ggplot theme}
 
-boot_theme <- theme(panel.background = element_blank(),
+plot_theme <- theme(panel.background = element_blank(),
               panel.grid.major = element_blank(),
               panel.grid.minor = element_blank(),
               legend.position = "bottom",
@@ -218,7 +218,7 @@ gam_plot <- ggplot(data = test_gam_data) +
                  title = paste(test_gam_data$scenario[1], 
                                test_gam_data$indicator[1], "k =", 
                                test_gam_data$kvalue[1], sep = " ")) +
-            theme_classic()
+            plot_theme
   
 } else {
   
@@ -238,7 +238,7 @@ gam_plot <- ggplot(data = test_gam_data) +
                  title = paste(test_gam_data$scenario[1], 
                                test_gam_data$indicator[1], "k =", 
                                test_gam_data$kvalue[1], sep = " ")) +
-            theme_classic()
+            plot_theme
 
 return(gam_plot)
 
@@ -476,7 +476,7 @@ if(all(is.na(data$positive_trend))) {
 boot_plot <-  boot_base_plot +
               geom_line(aes(x = annual_time_step, y = negative_trend), 
                         col = "#440154FF") +
-              boot_theme 
+              plot_theme 
   
 } else if(all(is.na(data$robust_positive_trend))) {
 
@@ -485,7 +485,7 @@ boot_plot <- boot_base_plot +
   geom_line(aes(x = annual_time_step, y = negative_trend), col = "#440154FF") +
   geom_line(aes(x = annual_time_step, y = robust_negative_trend), 
             col = "#440154FF", size = 2) +
-  boot_theme  
+  plot_theme  
  
   
 } else if (all(is.na(data$robust_negative_trend))) {
@@ -495,7 +495,7 @@ boot_plot <- boot_base_plot +
   geom_line(aes(x = annual_time_step, y = negative_trend), col = "#440154FF") +
   geom_line(aes(x = annual_time_step, y = robust_positive_trend), 
             col = "#2A788EFF", size = 2) +
-  boot_theme 
+  plot_theme 
  
 } else {
 
@@ -506,7 +506,7 @@ boot_plot <- boot_base_plot +
             col = "#2A788EFF", size = 2) +
   geom_line(aes(x = annual_time_step, y = robust_negative_trend), 
             col = "#440154FF", size = 2) +
-  boot_theme 
+  plot_theme 
   
   return(boot_plot)
   
@@ -538,6 +538,11 @@ input_date <- "2021-09-30"
 # Specify how many bootstraps you want to use
 
 boots <- 1
+
+# Size of test gam plots
+
+t_width <- 15
+t_height <- 10
 
 # Get date to label outputs
 
@@ -719,20 +724,10 @@ selected_mods_data <- list()
 robust_trends <- list()
 deviance_explained <- list()
 
-# Make first three items NULL (first 3 elements are taken up by baseline data 
-# which we aren't analysing here)
-
-# robust_trends[[1]] <- NULL
-# robust_trends[[2]] <- NULL
-# robust_trends[[3]] <- NULL
-# 
-# deviance_explained[[1]] <- NULL
-# deviance_explained[[2]] <- NULL
-# deviance_explained[[3]] <- NULL
-
 i <- 1
 
 scenario <- "Baseline"
+indicator <- scenario_indicator_single[[i]]$indicator[1]
 
 kvals <- c(10,25,50,100)
 
@@ -777,15 +772,23 @@ test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
 }
 
-residual_plots
 
-lpi_baseline_test_plots <- plot_grid(test_gam_plots[[1]],
+
+plots <- plot_grid(test_gam_plots[[1]],
                                  test_gam_plots[[2]],
                                  test_gam_plots[[3]],
                                  test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-lpi_baseline_test_plots
+plots
+
+ggsave(file.path(supporting_info_plots_folder, paste(scenario, indicator,
+                                                "test_gams.png",
+                                                sep = "_")),
+       width = t_width,
+       height = t_height,
+       units = "cm",
+       plots)
 
 robust_trends[[i]] <- compare_trends(test_gam_data)
 
@@ -807,6 +810,8 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 ```{r baseline rli, message=FALSE, warnings=FALSE}
 
 i <- 2
+
+indicator <- scenario_indicator_single[[i]]$indicator[1]
 
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
          select = TRUE,
@@ -845,15 +850,21 @@ test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
 }
 
-rli_baseline_test_plots <- plot_grid(test_gam_plots[[1]],
+plots <- plot_grid(test_gam_plots[[1]],
                                  test_gam_plots[[2]],
                                  test_gam_plots[[3]],
                                  test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-rli_baseline_test_plots
+plots
 
-
+ggsave(file.path(supporting_info_plots_folder, paste(scenario, indicator,
+                                                "test_gams.png",
+                                                sep = "_")),
+       width = t_width,
+       height = t_height,
+       units = "cm",
+       plots)
 
 robust_trends[[i]] <- compare_trends(test_gam_data)
 
@@ -875,6 +886,8 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 ```{r baseline harvesed, warnings = FALSE, message = FALSE}
 
 i <- 3
+
+indicator <- scenario_indicator_single[[i]]$indicator[1]
 
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
           select = TRUE,
@@ -913,13 +926,23 @@ test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
 }
 
-harvested_baseline_test_plots <- plot_grid(test_gam_plots[[1]],
+plots <- plot_grid(test_gam_plots[[1]],
                                  test_gam_plots[[2]],
                                  test_gam_plots[[3]],
                                  test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-harvested_baseline_test_plots
+plots
+
+ggsave(file.path(supporting_info_plots_folder, paste(scenario, indicator,
+                                                "test_gams.png",
+                                                sep = "_")),
+       width = t_width,
+       height = t_height,
+       units = "cm",
+       plots)
+
+
 
 robust_trends[[i]] <- compare_trends(test_gam_data)
 
@@ -954,6 +977,7 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 
 i <- 4 
 
+indicator <- scenario_indicator_single[[i]]$indicator[1]
 
 scenario <- "Land use"
 
@@ -1002,13 +1026,21 @@ test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
 residual_plots
 
-lpi_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
+plots <- plot_grid(test_gam_plots[[1]],
                                  test_gam_plots[[2]],
                                  test_gam_plots[[3]],
                                  test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-lpi_landuse_test_plots
+plots
+
+ggsave(file.path(supporting_info_plots_folder, paste(scenario, indicator,
+                                                "test_gams.png",
+                                                sep = "_")),
+       width = t_width,
+       height = t_height,
+       units = "cm",
+       plots)
 
 robust_trends[[i]] <- compare_trends(test_gam_data)
 
@@ -1030,6 +1062,8 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 ```{r land use rli, message=FALSE, warnings=FALSE}
 
 i <- 5
+
+indicator <- scenario_indicator_single[[i]]$indicator[1]
 
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
          select = TRUE,
@@ -1068,14 +1102,21 @@ test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
 }
 
-rli_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
+plots <- plot_grid(test_gam_plots[[1]],
                                  test_gam_plots[[2]],
                                  test_gam_plots[[3]],
                                  test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-rli_landuse_test_plots
+plots
 
+ggsave(file.path(supporting_info_plots_folder, paste(scenario, indicator,
+                                                "test_gams.png",
+                                                sep = "_")),
+       width = t_width,
+       height = t_height,
+       units = "cm",
+       plots)
 
 
 robust_trends[[i]] <- compare_trends(test_gam_data)
@@ -1098,6 +1139,8 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 ```{r harvested rli, warnings = FALSE, message = FALSE}
 
 i <- 6
+
+indicator <- scenario_indicator_single[[i]]$indicator[1]
 
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
           select = TRUE,
@@ -1136,13 +1179,21 @@ test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
 }
 
-harvested_landuse_test_plots <- plot_grid(test_gam_plots[[1]],
+plots <- plot_grid(test_gam_plots[[1]],
                                  test_gam_plots[[2]],
                                  test_gam_plots[[3]],
                                  test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-harvested_landuse_test_plots
+plots
+
+ggsave(file.path(supporting_info_plots_folder, paste(scenario, indicator,
+                                                "test_gams.png",
+                                                sep = "_")),
+       width = t_width,
+       height = t_height,
+       units = "cm",
+       plots)
 
 robust_trends[[i]] <- compare_trends(test_gam_data)
 
@@ -1169,6 +1220,7 @@ i <- 7
 
 scenario <- "Harvesting carnivores"
 
+indicator <- scenario_indicator_single[[i]]$indicator[1]
 
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
           select = TRUE,
@@ -1207,15 +1259,21 @@ test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
 }
 
-lpi_carnivore_test_plots <- plot_grid(test_gam_plots[[1]],
+plots <- plot_grid(test_gam_plots[[1]],
                                  test_gam_plots[[2]],
                                  test_gam_plots[[3]],
                                  test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-lpi_carnivore_test_plots
+plots
 
-
+ggsave(file.path(supporting_info_plots_folder, paste(scenario, indicator,
+                                                "test_gams.png",
+                                                sep = "_")),
+       width = t_width,
+       height = t_height,
+       units = "cm",
+       plots)
 
 robust_trends[[i]] <- compare_trends(test_gam_data)
 
@@ -1237,6 +1295,7 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 ```{r carnivores rli, warnings = FALSE, message = FALSE }
 
 i <- 8 
+indicator <- scenario_indicator_single[[i]]$indicator[1]
 
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
           select = TRUE,
@@ -1275,14 +1334,21 @@ test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
 }
 
-rli_carnivores_test_plots <- plot_grid(test_gam_plots[[1]],
+plots <- plot_grid(test_gam_plots[[1]],
                                  test_gam_plots[[2]],
                                  test_gam_plots[[3]],
                                  test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-rli_carnivores_test_plots
+plots
 
+ggsave(file.path(supporting_info_plots_folder, paste(scenario, indicator,
+                                                "test_gams.png",
+                                                sep = "_")),
+       width = t_width,
+       height = t_height,
+       units = "cm",
+       plots)
 
 robust_trends[[i]] <- compare_trends(test_gam_data)
 
@@ -1304,6 +1370,7 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 ```{r carnivores harvested, warnings = FALSE, message = FALSE }
 
 i <- 9
+indicator <- scenario_indicator_single[[i]]$indicator[1]
 
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
           select = TRUE,
@@ -1342,13 +1409,21 @@ test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
 }
 
-harvested_carnivores_test_plots <- plot_grid(test_gam_plots[[1]],
+plots <- plot_grid(test_gam_plots[[1]],
                                  test_gam_plots[[2]],
                                  test_gam_plots[[3]],
                                  test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-harvested_carnivores_test_plots
+plots
+
+ggsave(file.path(supporting_info_plots_folder, paste(scenario, indicator,
+                                                "test_gams.png",
+                                                sep = "_")),
+       width = t_width,
+       height = t_height,
+       units = "cm",
+       plots)
 
 
 robust_trends[[i]] <- compare_trends(test_gam_data)
@@ -1374,6 +1449,7 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 i <- 10
 
 scenario <- "Harvesting herbivores"
+indicator <- scenario_indicator_single[[i]]$indicator[1]
 
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
           select = TRUE,
@@ -1412,14 +1488,21 @@ test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
 }
 
-lpi_herbivores_test_plots <- plot_grid(test_gam_plots[[1]],
+plots <- plot_grid(test_gam_plots[[1]],
                                  test_gam_plots[[2]],
                                  test_gam_plots[[3]],
                                  test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-lpi_herbivores_test_plots
+plots
 
+ggsave(file.path(supporting_info_plots_folder, paste(scenario, indicator,
+                                                "test_gams.png",
+                                                sep = "_")),
+       width = t_width,
+       height = t_height,
+       units = "cm",
+       plots)
 
 robust_trends[[i]] <- compare_trends(test_gam_data)
 
@@ -1440,6 +1523,7 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 ```{r herbivores rli, warnings = FALSE }
 
 i <- 11
+indicator <- scenario_indicator_single[[i]]$indicator[1]
 
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
           select = TRUE,
@@ -1480,14 +1564,21 @@ test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
 residual_plots
 
-rli_herbivores_test_plots <- plot_grid(test_gam_plots[[1]],
+plots <- plot_grid(test_gam_plots[[1]],
                                  test_gam_plots[[2]],
                                  test_gam_plots[[3]],
                                  test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-rli_herbivores_test_plots
+plots
 
+ggsave(file.path(supporting_info_plots_folder, paste(scenario, indicator,
+                                                "test_gams.png",
+                                                sep = "_")),
+       width = t_width,
+       height = t_height,
+       units = "cm",
+       plots)
 
 robust_trends[[i]] <- compare_trends(test_gam_data)
 
@@ -1510,6 +1601,7 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 ```{r herbivores harvested, warnings = FALSE }
 
 i <- 12 
+indicator <- scenario_indicator_single[[i]]$indicator[1]
 
 m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
           select = TRUE,
@@ -1550,17 +1642,21 @@ test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
 residual_plots
 
-harvested_carnivores_test_plots <- plot_grid(test_gam_plots[[1]],
+plots <- plot_grid(test_gam_plots[[1]],
                                  test_gam_plots[[2]],
                                  test_gam_plots[[3]],
                                  test_gam_plots[[4]],
                                  nrow = 2, align = "v")
 
-harvested_carnivores_test_plots
+plots
 
-
-robust_trends[[i]] <- compare_trends(test_gam_data)
-
+ggsave(file.path(supporting_info_plots_folder, paste(scenario, indicator,
+                                                "test_gams.png",
+                                                sep = "_")),
+       width = t_width,
+       height = t_height,
+       units = "cm",
+       plots)
 
 trend_years <- robust_trends[[i]] %>% 
           filter(positive_across_all_models == 1|
