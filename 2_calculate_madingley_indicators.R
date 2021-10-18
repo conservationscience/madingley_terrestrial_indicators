@@ -5071,6 +5071,8 @@ identical(names(scenario_all_rli_outputs_v2[[1]]),
 #                                 "abundance functional groups",
 #                                 "abundance harvested groups")
 
+# * Save indicator outputs ----
+
 all_indicators_list <- list(scenario_all_rli_outputs_v2, #5yrs, all spp
                             scenario_large_spp_rli_outputs_5yr, #5yrs, large spp
                             scenario_all_rli_outputs, #annual
@@ -5098,6 +5100,12 @@ saveRDS(all_indicators,
 write.csv(all_indicators,
           file.path(general_indicator_outputs_folder,
                     "all_indicators_output_dataframe.csv"))
+
+# Save the groups data to the same place
+
+write.csv(groups,
+          file.path(general_indicator_outputs_folder,
+                    "groups.csv"))
 
 # Reshuffle the list so the top level of the list is indicator, then scenario
 
