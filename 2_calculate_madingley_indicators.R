@@ -1533,8 +1533,11 @@ saveRDS(scenario_ab_gl_formatted,
         file.path(general_indicator_outputs_folder,
                   "formatted_abundance_1.rds"))
 
-# scenario_ab_gl_formatted <- readRDS(file.path(indicator_outputs_folder,
-#                   paste(today, "formatted_abundance_1.rds", sep = "_")))
+rm(scenario_abundance_long, scenario_false_extinctions_removed,
+   scenario_ab_gl_formatted_not_clean)
+
+# scenario_ab_gl_formatted <- readRDS(file.path("N:/Quantitative-Ecology/Indicators-Project//Serengeti/Outputs_from_indicator_code/Indicator_outputs/general",
+#                   "2021-09-30", "formatted_abundance_1.rds"))
 
 
 # Truncate and decompose trends ----
@@ -1606,7 +1609,7 @@ for (i in seq_along(scenario_ab_gl_formatted)) {
                                     0, abundance)) %>% 
           filter(!is.na(abundance)) %>% 
           mutate(abundance_1 = abundance, #save truncated abundance
-                 timeseries = ts(abundance_1, frequency = 12),# convert it to timeseries obj
+                 timeseries = ts(abundance_1, frequency = 60),# convert it to timeseries obj
                  abundance = decompose(timeseries)$trend) # make decomposed trend the abundance variable
         
         without_vals <- rep_groups[[k]] %>%
@@ -1776,6 +1779,7 @@ saveRDS(scenario_auto_decomposed,
         file.path(general_indicator_outputs_folder,
                   "decomposed_auto_abundance_2.rds"))
 
+rm(scenario_ab_gl_formatted, scenario_auto_long)
 
 # Take a random sample of 25 replicates ----
 
@@ -1897,6 +1901,8 @@ any(is.nan(baseline$abundance))
 saveRDS(scenario_auto_averaged,
         file.path(general_indicator_outputs_folder,
                   "averaged_auto_abundance_3.rds"))
+
+rm(scenario_decomposed, scenario_auto_decomposed)
 
 # Check for false extinctions
 
@@ -2139,6 +2145,8 @@ saveRDS(scenario_remove_false_extinctions_2,
         file.path(general_indicator_outputs_folder,
                   "weird_groups_removed_abundance_4.rds"))
 
+rm(scenario_abundance_clean)
+
 # Check our test group
 
 # test_ex_removed <- scenario_remove_false_extinctions_2[[s]] %>% filter(group_id == test_group)
@@ -2210,6 +2218,8 @@ saveRDS(scenario_smoothed_abundance,
         file.path(general_indicator_outputs_folder,
                   "smoothed_abundance_5.rds"))
 
+rm(scenario_remove_false_extinctions_2)
+
 ## Autotrophs
 
 ave_window <- 12 * 5
@@ -2260,6 +2270,8 @@ for (i in seq_along(scenario_auto_averaged)) {
 saveRDS(scenario_auto_smoothed_abundance,
         file.path(general_indicator_outputs_folder,
                   "smoothed_auto_abundance_5.rds"))
+
+rm(scenario_auto_averaged)
 
 # Plot data transformation ----
 
