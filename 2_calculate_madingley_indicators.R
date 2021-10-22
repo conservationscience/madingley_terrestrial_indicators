@@ -1165,9 +1165,11 @@ class(generation_lengths$generation_length_yrs)
 
 # scenario_generations_raw_all <- scenario_generations_raw
 # scenario_abundance_raw_all <- scenario_abundance_raw
+# scenario_autotroph_raw_all <- scenario_autotroph_raw
 # 
-# scenario_generations_raw <- list(scenario_generations_raw_all[[3]])
-# scenario_abundance_raw<- list(scenario_abundance_raw_all[[3]])
+# scenario_generations_raw <- list(scenario_generations_raw_all[[3]][1:3])
+# scenario_abundance_raw<- list(scenario_abundance_raw_all[[3]][1:3])
+# scenario_autotroph_raw <- list(scenario_autotroph_raw_all[[3]][1:3])
 # 
 # scenarios <- list(scenarios[[3]])
 
@@ -1525,6 +1527,7 @@ for (i in seq_along(scenario_false_extinctions_removed)) {
 
 test <- scenario_ab_gl_formatted[[1]][[1]]
 head(test)
+dim(test)
 any(is.nan(test$abundance))
 rm(scenario_false_extinctions_removed)
 
@@ -1535,7 +1538,6 @@ saveRDS(scenario_ab_gl_formatted,
 
 # scenario_ab_gl_formatted <- readRDS(file.path(indicator_outputs_folder,
 #                   paste(today, "formatted_abundance_1.rds", sep = "_")))
-
 
 # Truncate and decompose trends ----
 
@@ -2123,7 +2125,7 @@ for (i in seq_along(scenario_abundance_clean)) {
   rm(temp3)
 }
 
-s <- 2
+s <- 1
 
 first_time_step <- scenario_remove_false_extinctions_2[[s]] %>% 
   filter(annual_time_step == 1) %>% 
@@ -2268,7 +2270,7 @@ saveRDS(scenario_auto_smoothed_abundance,
 example_group <- c("10.59", "10.55", "11.67", "10.68")
 
 # Raw abundance
-r <- 15 # Pick a replicate
+r <- 2 # Pick a replicate
 
 ## * Decomposition ----
 
@@ -3010,7 +3012,7 @@ dim(rli_inputs)
 # write.csv(rli_inputs, file.path(indicator_outputs_folder, 
 #                                 "rli_input_example_averaged_reps.csv"))
 
-rli_inputs_group <- rli_inputs %>% filter(group_id == "10.68")
+rli_inputs_group <- rli_inputs %>% filter(group_id == "10.32")
 
 ggplot(data = rli_inputs_group) +
   geom_path(aes(x = annual_time_step, y = ave_abundance)) +
