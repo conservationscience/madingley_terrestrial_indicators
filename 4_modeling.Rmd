@@ -11,6 +11,8 @@ output:
 #' TODO: Add panel labels
 #' TODO: Change blue and red to other colours
 #' TODO: Add vector art for scenarios (lion, wildebeest, plant)
+#' TODO: Figure out if we take top 3 strongest responses for each spp or just everything
+#' above a threshold
 
 ```{r setup, include=FALSE}
 
@@ -727,6 +729,11 @@ write.csv(indicators_all_df, file.path(analysis_inputs_folder,
 # Load red list data
 
 scenario_redlist_data_sampled <- readRDS(file.path(analysis_inputs, input_date, "scenario_redlist_data_annual_7.rds"))
+
+# Get groups
+
+groups <- read.csv(file.path(analysis_inputs, input_date, "groups.csv"))
+
 ```
 
 
@@ -844,9 +851,9 @@ replicate_plots <- list()
 
   replicate_plots[[j]] <- plot_test_gam(replicate_data[[j]])
   
-  j
-
   }
+
+names(replicate_plots) <- group_ids
 
 df <- do.call(rbind, replicate_data)
 
@@ -854,7 +861,52 @@ species_gam_data[[i]] <- df
 
 species_gam_plots[[i]] <- replicate_plots
 
-i
+}
+
+```
+
+``` {r influential species}
+
+influential_species_plots <- list()
+influential_species_data <- list()
+
+for (i in seq_along(species_gam_data)) {
+  
+temp <- species_gam_data[[i]] %>% 
+        merge(groups[c("group_id", "nutrition_source")], by.x = "indicator",
+              by.y = "group_id") %>% 
+        #Get only the species where significant trends are detected
+        filter(first_significant == TRUE) %>% 
+        #Get only the species with significant trends at start or end of impact
+        filter(annual_time_step >= 95 &
+               annual_time_step <= 105|
+               annual_time_step >= 195 &
+               annual_time_step <= 205) %>% 
+        dplyr::select(indicator, annual_time_step, 
+                      predicted, first_derivative, nutrition_source) %>% 
+        #Add a new variable that denotes whether we are looking at impact start or end event
+        mutate(impact = ifelse(annual_time_step >= 95 &
+               annual_time_step <= 105, "START",
+               ifelse(annual_time_step >= 195 &
+               annual_time_step <= 205, "STOP", NA))) 
+
+# Split by positive or negative trends
+
+influential_species_data[[i]] <- temp %>% 
+       dplyr::select(-annual_time_step) %>% # Remove time steps
+       mutate(absolute_fd = abs(first_derivative)) %>%  # convert all first derivatives to absolute value
+       group_by(impact, indicator) %>% # For each start stop event, for each species
+       filter(absolute_fd == max(absolute_fd)) %>% # Get the max & min value
+       ungroup(.) %>% # Release event/spp grouping
+       group_by(impact) %>% # Group by event alone
+       arrange(desc(absolute_fd)) %>%  # arrange species by highest impact
+       slice(1:3) # Get the three species with the strongest response to each event
+
+fgs <- unique(influential_species_data[[i]]$indicator)
+
+influential_species_plots[[i]] <- species_gam_plots[[i]][fgs]
+
+walk(influential_species_plots[[i]], print)
 
 }
 
