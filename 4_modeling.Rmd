@@ -89,6 +89,110 @@ plot_theme <- theme(panel.background = element_blank(),
 
 ```
 
+```{r get species gam data }
+
+#' @param model - gam object
+#' @param data - the input pressure response time step data for the model
+#' @return a dataframe containing predicted, observed, first and second derivatives
+
+get_species_gam_data <- function(data, model, scenario) {
+  
+# Get observed indicator values
+
+observed <- data$std_abundance
+
+# Make a dataframe of predictor vals (ie timesteps)
+
+pdat1 <- data.frame(annual_time_step = seq(1,nrow(data),1))
+
+# Get predicted values for each time step
+# p2 <- predict.gam(model, pdat1, 
+#                   se.fit = TRUE, response = TRUE)
+
+p2 <- predict(model, pdat1, 
+                  se.fit = TRUE, response = TRUE)
+
+p3 <- predict.gam(model, pdat1, 
+                  se.fit = TRUE)
+
+# # Get the deviance residuals
+deviance_residuals <- residuals(model, type = "working")
+
+# fv <- predict(model,type="terms") ## get term estimates
+#      
+# ## compute partial residuals for first smooth...          
+# deviance_residuals <- residuals(model,type="working", response = TRUE) + fv[,1]
+
+#Bind them together with observed vals
+
+pdat <- cbind(pdat1, predicted = p2$fit, predicted_nr = p3$fit, se2 = p2$se.fit, observed, 
+              deviance_residuals)
+
+#Get upper and lower bounds for predicted values (replace with bootstraps for selected model)
+
+df.res <- df.residual(model)
+crit.t <- qt(0.025, df.res, lower.tail = FALSE)
+pdat <- transform(pdat,
+                  upper_pred = predicted_nr + (crit.t * se2),
+                  lower_pred = predicted_nr - (crit.t * se2))
+
+# Calculate the derivatives and add that too
+derivs_1 <- as.data.frame(derivatives(model, order = 1, 
+                   n = nrow(data), interval = "confidence") ) %>% 
+                   dplyr::select(derivative, lower, upper) %>% 
+                   rename(first_derivative = derivative,
+                          first_lower = lower,
+                          first_upper = upper)
+
+# Calculate the derivatives and add that too
+derivs_2 <- as.data.frame(derivatives(model, order = 2, 
+                   n = nrow(data), interval = "confidence") ) %>% 
+                   dplyr::select(derivative, lower, upper) %>% 
+                   rename(second_derivative = derivative,
+                          second_lower = lower,
+                          second_upper = upper)
+# Bind it all together
+temp <- cbind(pdat, derivs_1, derivs_2)
+
+
+# Make the final plot data
+test_gam_data <- temp %>% 
+                 mutate(first_significant = ifelse(first_lower <= 0 & 
+                                                  first_upper >= 0, FALSE, TRUE),
+                        positive_trend = ifelse(first_significant == TRUE & 
+                                                 first_derivative > 0,
+                                            predicted_nr,NA),
+                        negative_trend = ifelse(first_significant == TRUE & 
+                                                 first_derivative < 0,
+                                            predicted_nr, NA),
+                        positive_der_1 = ifelse(first_significant == TRUE & 
+                                                  first_derivative > 0,
+                                            first_derivative,NA),
+                        negative_der_1 = ifelse(first_significant == TRUE & 
+                                                  first_derivative < 0,
+                                            first_derivative, NA),
+                        second_significant = ifelse(second_lower <= 0 & 
+                                                  first_upper >= 0, FALSE, TRUE),
+                        positive_tp = ifelse(second_significant == TRUE & 
+                                             second_derivative > 0,
+                                            predicted_nr,NA),
+                        negative_tp = ifelse(second_significant == TRUE & 
+                                            second_derivative < 0,
+                                            predicted_nr, NA),
+                        positive_der_2 = ifelse(second_significant == TRUE & 
+                                                second_derivative > 0,
+                                            second_derivative,NA),
+                        negative_der_2 = ifelse(second_significant == TRUE & 
+                                                second_derivative < 0,
+                                            first_derivative, NA),
+                        indicator = data$group_id[1],
+                        scenario = scenario,
+                        kvalue = model$rank,
+                        r2 = summary.gam(model)$r.sq) 
+
+}
+```
+
 ```{r get test gam data }
 
 #' @param model - gam object
@@ -705,6 +809,54 @@ df <- indicators_all_df %>%
 hamin <- min(df$indicator_score)
 hamax <- max(df$indicator_score)
 harv_lims <- c(hamin,hamax)
+
+```
+
+# Species gams
+
+```{r species gams}
+
+species_gam_data <- list()
+species_gam_plots <- list()
+
+for (i in seq_along(scenario_redlist_data_sampled)) {
+  
+scenario_data <- scenario_redlist_data_sampled[[i]]
+
+group_ids <- unique(scenario_data$group_id)
+
+replicate_data <- list()
+replicate_plots <- list()
+
+  for (j in seq_along(group_ids)) {
+
+  species_data <- scenario_data %>% 
+                filter(group_id == group_ids[[j]]) %>% 
+                mutate(std_abundance = standardize(ave_abundance)) %>% 
+                ungroup(.)
+
+  m <- gam(std_abundance ~ s(annual_time_step, k = 10),
+         select = TRUE,
+         method = "GCV.Cp",
+         data = species_data)
+
+  replicate_data[[j]] <- get_species_gam_data(species_data, m, scenarios[[i]])
+
+  replicate_plots[[j]] <- plot_test_gam(replicate_data[[j]])
+  
+  j
+
+  }
+
+df <- do.call(rbind, replicate_data)
+
+species_gam_data[[i]] <- df
+
+species_gam_plots[[i]] <- replicate_plots
+
+i
+
+}
 
 ```
 
