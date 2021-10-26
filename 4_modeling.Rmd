@@ -970,7 +970,7 @@ temp4 <- temp3 %>%
          group_by(indicator) %>% # group by spp
          filter(absolute_fd == max(absolute_fd)) # get the highest value per spp
 
-influential_species_data[[i]] <- temp4[1:10,] # Get 6 most influential spp
+influential_species_data[[i]] <- temp4[1:10,] # Get 10 most influential spp
   
 rm(temp, temp2, temp3, temp4)
 
@@ -984,12 +984,190 @@ walk(influential_species_plots[[i]], print)
 
 ```
 
+# Functional group gams
+
+``` {r fg gams}
+
+fg_gams <- list()
+fg_gam_data <- list()
+fg_gam_plots <- list()
+
+for (i in seq_along(scenario_redlist_data_sampled)) {
+  
+scenario_data <- scenario_redlist_data_sampled[[i]] %>% 
+                 group_by(annual_time_step,functional_group_name) %>% 
+                 mutate(fg_abundance = sum(ave_abundance, na.rm = TRUE)) %>% 
+                 dplyr::select(annual_time_step, fg_abundance, functional_group_name) %>% 
+                 distinct(.) %>% 
+                 ungroup(.) %>% 
+                 group_by(functional_group_name) %>% 
+                 mutate(std_abundance = standardize(fg_abundance)) %>% 
+                 ungroup(.)
+
+fg_ids <- unique(scenario_data$functional_group_name)
+
+fg_mods <- list()
+fg_data <- list()
+fg_plots <- list()
+
+
+  for (j in seq_along(fg_ids)) {
+
+  data <- scenario_data %>% 
+          filter(functional_group_name == fg_ids[[j]]) %>% 
+          rename(group_id = functional_group_name)
+  
+  fg_mods[[j]] <- gam(std_abundance ~ s(annual_time_step, k = 10),
+         select = TRUE,
+         method = "GCV.Cp",
+         data = data)
+  
+  fg_data[[j]] <- get_species_gam_data(data, fg_mods[[j]], 
+                                              scenarios[[i]])
+  
+  #fg_plots[[j]] <- plot_test_gam(fg_data[[j]])
+  
+  
+  
+  }
+
+# names(fg_data) <- fg_ids
+# names(fg_mods) <- fg_ids
+
+df <- do.call(rbind, fg_data) %>% 
+      rename(functional_group = indicator)
+
+fg_gam_plots[[i]] <- ggplot(df) +
+        geom_line(aes(annual_time_step, predicted)) +
+        geom_line(aes(x = annual_time_step, y = positive_trend), 
+                  col = "blue", size = 1) +
+        geom_line(aes(x = annual_time_step, y = negative_trend), 
+                  col = "red", size = 1) +
+        geom_point(aes(x = annual_time_step, y = observed),
+                                        alpha = 0.1,
+                   size = 1) +
+        geom_ribbon(aes(x = annual_time_step, 
+                        ymin = lower_pred, 
+                        ymax = upper_pred),
+                                        alpha = 0.3) +
+                  labs(x = "Time (years)",
+                        y = "Standardized abundance",
+                       title = scenarios[[i]]) + 
+        geom_vline(xintercept=c(100,200), linetype = "dotted") +
+        facet_wrap( ~ functional_group) +
+        plot_theme
+
+ggsave(file.path(manuscript_plots_folder, paste(scenarios[[i]],
+                                                "functional_group_gams.png",
+                                                sep = "_")),
+       width = 10,
+       height = 5,
+       units = "cm",
+       fg_gam_plots[[i]])
+
+fg_gam_data[[i]] <- df
+
+}
+
+walk(fg_gam_plots, print)
+
+```
+
+# Trophic group gams
+
+``` {r tg gams}
+
+tg_gams <- list()
+tg_gam_data <- list()
+tg_gam_plots <- list()
+
+for (i in seq_along(scenario_redlist_data_sampled)) {
+  
+scenario_data <- scenario_redlist_data_sampled[[i]] %>% 
+                 mutate(trophic_group = word(functional_group_name, 1)) %>% 
+                 group_by(annual_time_step,trophic_group) %>% 
+                 mutate(tg_abundance = sum(ave_abundance, na.rm = TRUE)) %>% 
+                 dplyr::select(annual_time_step, tg_abundance, trophic_group) %>% 
+                 distinct(.) %>% 
+                 ungroup(.) %>% 
+                 group_by(trophic_group) %>% 
+                 mutate(std_abundance = standardize(tg_abundance)) %>% 
+                 ungroup(.)
+
+tg_ids <- unique(scenario_data$trophic_group)
+
+tg_mods <- list()
+tg_data <- list()
+tg_plots <- list()
+
+  for (j in seq_along(tg_ids)) {
+
+  data <- scenario_data %>% 
+          filter(trophic_group == tg_ids[[j]]) %>% 
+          rename(group_id = trophic_group)
+  
+  tg_mods[[j]] <- gam(std_abundance ~ s(annual_time_step, k = 10),
+         select = TRUE,
+         method = "GCV.Cp",
+         data = data)
+  
+  tg_data[[j]] <- get_species_gam_data(data, tg_mods[[j]], 
+                                              scenarios[[i]])
+  
+  print(j)
+  
+  
+  }
+
+df <- do.call(rbind, tg_data) %>% 
+      rename(trophic_group = indicator)
+
+tg_gam_plots[[i]] <- ggplot(df) +
+        geom_line(aes(annual_time_step, predicted)) +
+        geom_line(aes(x = annual_time_step, y = positive_trend), 
+                  col = "blue", size = 1) +
+        geom_line(aes(x = annual_time_step, y = negative_trend), 
+                  col = "red", size = 1) +
+        geom_point(aes(x = annual_time_step, y = observed),
+                                        alpha = 0.1,
+                   size = 1) +
+        geom_ribbon(aes(x = annual_time_step, 
+                        ymin = lower_pred, 
+                        ymax = upper_pred),
+                                        alpha = 0.3) +
+                  labs(x = "Time (years)",
+                        y = "Standardized abundance",
+                       title = scenarios[[i]]) + 
+        geom_vline(xintercept=c(100,200), linetype = "dotted") +
+        facet_wrap( ~ trophic_group) +
+        plot_theme
+
+ggsave(file.path(manuscript_plots_folder, paste(scenarios[[i]],
+                                                "trophic_group_gams.png",
+                                                sep = "_")),
+       width = 10,
+       height = 5,
+       units = "cm",
+       tg_gam_plots[[i]])
+
+tg_gam_data[[i]] <- df
+
+}
+
+walk(tg_gam_plots, print)
+
+```
+
+
+
+# All test gams
 
 ```{r all test gams, warnings = FALSE, message = FALSE }
 
 ind_method <- "GCV.Cp"
 selected <- 1
 
+all_mods_data <- list()
 selected_mods <- list()
 selected_mods_data <- list()
 robust_trends <- list()
@@ -1030,18 +1208,16 @@ residual_plots <- list()
 
 for (j in seq_along(indicator_mods)) {
   
-# plot.gam(indicator_mods[[j]], residuals = TRUE)
+plot.gam(indicator_mods[[j]], residuals = TRUE)
 
 test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
                                indicator_mods[[j]])
 
 test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
-print(j)
-
 }
 
-
+all_mods_data[[i]] <- test_gam_plots
 
 plots[[i]] <- plot_grid(test_gam_plots[[1]],
                         test_gam_plots[[2]],
