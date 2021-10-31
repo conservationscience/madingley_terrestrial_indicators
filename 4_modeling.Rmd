@@ -1062,11 +1062,13 @@ species_gam_plots[[i]] <- spp_plots
 ``` {r influential species}
 
 influential_species_plots <- list()
-influential_species_data <- list()
+influential_species_data_start <- list()
+influential_species_data_stop <- list()
 fgs <- list()
 
 for (i in seq_along(species_gam_data)) {
-  
+
+
 temp <- species_gam_data[[i]] %>% 
         merge(groups[c("group_id", "nutrition_source")], by.x = "indicator",
               by.y = "group_id") %>% 
@@ -1085,10 +1087,12 @@ temp <- species_gam_data[[i]] %>%
                ifelse(annual_time_step >= 195 &
                annual_time_step <= 205, "STOP", NA)))  
   
+# Get start ----
 
-# Split by positive or negative trends
+# Look at response to impact start
 
 temp2 <- temp %>% 
+         filter(impact == "START") %>% 
          dplyr::select(-annual_time_step) %>% # Remove time steps
          mutate(absolute_fd = abs(first_derivative)) # convert 1st deriv to absolute value
        
@@ -1102,13 +1106,36 @@ temp4 <- temp3 %>%
          group_by(indicator) %>% # group by spp
          filter(absolute_fd == max(absolute_fd)) # get the highest value per spp
 
-influential_species_data[[i]] <- temp4[1:n,] # Get n most influential spp
-  
-rm(temp, temp2, temp3, temp4)
+start <- temp4[1:n,] # Get n most influential spp
+
+rm(temp2, temp3, temp4)
+
+# Get stop ----
+
+# Look at response to impact start
+
+temp2 <- temp %>% 
+         filter(impact == "STOP") %>% 
+         dplyr::select(-annual_time_step) %>% # Remove time steps
+         mutate(absolute_fd = abs(first_derivative)) # convert 1st deriv to absolute value
+       
+# idk what tf is going on here but arrange is not working as it should, so
+# had to separate it from the rest of the pipe
+
+temp3 <- temp2 %>% 
+         arrange(desc(absolute_fd))
+
+temp4 <- temp3 %>% 
+         group_by(indicator) %>% # group by spp
+         filter(absolute_fd == max(absolute_fd)) # get the highest value per spp
+
+stop <- temp4[1:n,] # Get n most influential spp
+
+influential_species_data[[i]] <- rbind(start, stop)
 
 fgs[[i]] <- unique(influential_species_data[[i]]$indicator)
 
-influential_species_plots[[i]] <- species_gam_plots[[i]][fgs[[i]]]
+influential_species_plots[[i]] <- species_gam_plots[[i]][fgs[[i]]] 
 
 #walk(influential_species_plots[[i]], print)
 
@@ -1127,9 +1154,16 @@ fg <- influential_species_data[[i]]$indicator
 data <- species_gam_data[[i]][species_gam_data[[i]]$indicator %in% fg,]
 
 temp <- data %>% 
-        merge(groups[c("group_id", "nutrition_source")], by.x = "indicator",
+        merge(groups[c("group_id", "nutrition_source", "mass_lower")], 
+              by.x = "indicator",
               by.y = "group_id") %>% 
-        filter(annual_time_step < 293)
+        filter(annual_time_step < 293) %>% 
+        merge(influential_species_data[[i]][c("indicator", "impact")], 
+              by = "indicator") %>% 
+        mutate(lower_kg = mass_lower/1000,
+               label = paste(lower_kg, "kg", nutrition_source, 
+                             "(", impact, ")",  sep = " ")) %>% 
+        arrange(impact,lower_kg)
 
 influential_spp_plots[[i]] <- ggplot(temp) +
         geom_line(aes(annual_time_step, predicted, col = nutrition_source)) +
@@ -1150,9 +1184,9 @@ influential_spp_plots[[i]] <- ggplot(temp) +
                                         alpha = 0.3) +
                   labs(x = "Time (years)",
                         y = "Standardized abundance",
-                       title = scenarios[[i]]) + 
+                       title = paste(scenarios[[i]], reason, sep = " ")) + 
         geom_vline(xintercept=c(100,200), linetype = "dotted") +
-        facet_wrap( ~ indicator, ncol = 2) +
+        facet_wrap( ~ label, ncol = 2) +
         plot_theme
 
 rm(data, temp, fg)
