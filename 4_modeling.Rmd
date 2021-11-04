@@ -10,6 +10,8 @@ output:
 #' TODO: Fix axis labels + titles on bootstrapped plots
 #' TODO: Add vector art for scenarios (lion, wildebeest, plant)
 #' TODO: Add direct/indirect label to spp response plots
+#' TODO: Add matched species names on spp gam plots
+#' TODO: Add functional group colours to species GAMS
 
 ```{r setup, include=FALSE}
 
@@ -211,7 +213,7 @@ get_test_gam_data <- function(data, model) {
   
 # Get observed indicator values
 
-observed <- data$indicator_score_std
+observed <- data$indicator_score
 
 # Make a dataframe of predictor vals (ie timesteps)
 
@@ -421,54 +423,71 @@ print("option 4")
 ```{r compare trends}
 # Loop through each model and identify which time steps show a significant 
 # positive or negative trend
+# list_of_model_data <- test_gam_data
 
 compare_trends <- function(list_of_model_data) {
-
-trend_data <- list()
 
 # Get the number of models we need consensus across
 l <- length(list_of_model_data)
 
+trend_data <- list()
+
 for (j in seq_along(list_of_model_data)) {
   
 trend_data[[j]] <- list_of_model_data[[j]] %>% 
-                   #Select the significant positive and negative trends
-                   dplyr::select(annual_time_step, positive_trend, 
-                                 negative_trend, indicator, scenario, 
-                                 first_derivative) %>% 
+                   dplyr::select(annual_time_step, positive_trend,
+                              negative_trend, indicator, scenario,
+                              first_derivative, kvalue) %>% 
                    mutate(k_value = kvals[[j]],
                           direction = ifelse(!is.na(positive_trend),
                                              "positive",
                                             ifelse(!is.na(negative_trend),
                                              "negative", NA)))
-
 }
 
 # Convert  into a single data frame
-
 trend_df_all <- do.call(rbind, trend_data)
+
 
 # Check which time steps show a significant trend regardless of model
 # k value (ie are the robust significant changes at the expected time points?)
 
+# direction_df <- trend_df_all %>% 
+#                 dplyr::select(annual_time_step, k_value, direction, positive_trend,
+#                               negative_trend, indicator, scenario, first_derivative) %>% 
+#                 group_by(annual_time_step) %>% 
+#                 mutate(positive_across_all_models = sum(direction == "positive", na.rm = TRUE),
+#                        negative_across_all_models = sum(direction == "negative", na.rm = TRUE)) %>% 
+#                 filter(positive_across_all_models == l|
+#                       negative_across_all_models == l) #%>% 
+#                 # mutate(positive_across_all_models = ifelse(positive_across_all_models == l, 1, 0),
+                #        negative_across_all_models = ifelse(negative_across_all_models == l, 1, 0))
+
+
+
+# Check which time steps show a significant trend regardless of model
+# k value (ie are the robust significant changes at the expected time points?)
 direction_df <- trend_df_all %>% 
                 dplyr::select(annual_time_step, k_value, direction, positive_trend,
                               negative_trend, indicator, scenario, first_derivative) %>% 
                 group_by(annual_time_step) %>% 
-                mutate(positive_across_all_models = sum(direction == "positive", na.rm = TRUE),
-                       negative_across_all_models = sum(direction == "negative", na.rm = TRUE)) %>% 
-                # filter(positive_across_all_models == l|
-                #        negative_across_all_models == l) %>% 
-                mutate(positive_across_all_models = ifelse(positive_across_all_models == l, 1, 0),
-                       negative_across_all_models = ifelse(negative_across_all_models == l, 1, 0))
+                summarise(positive_across_all_models = sum(direction == "positive"),
+                          negative_across_all_models = sum(direction == "negative")) %>% 
+                filter(positive_across_all_models == l|
+                       negative_across_all_models == l) #%>% 
+                # mutate(positive_across_all_models = ifelse(positive_across_all_models == l, 1, 0),
+                #        negative_across_all_models = ifelse(negative_across_all_models == l, 1, 0))
+
+return(direction_df)
 
 }
+
 ```
 
 ```{r bootstrap selected model}
 
 bootstrap_selected_model <- function(data, model, model_data, numboots) {
-  
+
 bootstrap_mods <- list()
 bootstrap_mod_data <- list()
 replicate <- list()
@@ -527,7 +546,7 @@ gratia_derivs_2 <- as.data.frame(derivatives(bootstrap_mods[[k]], order = 2,
 # Bind it all together
 bootstrap_mod_data[[k]] <- cbind(pdat, gratia_derivs_1, gratia_derivs_2)
 
-# print(k)
+print(k)
 
 }
 
@@ -615,20 +634,22 @@ new <- model_data %>%
 ```
 
 ```{r plot bootstrapped model, eval = FALSE}
+
 plot_bootstrapped_model <- function(data, ylimits){
   
 indicator <- data$indicator[1]
+
 boot_base_plot <- ggplot(data = data) +
                   geom_rect(aes(xmin = 95, xmax = 105,
-                                ymin = -Inf, ymax = Inf), fill = "grey70", 
+                                ymin = -Inf, ymax = Inf), fill = "grey82", 
                             alpha = 0.4) +
                   geom_rect(aes(xmin = 195, xmax = 205,
-                                ymin = -Inf, ymax = Inf), fill = "grey70", 
+                                ymin = -Inf, ymax = Inf), fill = "grey82", 
                             alpha = 0.4)+
                   geom_point(aes(x = annual_time_step, y = observed), 
                                        alpha = 0.2, size = 1) +
-                  geom_line(aes(x = annual_time_step, y = observed), 
-                            alpha = 0.2) +
+                  # geom_line(aes(x = annual_time_step, y = observed), 
+                  #           alpha = 0.2) +
                   geom_line(aes(x = annual_time_step, y = predicted)) +
                   geom_ribbon(aes(x = annual_time_step, ymin = predicted_lower, 
                                             ymax = predicted_upper),
@@ -649,160 +670,41 @@ boot_plot <-  boot_base_plot +
   
 } else if(all(is.na(data$robust_positive_trend))) {
 boot_plot <- boot_base_plot +
-   geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col) +
-  geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col) +
+   geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col, 
+             size = 1) +
+  geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col, 
+             size = 1) +
   geom_line(aes(x = annual_time_step, y = robust_negative_trend), 
-            col = neg_col, size = 2) +
+            col = neg_col, size = 4) +
   plot_theme  
  
   
 } else if (all(is.na(data$robust_negative_trend))) {
 boot_plot <- boot_base_plot +
-   geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col) +
-  geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col) +
+   geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col, 
+             size = 1) +
+  geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col, 
+             size = 1) +
   geom_line(aes(x = annual_time_step, y = robust_positive_trend), 
-            col = pos_col, size = 2) +
+            col = pos_col, size = 4) +
   plot_theme 
  
 } else {
   boot_plot <- boot_base_plot +
-  geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col) +
-  geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col) +
+  geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col, 
+             size = 1) +
+  geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col, 
+             size = 1) +
   geom_line(aes(x = annual_time_step, y = robust_positive_trend), 
-            col = pos_col, size = 2) +
+            col = pos_col, size = 4) +
   geom_line(aes(x = annual_time_step, y = robust_negative_trend), 
-            col = neg_col, size = 2) +
+            col = neg_col, size = 4) +
   plot_theme 
   
   return(boot_plot)
   
   }
 }
-```
-
-```{r plot bootstrapped model v2}
-
-plot_bootstrapped_model <- function(data, ylimits){
-  
-indicator <- data$indicator[1]
-indicator <- str_replace(indicator, "/", "_")
-
-# Calculate turning points
-derivs_2_fun <- splinefun(x = data$annual_time_step, y =data$predicted)
-derivs_2 <- derivs_2_fun(data$annual_time_step, deriv = 2)
-inflection_points <- diff(sign(derivs_2))
-inflection_points <- c(0, inflection_points)
-
-
-data <- cbind(data, inflection_points) %>% 
-        mutate(inflection_points = ifelse(inflection_points != 0, predicted,
-                                          NA))
-
-boot_base_plot <- ggplot(data = data) +
-                  geom_rect(aes(xmin = 95, xmax = 105,
-                                ymin = -Inf, ymax = Inf), fill = "grey70", 
-                            alpha = 0.4) +
-                  geom_rect(aes(xmin = 195, xmax = 205,
-                                ymin = -Inf, ymax = Inf), fill = "grey70", 
-                            alpha = 0.4)+
-                  geom_point(aes(x = annual_time_step, y = observed), 
-                                       alpha = 0.2, size = 1) +
-                  # geom_point(aes(x = annual_time_step, y = inflection_points), 
-                  #                      shape = 8, size = 3) +
-                  geom_line(aes(x = annual_time_step, y = observed), 
-                            alpha = 0.2) +
-                  geom_line(aes(x = annual_time_step, y = predicted)) +
-                  geom_ribbon(aes(x = annual_time_step, ymin = predicted_lower, 
-                                            ymax = predicted_upper),
-                                        alpha = 0.3) +
-                  labs(x = "Time (years)",
-                        y = indicator) + 
-                  geom_vline(xintercept=c(100,200), linetype = "dotted") +
-                  coord_cartesian(ylim = ylimits)
-
-
-if(all(is.na(data$robust_positive_trend)) &
-   all(is.na(data$robust_negative_trend)) &
-   all(is.na(data$positive_trend)) &
-   all(is.na(data$negative_trend))) {
-
-boot_plot <-  boot_base_plot +
-              plot_theme 
-  
-} else if (all(is.na(data$robust_positive_trend)) &
-   all(is.na(data$robust_negative_trend)) &
-   !all(is.na(data$positive_trend)) &
-   !all(is.na(data$negative_trend))) {
-
-boot_plot <-  boot_base_plot +
-  geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col) +
-  geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col) +
-              plot_theme 
-  
-} else if (all(is.na(data$robust_positive_trend)) &
-   all(is.na(data$robust_negative_trend)) &
-   all(is.na(data$positive_trend)) &
-   !all(is.na(data$negative_trend))) {
-
-boot_plot <-  boot_base_plot +
-              geom_line(aes(x = annual_time_step, y = negative_trend), 
-                        col = neg_col) +
-              plot_theme 
-  
-} else if (all(is.na(data$robust_positive_trend)) &
-   all(is.na(data$robust_negative_trend)) &
-   all(is.na(data$negative_trend)) &
-   !all(is.na(data$positive_trend))) {
-
-boot_plot <-  boot_base_plot +
-              geom_line(aes(x = annual_time_step, y = positive_trend), 
-                        col = pos_col) +
-              plot_theme 
-
-} else if (all(is.na(data$robust_positive_trend)) &
-          !all(is.na(data$robust_negative_trend)) &
-          !all(is.na(data$positive_trend)) &
-          !all(is.na(data$negative_trend))) {
-
-boot_plot <- boot_base_plot +
-  geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col) +
-  geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col) +
-  geom_line(aes(x = annual_time_step, y = robust_negative_trend), 
-            col = neg_col, size = 2) +
-  plot_theme  
- 
-  
-} else if (all(is.na(data$robust_negative_trend)) &
-          !all(is.na(data$robust_positive_trend)) &
-          !all(is.na(data$positive_trend)) &
-          !all(is.na(data$negative_trend))) {
-
-boot_plot <- boot_base_plot +
-  geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col) +
-  geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col) +
-  geom_line(aes(x = annual_time_step, y = robust_positive_trend), 
-            col = pos_col, size = 2) +
-  plot_theme 
- 
-} else if (!all(is.na(data$robust_negative_trend)) &
-          !all(is.na(data$robust_positive_trend)) &
-          !all(is.na(data$positive_trend)) &
-          !all(is.na(data$negative_trend))) {
-
-  boot_plot <- boot_base_plot +
-  geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col) +
-  geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col) +
-  geom_line(aes(x = annual_time_step, y = robust_positive_trend), 
-            col = pos_col, size = 2) +
-  geom_line(aes(x = annual_time_step, y = robust_negative_trend), 
-            col = neg_col, size = 2) +
-  plot_theme 
-  
-  return(boot_plot)
-  
-  }
-}
-
 ```
 
 # Inputs
@@ -827,7 +729,7 @@ input_date <- "2021-09-30"
 
 # Specify how many bootstraps you want to use
 
-boots <- 1
+boots <- 1000
 
 # Specify how many influential species you want to plot
 
@@ -840,8 +742,11 @@ t_height <- 10
 
 # Make colours for pos and neg trends
 
-neg_col <- "#440154FF"
-pos_col <- "#2A788EFF"
+# neg_col <- "#440154FF"
+# pos_col <- "#2A788EFF"
+
+neg_col <- "#C5407EFF"
+pos_col <- "#2D0594FF"
 
 # Get date to label outputs
 
@@ -940,8 +845,7 @@ groups <- read.csv(file.path(analysis_inputs, input_date, "groups.csv"))
 indicators_all_df <- indicators_all_df %>% 
                      group_by(indicator, scenario) %>% 
   filter(indicator == "RLI annual"|
-         indicator == "LPI"|
-         indicator == "total abundance harvested") %>% 
+         indicator == "LPI") %>% 
                      mutate(indicator_score_std = standardize(indicator_score),
                             indicator_score_diff = indicator_score_std - 
                              lag(indicator_score_std, default = 0)) %>% 
@@ -1314,7 +1218,22 @@ start_plot <- ggplot(temp) +
                         y = "Standardized abundance") + 
         geom_vline(xintercept=c(100,200), linetype = "dotted") +
         facet_wrap(~ label, nrow = 3) +
-        plot_theme
+        theme(panel.background = element_blank(),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              legend.position = "bottom",
+              legend.key.size = unit(0.25, 'cm'),
+              plot.title = element_text(size = 10, face = "bold"),
+              legend.title=element_text(size=6), 
+              legend.text=element_text(size=5),
+              axis.line = element_line(colour = "black"),
+              axis.title.x = element_text(size=8),
+              axis.title.y = element_text(size=8),
+              axis.text.x = element_text(size=8),
+              axis.text.y = element_text(size=8),
+              axis.ticks.x = element_blank(), 
+              axis.ticks.y = element_blank(),
+              strip.text.x = element_text(size = 6))
 
 data <- species_gam_data[[i]][species_gam_data[[i]]$indicator %in% stop_fgs,]
 
@@ -1351,15 +1270,30 @@ stop_plot <- ggplot(temp) +
                         y = "Standardized abundance") + 
         geom_vline(xintercept=c(100,200), linetype = "dotted") +
         facet_wrap(~ label, nrow = 3) +
-        plot_theme
+        theme(panel.background = element_blank(),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              legend.position = "bottom",
+              legend.key.size = unit(0.25, 'cm'),
+              plot.title = element_text(size = 10, face = "bold"),
+              legend.title=element_text(size=6), 
+              legend.text=element_text(size=5),
+              axis.line = element_line(colour = "black"),
+              axis.title.x = element_text(size=8),
+              axis.title.y = element_text(size=8),
+              axis.text.x = element_text(size=8),
+              axis.text.y = element_text(size=8),
+              axis.ticks.x = element_blank(), 
+              axis.ticks.y = element_blank(),
+              strip.text.x = element_text(size = 6))
 
 spp_plots[[i]] <- plot_grid(start_plot, stop_plot, ncol = 2, align = "v")
 
 ggsave(file.path(manuscript_plots_folder, paste(scenarios[[i]],
                                                 "species_response_gams.png",
                                                 sep = "_")),
-       width = 10,
-       height = 5,
+       width = 14,
+       height = 8,
        units = "cm",
        spp_plots[[i]])
 
@@ -1386,36 +1320,41 @@ bxplot_data <- all_responses[[i]] %>%
               mutate(mass_lower_kg = mass_lower/1000)
 
 response_boxplots[[i]] <- ggplot(bxplot_data, aes(x = functional_group_name, 
+                                    y = first_derivative)) +
+                            geom_violin(alpha = 0.1) +
+            geom_point(aes(x = functional_group_name,
                                     y = first_derivative,
-                                    fill = impact,
-                                    col = impact)) +
-            geom_violin(alpha = 0.7) +
-            geom_jitter(aes(alpha = mass_lower_kg)) +
+                                    fill = functional_group_name,
+                                    col = functional_group_name,
+                           size = mass_lower_kg), alpha = 0.4) +
+            #geom_jitter(aes(alpha = mass_lower_kg)) +
             geom_hline(yintercept = 0, linetype = "dotted") +
-            labs(y = "Slope of trend") +
+            labs(y = "Trend in abundance") +
             theme(panel.background = element_blank(),
               panel.grid.major = element_blank(),
               panel.grid.minor = element_blank(),
-              legend.position = "bottom",
+              legend.position = "right",
               legend.key.size = unit(0.25, 'cm'),
               plot.title = element_text(size = 10, face = "bold"),
-              legend.title=element_text(size=6), 
-              legend.text=element_text(size=5),
+              legend.title=element_text(size=7), 
+              legend.text=element_text(size=6),
               axis.line = element_line(colour = "black"),
               axis.title.x = element_blank(),
               axis.title.y = element_text(size=8),
-              axis.text.x = element_text(size=8, angle = 45, vjust = 0.5, hjust=0.5),
+              axis.text.x = element_text(size=8, angle = 45, vjust = 1, hjust=1),
               axis.text.y = element_text(size=8),
               axis.ticks.x = element_blank(), 
-              axis.ticks.y = element_blank()) 
+              axis.ticks.y = element_blank()) +
+             facet_wrap(~impact)
 
 ggsave(file.path(manuscript_plots_folder, paste(scenarios[[i]],
                                                 "functional_group_boxplots.png",
                                                 sep = "_")),
-       width = 10,
-       height = 5,
+       width = 14,
+       height = 8,
        units = "cm",
        response_boxplots[[i]])
+
 
 }
 
@@ -1629,17 +1568,17 @@ indicator <- str_replace(indicator, "/", "_")
 
 kvals <- c(10,25,50)
 
-m <- gam(indicator_score_std ~ s(annual_time_step, k = kvals[1]),
+m <- gam(indicator_score ~ s(annual_time_step, k = kvals[1]),
          select = TRUE,
          method = ind_method,
          data = scenario_indicator_single[[i]])
 
-m1 <- gam(indicator_score_std ~ s(annual_time_step, k = kvals[[2]]),
+m1 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[2]]),
           select = TRUE,
           method = ind_method,
           data = scenario_indicator_single[[i]])
 
-m2 <- gam(indicator_score_std ~ s(annual_time_step, k = kvals[[3]]),
+m2 <- gam(indicator_score ~ s(annual_time_step, k = kvals[[3]]),
           select = TRUE,
           method = ind_method,
           data = scenario_indicator_single[[i]])
@@ -1654,7 +1593,7 @@ residual_plots <- list()
 
 for (j in seq_along(indicator_mods)) {
   
-plot.gam(indicator_mods[[j]], residuals = TRUE)
+# plot.gam(indicator_mods[[j]], residuals = TRUE)
 
 test_gam_data[[j]] <- get_test_gam_data(scenario_indicator_single[[i]],
                                indicator_mods[[j]])
@@ -1663,7 +1602,7 @@ test_gam_plots[[j]] <- plot_test_gam(test_gam_data[[j]])
 
 }
 
-all_mods_data[[i]] <- test_gam_plots
+all_mods_data[[i]] <- test_gam_data
 
 plots[[i]] <- plot_grid(test_gam_plots[[1]],
                         test_gam_plots[[2]],
@@ -1672,20 +1611,15 @@ plots[[i]] <- plot_grid(test_gam_plots[[1]],
 
 print(plots[[i]])
 
-ggsave(file.path(supporting_info_plots_folder, paste(scenario, indicator,
-                                                "test_gams.png",
-                                                sep = "_")),
-       width = t_width,
-       height = t_height,
-       units = "cm",
-       plots[[i]])
+# ggsave(file.path(supporting_info_plots_folder, paste(scenario, indicator,
+#                                                 "test_gams.png",
+#                                                 sep = "_")),
+#        width = t_width,
+#        height = t_height,
+#        units = "cm",
+#        plots[[i]])
 
 robust_trends[[i]] <- compare_trends(test_gam_data)
-
-
-trend_years <- robust_trends[[i]] %>% 
-          filter(positive_across_all_models == 1|
-                   negative_across_all_models == 1)
 
 selected_mods[[i]] <- indicator_mods[[selected]]
 selected_mods_data[[i]] <- test_gam_data[[selected]]
@@ -1700,6 +1634,8 @@ deviance_explained[[i]] <- round(summary.gam(selected_mods[[i]])$dev.expl, 2)
 
 ```{r model baseline lpi, warnings = FALSE }
 
+rm(bootstrapped_plots)
+
 bootstrapped_data <- list()
 bootstrapped_plots <- list()
 
@@ -1713,24 +1649,37 @@ bootstrapped_data[[i]] <- bootstrap_selected_model(scenario_indicator_single[[i]
                                  selected_mods[[i]], 
                                  selected_mods_data[[i]], boots) %>% 
           merge(robust_trends[[i]], by = "annual_time_step", all = TRUE) %>% 
-          mutate(robust_positive_trend = ifelse(positive_across_all_models == 1,
+          mutate(robust_positive_trend = ifelse(positive_across_all_models == 3,
                                                 predicted,NA)) %>% 
-          mutate(robust_negative_trend = ifelse(negative_across_all_models== 1,
+          mutate(robust_negative_trend = ifelse(negative_across_all_models == 3,
                                                 predicted,NA))
 
-
-hamin <- min(bootstrapped_data[[i]]$observed)
-hamax <- max(bootstrapped_data[[i]]$observed)
-lims <- c(hamin,hamax)
+if (indicator == "RLI annual") {
+  
+  lims <- c(0.85, 1.05)
+  
+} else if (indicator == "LPI") {
+  
+  lims <- c(0.75, 1.15)
+}
+# hamin <- min(bootstrapped_data[[i]]$predicted_upper) - 0.2
+# hamax <- max(bootstrapped_data[[i]]$predicted_lower) + 0.2
+# lims <- c(hamin,hamax)
 
 
 bootstrapped_plots[[i]] <- plot_bootstrapped_model(bootstrapped_data[[i]],
                                                    lims)
 
+print("plot function")
+print(i)
+
 write.csv(bootstrapped_data[[i]], file.path(analysis_outputs_folder,
                                             paste(scenario, indicator,
                                                 "bootstrapped_trends.csv",
                                                 sep = "_")))
+
+print("save csv")
+print(i)
 
 ggsave(file.path(manuscript_plots_folder, paste(scenario, indicator,
                                                 "bt.png",
@@ -1744,10 +1693,31 @@ ggsave(file.path(manuscript_plots_folder, paste(scenario, indicator,
 bootstrapped_plots[[i]] <- bootstrapped_plots[[i]] +
                             labs(title = scenario)
 
+print("add title")
+print(i)
+
 
 }
 
 walk(bootstrapped_plots, print)
+
+```
+
+# TRends
+
+```{r trends 2}
+
+trends <- list()
+
+for (i in seq_along(all_mods_data)){
+  
+  View(all_mods_data[[1]])
+  
+  df <- do.call(rbind, all_mods_data[[i]])
+  View(df)
+
+}
+
 
 ```
 
@@ -1758,24 +1728,22 @@ walk(bootstrapped_plots, print)
 all_trends <- list()
 
 for (i in seq_along(robust_trends)) {
-  
+
+scenario <- scenario_indicator_single[[i]]$scenario[1]
+indicator <- scenario_indicator_single[[i]]$indicator[1]
+indicator <- str_replace(indicator, "/", "_")
+
 all_trends[[i]] <- robust_trends[[i]] %>% 
-     ungroup(.) %>% 
-     mutate(scenario = scenario,
-            indicator = indicator) %>% 
-     filter(annual_time_step >= 95 &
+       filter(annual_time_step >= 95 &
             annual_time_step <= 105|
             annual_time_step >= 195 &
-            annual_time_step <= 205) %>% 
-     filter(k_value == 10) %>% 
-     mutate(plotted_derivative = ifelse(is.na(positive_across_all_models), 0,
-                                      ifelse(is.na(negative_across_all_models), 0,
-                                    first_derivative)),
-            significant = ifelse(positive_across_all_models == 1, TRUE,
-                         ifelse(negative_across_all_models == 1, TRUE,
-                                    FALSE)),
-            impact = ifelse(annual_time_step >= 95 &
-                            annual_time_step <= 105, "START", "STOP")) #%>% 
+            annual_time_step <= 205) %>%
+        merge(bootstrapped_data[[i]][c("annual_time_step", "first_derivative")],
+              by = "annual_time_step") %>% 
+        mutate(impact = ifelse(annual_time_step >= 95 &
+                            annual_time_step <= 105, "START", "STOP"),
+               scenario = scenario,
+               indicator = indicator) #%>% 
      # dplyr::select(indicator, scenario, impact, signficant,
      #               first_derivative, 
      #               plotted_derivative)
@@ -1786,8 +1754,7 @@ trend_table <- do.call(rbind, all_trends) %>%
                filter(scenario != "000_Baseline") %>% 
                mutate(first_derivative = round(first_derivative, 3)) %>% 
                group_by(scenario, indicator, impact) %>% 
-               mutate(ave_trend = mean(first_derivative, na.rm = TRUE),
-                      ave_trend = ifelse(significant == TRUE, ave_trend, 0)) %>% 
+               mutate(ave_trend = mean(first_derivative, na.rm = TRUE)) %>% 
                slice(1) 
 
 trend_table_wide <- trend_table %>%
@@ -1810,7 +1777,8 @@ heatmap <- ggplot(plot_data, aes(x = label, y = indicator,
   scale_fill_gradient2(
     low = neg_col, mid = 'white', high = pos_col,
     midpoint = 0, guide = 'colourbar', aesthetics = 'fill'
-  ) 
+  ) +
+  theme(axis.text.x = element_text(size=8, angle = 45, vjust = 0.5, hjust = 1))
 
 heatmap
 
