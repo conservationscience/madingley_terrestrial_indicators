@@ -56,6 +56,7 @@ library(arules)
 library(ggpubr)
 library(cowplot)
 library(gridExtra)
+library(scales)
 
 ```
 
@@ -68,6 +69,8 @@ library(gridExtra)
 #' @return a dataframe of the identity and proportion of species in each rate of change bin
 #' per timestep. NOTE - this data needs the species identity removed to plot
 #' overall rates of change
+
+#data <- scenario_redlist_data_sampled[[2]]
 
 bin_rates_of_change <- function(data, set_breaks){
 
@@ -113,19 +116,35 @@ bin_rates_of_change <- function(data, set_breaks){
   # hist(y80$dt, 30)
   # quantile(y80$dt)
   
-  dt_bins <- lpi_inputs %>% 
+  dt_bins_1 <- lpi_inputs %>% 
     group_by(annual_time_step) %>% 
     mutate(dt_bins = discretize(dt, "fixed", breaks = set_breaks, 
                                 ordered_result = TRUE)) %>% 
+    filter(!is.na(dt_bins)) %>%
     group_by(annual_time_step) %>% 
     mutate(num_groups = n_distinct(group_id)) %>% 
+    ungroup(.) %>% 
     group_by(annual_time_step, dt_bins) %>% 
-    filter(!is.na(dt_bins)) %>% 
-    summarise(group_id = group_id,
-              ave_abundance = abundance,
-              functional_group_name = functional_group_name,
-              prop_declining = n_distinct(group_id)/num_groups) %>% 
+    mutate(group_id = group_id,
+           ave_abundance = abundance,
+           functional_group_name = functional_group_name,
+           num_in_bin = n_distinct(group_id),
+           prop_declining = num_in_bin/num_groups) %>% 
+    distinct(.) %>% 
+    dplyr::select(annual_time_step, dt_bins, num_in_bin, num_groups,
+                  prop_declining, ave_abundance, functional_group_name) %>% 
+    arrange(annual_time_step, dt_bins) %>% 
     distinct(.)
+  
+  # Add an ordered factor for plotting
+  
+  dt_bins_rev <- factor(dt_bins_1$dt_bins,
+      levels = c( "[-3,-0.0894)",
+                  "[-0.0894,-0.0166)","[-0.0166,0)",
+                  "[0,0.0147)","[0.0147,0.307)", "[0.307,3]"))
+  
+  dt_bins <- cbind(dt_bins_1,
+  dt_bins_rev = dt_bins_rev)
                        
 return(dt_bins)
   
@@ -148,6 +167,21 @@ plot_theme <- theme(panel.grid.major = element_blank(),
           axis.text.y = element_text(size=6),
           axis.ticks.x = element_blank(), 
           axis.ticks.y = element_blank())
+
+```
+
+```{r colour palettes, eval=FALSE}
+
+# Check for CB compatibility here: https://www.color-blindness.com/coblis-color-blindness-simulator/
+
+show_col(viridis_pal()(20))
+show_col(viridis_pal(option = "plasma")(20))
+show_col(viridis_pal(option = "magma")(20))
+show_col(viridis_pal(option = "inferno")(20))
+show_col(viridis_pal(option = "mako")(20))
+show_col(viridis_pal(option = "cividis")(20))
+show_col(viridis_pal(option = "rocket")(20))
+show_col(viridis_pal(option = "turbo")(20))
 
 ```
 
@@ -671,13 +705,14 @@ for (i in seq_along(scenario_redlist_data_sampled)) {
   #   labs(title = scenarios_title[[i]])
   
  scenario_rl_status_plots[[i]] <- ggplot( scenario_extinctions[[i]],
-                                          aes(x=annual_time_step, y=red_list_status, 
-                                              fill=rl_status_fac)) +
+                                          aes(x=annual_time_step, 
+                                              y=red_list_status, 
+                                              fill= rl_status_fac)) +
     geom_area( alpha = 0.7 ) +
-   # scale_fill_manual(values = c("#440154FF", "#414487FF","#2A788EFF",
-   #                                "#22A884FF","#7AD151FF","#FDE725FF")) +
-   # scale_color_manual(values = c("#440154FF", "#414487FF","#2A788EFF",
-   #                                "#22A884FF","#7AD151FF","#FDE725FF")) +
+   # scale_fill_manual(values = c("#FECC8FFF", "#FA815FFF","#D6456CFF",
+   #                                "#802582FF","#400F73FF","#07071DFF")) +
+   # scale_color_manual(values = c("#FECC8FFF", "#FA815FFF","#D6456CFF",
+   #                                "#802582FF","#400F73FF","#07071DFF")) +
    scale_fill_manual(values = c("#07071DFF", "#400F73FF","#802582FF",
                                   "#D6456CFF","#FA815FFF","#FECC8FFF")) +
    scale_color_manual(values = c("#07071DFF", "#400F73FF","#802582FF",
@@ -726,6 +761,11 @@ Note, current bins are not based on much, there might be a more meaningful way t
 
 ```{r rate of change plots, warning=FALSE}
 
+# CB friendly cols
+
+tb_pal <- c("#3F3994FF","#18DEC1FF","grey60", "#D6E635FF", "#E14209FF","#7A0403FF")
+tb_pal_rev <- c("#7A0403FF", "#E14209FF", "#D6E635FF","grey50","#18DEC1FF", "#3F3994FF")
+
 # * Bin rates of change and plot them ----
 
 set_breaks <- c(-3,-0.0894307914, -0.0166148404, 0,
@@ -747,22 +787,30 @@ rate_of_change_data[[i]] <- bin_rates_of_change(scenario_redlist_data_sampled[[i
                                         set_breaks) %>% 
                                         mutate(scenario = scenarios[[i]])
 
+# plot_data <- rate_of_change_data[[i]] %>% 
+#              dplyr::select(-group_id, - ave_abundance, - functional_group_name) %>% 
+#              distinct(.)
+
 plot_data <- rate_of_change_data[[i]] %>% 
-             dplyr::select(-group_id, - ave_abundance, - functional_group_name) %>% 
-             distinct(.)
+             dplyr::select(- ave_abundance, - functional_group_name) %>%
+             distinct(.) 
   
 rate_of_change_plots[[i]] <- ggplot(plot_data,
                                     aes(x = annual_time_step, 
-                                        y = prop_declining, 
+                                        y = prop_declining,
                                         fill = dt_bins)) +
-    geom_area(position="stack", stat="identity", alpha = 0.7) +
-    scale_fill_viridis_d() +
+                                        #fill = reorder(dt_bins, desc(dt_bins)))) +
+  geom_area(position="stack", stat="identity", alpha = 0.7) +
+   scale_fill_manual(values = tb_pal_rev) +
+   scale_color_manual(values = tb_pal_rev) +
+   #scale_fill_viridis_d() +
    labs(x = "Time (years)",
-        y = "# Species in change category") +
+        y = "Proportion of species in change category") +
    guides(fill = guide_legend(title = "Rate of change category",
                               nrow = 1)) +
     geom_vline(xintercept=c(100,200), linetype="dotted") +
-  plot_theme
+   plot_theme +
+  scale_y_reverse()
 
 
   ggsave(file.path(manuscript_plots_folder, paste(scenario,
@@ -773,7 +821,7 @@ rate_of_change_plots[[i]] <- ggplot(plot_data,
        units = "cm",
        rate_of_change_plots[[i]])
    
-  rm(rate_change_data)
+  rm(plot_data)
   
 }
 
@@ -1153,7 +1201,7 @@ data2 <- cbind(data,
 
 plot <- ggplot(data2, aes(annual_time_step,indicator_score,
                  col = rl_status_fac, group = group_id)) +
-  geom_line() +
+  geom_line(size = 2) +
   theme(legend.position = "bottom") +
   facet_wrap(~ group_id, nrow = 3) +
   # scale_color_manual(values = c("#440154FF", "#414487FF","#2A788EFF",
@@ -1164,7 +1212,7 @@ plot <- ggplot(data2, aes(annual_time_step,indicator_score,
           panel.grid.minor = element_blank(),
           panel.background = element_rect(fill = "grey80"),
           legend.position = "bottom",
-         legend.key.size = unit(0.25, 'cm'),
+         legend.key.size = unit(1, 'cm'),
          plot.title = element_text(size = 10, face = "bold"),
          legend.title=element_text(size=6), 
          legend.text=element_text(size=6),
@@ -1176,7 +1224,7 @@ plot <- ggplot(data2, aes(annual_time_step,indicator_score,
           axis.ticks.y = element_blank()) +
    labs(x = "Time (years)",
         y = "Standardized abundance") +
-  guides(fill=guide_legend(title="Red List Status", nrow = 1)) +
+  guides(col=guide_legend(title="Red List Status", nrow = 1)) +
   geom_vline(xintercept=c(100,200), linetype="dotted") 
   
 
