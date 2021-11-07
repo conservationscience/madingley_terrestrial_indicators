@@ -675,7 +675,7 @@ boot_base_plot <- ggplot(data = data) +
                   geom_line(aes(x = annual_time_step, y = predicted)) +
                   geom_ribbon(aes(x = annual_time_step, ymin = predicted_lower, 
                                             ymax = predicted_upper),
-                                        alpha = 0.3) +
+                                        alpha = 0.4) +
                   labs(x = "Time (years)",
                         y = indicator) + 
                   geom_vline(xintercept=c(100,200), linetype = "dotted") +
@@ -686,16 +686,16 @@ boot_base_plot <- ggplot(data = data) +
                 #            size = 4)
 if(all(is.na(data$positive_trend))) {
 boot_plot <-  boot_base_plot +
-              geom_line(aes(x = annual_time_step, y = negative_trend), 
-                        col = neg_col, size = 1) +
+              # geom_line(aes(x = annual_time_step, y = negative_trend), 
+              #           col = neg_col, size = 1) +
               plot_theme 
   
 } else if(all(is.na(data$robust_positive_trend))) {
 boot_plot <- boot_base_plot +
-   geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col, 
-             size = 1) +
-  geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col, 
-             size = 1) +
+  #  geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col, 
+  #            size = 1) +
+  # geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col, 
+  #            size = 1) +
   geom_line(aes(x = annual_time_step, y = robust_negative_trend), 
             col = neg_col, size = 4) +
   plot_theme  
@@ -703,20 +703,20 @@ boot_plot <- boot_base_plot +
   
 } else if (all(is.na(data$robust_negative_trend))) {
 boot_plot <- boot_base_plot +
-   geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col, 
-             size = 1) +
-  geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col, 
-             size = 1) +
+  #  geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col, 
+  #            size = 1) +
+  # geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col, 
+  #            size = 1) +
   geom_line(aes(x = annual_time_step, y = robust_positive_trend), 
             col = pos_col, size = 4) +
   plot_theme 
  
 } else {
   boot_plot <- boot_base_plot +
-  geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col, 
-             size = 1) +
-  geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col, 
-             size = 1) +
+  # geom_line(aes(x = annual_time_step, y = positive_trend), col = pos_col, 
+  #            size = 1) +
+  # geom_line(aes(x = annual_time_step, y = negative_trend), col = neg_col, 
+  #            size = 1) +
   geom_line(aes(x = annual_time_step, y = robust_positive_trend), 
             col = pos_col, size = 4) +
   geom_line(aes(x = annual_time_step, y = robust_negative_trend), 
@@ -764,11 +764,17 @@ t_height <- 10
 
 # Make colours for pos and neg trends
 
+# Purple and green?
 # neg_col <- "#440154FF"
 # pos_col <- "#2A788EFF"
 
-neg_col <- "#C5407EFF"
-pos_col <- "#2D0594FF"
+# Pink and purple
+# neg_col <- "#C5407EFF"
+# pos_col <- "#2D0594FF"
+
+# Red and blue
+neg_col <- "#A51301FF"
+pos_col <- "#3AA2FCFF"
 
 # Get date to label outputs
 
@@ -1215,15 +1221,15 @@ temp <- data %>%
         merge(groups[c("group_id", "nutrition_source", "mass_lower")], 
               by.x = "indicator",
               by.y = "group_id") %>% 
-    merge(example_species[c("group_id", "common_name")],
-                                       by.x = "indicator",
-               by.y = "group_id") %>% 
+    # merge(example_species[c("group_id", "common_name")],
+    #                                    by.x = "indicator",
+    #            by.y = "group_id") %>% 
         filter(annual_time_step < 293) %>% 
         merge(influential_species_data[[i]][c("indicator", "impact")], 
               by = "indicator") %>% 
         filter(impact == "START") %>%
         mutate(lower_kg = mass_lower/1000,
-               label = paste(common_name, lower_kg, "kg", nutrition_source, 
+               label = paste(lower_kg, "kg", nutrition_source, 
                              "(", indicator, ")", sep = " "),
                impact = "START") %>% 
         arrange(impact,lower_kg)
@@ -1274,15 +1280,15 @@ temp <- data %>%
         merge(groups[c("group_id", "nutrition_source", "mass_lower")], 
               by.x = "indicator",
               by.y = "group_id") %>% 
-  merge(example_species[c("group_id", "common_name")],
-                                       by.x = "indicator",
-               by.y = "group_id") %>% 
+  # merge(example_species[c("group_id", "common_name")],
+  #                                      by.x = "indicator",
+  #              by.y = "group_id") %>% 
         filter(annual_time_step < 293) %>% 
         merge(influential_species_data[[i]][c("indicator", "impact")], 
               by = "indicator") %>% 
         filter(impact == "STOP") %>% 
         mutate(lower_kg = mass_lower/1000,
-               label = paste(common_name, lower_kg, "kg", nutrition_source, 
+               label = paste(lower_kg, "kg", nutrition_source, 
                              "(", indicator, ")", sep = " ")) %>% 
         arrange(impact,lower_kg)
 
@@ -1820,7 +1826,7 @@ all_robust_df <- do.call(rbind, all_robust)
 
 trend_table <- do.call(rbind, trends) %>% 
                mutate(ave_trend = round(ave_trend, 3)) %>% 
-               filter(scenario != "000_Baseline")
+               filter(scenario != "Baseline")
 
 trend_table_wide <- trend_table %>%
                 dplyr::select(scenario, indicator, impact, ave_trend) %>% 
