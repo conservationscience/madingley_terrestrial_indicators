@@ -150,6 +150,127 @@ scenario_smoothed_5_reps <- readRDS(file.path(analysis_inputs, input_date ))
 scenarios <- c("Baseline", "Land use", "Harvesting carnivores", "Harvesting herbivores")
 
 ```
+# Plots of raw abundance
+
+```{r raw abundance plots}
+
+raw_abundance_single <- scenario_ab_gl_formatted[[1]]
+
+raw_plot_inputs <- raw_abundance_single[1:4] 
+
+plots <- list()
+lims <- list()
+
+for (i in seq_along(raw_plot_inputs)) {
+  
+data <- raw_plot_inputs[[i]] %>% 
+          filter(group_id == plot_species) %>% 
+          arrange(monthly_time_step) %>%                         
+          slice(1:4800) %>% # Make sure we have exactly 4800 timesteps
+          mutate(annual_time_step = rep(-99:300, each = 12)) %>% 
+                 filter(annual_time_step > 0) %>% 
+          arrange(monthly_time_step) %>% 
+          group_by(annual_time_step) %>% 
+          filter(abundance == first(na.omit(abundance))) %>% 
+          filter(annual_time_step > 190 & annual_time_step < 211) %>% 
+             mutate(false_extinction = ifelse(abundance == 0, TRUE, FALSE))
+
+if (i  == 2) {
+    
+ data$abundance[6] <- 0
+ 
+ data$abundance[18] <- 0
+ 
+ data <-  data %>% 
+             mutate(false_extinction = ifelse(abundance == 0, TRUE, FALSE))
+ 
+}
+
+ if(i == 3) {
+   
+ data$abundance[1:10] <- 0
+ 
+ #data$abundance[18] <- 0
+ 
+ data <-  data %>% 
+             mutate(false_extinction = ifelse(abundance == 0, TRUE, FALSE))
+   
+ }
+
+if(i == 4) {
+  
+  lims[[i]] <- cbind(min(data$abundance, na.rm = TRUE), 
+                     max(data$abundance, na.rm = TRUE))
+  
+ data <-  data %>% 
+          mutate(false_extinction = ifelse(abundance == 0, TRUE,
+                                    ifelse(abundance > 0, FALSE,
+                                                     NA)))
+  
+ plots[[i]] <- ggplot() +
+               plot_theme +
+               geom_line(data = data, aes(annual_time_step, abundance), col = "white") +
+               geom_point(data = data, aes(annual_time_step, abundance,
+                                                fill = false_extinction),
+                           shape = 21, size = 3, col = "white") +
+  scale_fill_manual(values=c('white', 'white')) +
+                #coord_cartesian(ylim = c(0,45)) +
+                labs(x = "Time",
+                     y = "Abundance",
+                     title = paste("Replicate", i, sep = " "))+
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+ 
+    guides(fill=guide_legend(title="Abundance = 0 (false extinction)"))+
+  guides(fill = guide_legend(override.aes = list(alpha=1)))
+
+  } else {
+  
+  lims[[i]] <- cbind(min(data$abundance, na.rm = TRUE), 
+                     max(data$abundance, na.rm = TRUE))
+
+  plots[[i]] <- ggplot() +
+                geom_line(data = data, aes(annual_time_step, abundance)) +
+                geom_point(data = data, aes(annual_time_step, abundance,
+                                                fill = false_extinction),
+                           shape = 21, size = 3) +
+  scale_fill_manual(values=c('white', 'red')) +
+                plot_theme +
+                #coord_cartesian(ylim = c(0,45)) +
+                labs(x = "Time",
+                     y = "Abundance",
+                     title = paste("Replicate", i, sep = " "))+
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+ 
+    guides(fill=guide_legend(title="Abundance = 0 (false extinction)"))
+
+  }
+}
+
+abundance_plot <- plot_grid(plots[[1]],
+                            plots[[2]],
+                            plots[[3]],
+                             plots[[4]],
+                            ncol = 4, align = "v")
+
+abundance_plot
+
+ggsave(file.path(supporting_info_plots_folder, "0_no_lions.png"),
+       width = 20,
+       height = 8,
+       units = "cm",
+       abundance_plot)
+
+lims1 <- do.call(rbind, lims) 
+
+plotlims <- c(min(lims1[,1], na.rm = TRUE),
+          max(lims1[,2], na.rm = TRUE))
+        
+
+```
 
 # Plots of raw abundance
 
@@ -173,7 +294,10 @@ data <- raw_plot_inputs[[i]] %>%
           arrange(monthly_time_step) %>% 
           group_by(annual_time_step) %>% 
           filter(abundance == first(na.omit(abundance))) %>% 
-          filter(annual_time_step > 190 & annual_time_step < 211) 
+          filter(annual_time_step > 190 & annual_time_step < 211) %>% 
+             mutate(false_extinction = ifelse(abundance == 0, TRUE, FALSE))
+
+if (i  == 2) {
     
  data$abundance[6] <- 0
  
@@ -181,6 +305,8 @@ data <- raw_plot_inputs[[i]] %>%
  
  data <-  data %>% 
              mutate(false_extinction = ifelse(abundance == 0, TRUE, FALSE))
+ 
+}
 
  if(i == 3) {
    
@@ -222,7 +348,7 @@ abundance_plot <- plot_grid(plots[[1]],
 
 abundance_plot
 
-ggsave(file.path(supporting_info_plots_folder, "0_raw_abundance.png"),
+ggsave(file.path(supporting_info_plots_folder, "1_raw_abundance.png"),
        width = 20,
        height = 8,
        units = "cm",
@@ -257,7 +383,10 @@ data <- raw_plot_inputs[[i]] %>%
           arrange(monthly_time_step) %>% 
           group_by(annual_time_step) %>% 
           filter(abundance == first(na.omit(abundance))) %>% 
-          filter(annual_time_step > 190 & annual_time_step < 211) 
+          filter(annual_time_step > 190 & annual_time_step < 211) %>% 
+             mutate(false_extinction = ifelse(abundance == 0, TRUE, FALSE))
+
+if (i  == 2) {
     
  data$abundance[6] <- 0
  
@@ -265,6 +394,8 @@ data <- raw_plot_inputs[[i]] %>%
  
  data <-  data %>% 
              mutate(false_extinction = ifelse(abundance == 0, TRUE, FALSE))
+ 
+}
 
 
   plots[[i]] <- ggplot() +
@@ -342,16 +473,9 @@ for (i in seq_along(decomposed_plot_inputs)) {
           arrange(monthly_time_step) %>% 
           group_by(annual_time_step) %>% 
           filter(abundance == first(na.omit(abundance))) %>% 
-          filter(annual_time_step > 190 & annual_time_step < 211) 
-  
-decomposed$abundance[6] <- 0
- 
-decomposed$abundance[18] <- 0
- 
-decomposed <- decomposed %>% 
+          filter(annual_time_step > 190 & annual_time_step < 211) %>% 
              mutate(false_extinction = ifelse(abundance == 0, TRUE, FALSE))
-
-
+  
 #  }
  
    plots[[i]] <- ggplot() +
@@ -400,15 +524,9 @@ averaged <- scenario_averaged[[1]] %>%
           arrange(monthly_time_step) %>% 
           group_by(annual_time_step) %>% 
           filter(abundance == first(na.omit(abundance))) %>% 
-          filter(annual_time_step > 190 & annual_time_step < 211) 
-
-averaged$abundance[6] <- 0
-
-averaged$abundance[18] <- 0
-
-averaged <- averaged %>% 
+          filter(annual_time_step > 190 & annual_time_step < 211) %>% 
             mutate(false_extinction = ifelse(abundance == 0, TRUE, FALSE))
-  
+
 averaged_plot <- ggplot() +
                  geom_line(data = averaged, aes(annual_time_step, abundance)) +
                 geom_point(data = averaged, aes(annual_time_step, abundance,
@@ -435,52 +553,6 @@ ggsave(file.path(supporting_info_plots_folder, "3_averaged_abundance.png"),
        averaged_plot)
 
 ```
-# False extinctions removed
-
-```{r averaged 2 plot}
-
-averaged <- scenario_averaged[[1]] %>% 
-          filter(group_id == plot_species) %>% 
-          arrange(monthly_time_step) %>%                         
-          slice(1:4800) %>% # Make sure we have exactly 4800 timesteps
-          mutate(annual_time_step = rep(-99:300, each = 12)) %>% 
-                 filter(annual_time_step > 0) %>% 
-          arrange(monthly_time_step) %>% 
-          group_by(annual_time_step) %>% 
-          filter(abundance == first(na.omit(abundance))) %>% 
-          filter(annual_time_step > 190 & annual_time_step < 211) 
-
-averaged$abundance[6] <- NA
-
-averaged$abundance[18] <- NA
-
-averaged <- averaged %>% 
-            filter(!is.na(abundance))
-  
-averaged_plot2 <- ggplot() +
-                 geom_path(data = averaged, aes(annual_time_step, abundance)) +
-                geom_point(data = averaged, aes(annual_time_step, abundance),
-                           shape = 21, fill = "white", size = 3) +
-                plot_theme +
-                coord_cartesian(ylim = plotlims) +
-  labs(x = "Time",
-       y = "Abundance",
-       title = "False extinction removed") +
-  theme(axis.text.y=element_blank(),
-        axis.ticks.y=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank()) + 
-    guides(fill=guide_legend(title="Abundance = 0 (false extinction)"))
-
-averaged_plot2
-
-ggsave(file.path(supporting_info_plots_folder, "4_false_ex_removed.png"),
-       width = 8,
-       height = 8,
-       units = "cm",
-       averaged_plot2)
-
-```
 # Plots of smoothed abundance
 
 ```{r averaged plot}
@@ -496,13 +568,6 @@ smoothed <- scenario_smoothed_abundance[[1]] %>%
           filter(abundance == first(na.omit(abundance))) %>% 
           filter(annual_time_step > 190 & annual_time_step < 211)
 
-smoothed$abundance[6] <- NA
-
-smoothed$abundance[18] <- NA
-
-smoothed <- smoothed %>% 
-            filter(!is.na(abundance))
-  
 smoothed_plot <- ggplot() +
                 geom_path(data = smoothed, aes(annual_time_step, abundance)) +
                 geom_point(data = smoothed, aes(annual_time_step, abundance),
@@ -520,7 +585,7 @@ smoothed_plot <- ggplot() +
 
 smoothed_plot
 
-ggsave(file.path(supporting_info_plots_folder, "5_false_ex_removed.png"),
+ggsave(file.path(supporting_info_plots_folder, "4_smoothed.png"),
        width = 8,
        height = 8,
        units = "cm",
@@ -536,8 +601,7 @@ all_steps_plot <- plot_grid(abundance_plot,
                             abundance_plot2,
                              decomposed_plot,
                              averaged_plot,
-                            averaged_plot2,
-                             smoothed_plot,
+                            smoothed_plot,
                             ncol = 2, align = "v")
 
 all_steps_plot
