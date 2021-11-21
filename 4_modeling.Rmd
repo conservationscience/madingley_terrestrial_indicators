@@ -48,7 +48,6 @@ https://www.frontiersin.org/articles/10.3389/fevo.2018.00149/full
 
 ## Data wrangling
 library(tidyverse)
-library(tidylog)
 library(zoo)
 
 ## Analysis
@@ -63,6 +62,8 @@ library(cowplot)
 library(gridExtra)
 library(gratia)
 library(kableExtra)
+library(viridis)
+library(viridisLite)
 
 ```
 
@@ -96,6 +97,12 @@ library(scales)
 show_col(viridis_pal()(20))
 show_col(viridis_pal(option = "plasma")(20))
 show_col(viridis_pal(option = "magma")(20))
+show_col(viridis_pal(option = "inferno")(20))
+show_col(viridis_pal(option = "mako")(20))
+show_col(viridis_pal(option = "cividis")(20))
+show_col(viridis_pal(option = "rocket")(20))
+show_col(viridis_pal(option = "turbo")(20))
+
 
 ```
 
@@ -751,7 +758,7 @@ input_date <- "2021-09-30"
 
 # Specify how many bootstraps you want to use
 
-boots <- 1000
+boots <- 2
 
 # Specify how many influential species you want to plot
 
@@ -867,6 +874,17 @@ auto_annual <- readRDS(file.path(analysis_inputs, input_date,
 # Get groups
 
 groups <- read.csv(file.path(analysis_inputs, input_date, "groups.csv"))
+
+# Add 'harvested' tag
+
+groups <- groups %>% 
+          mutate(harvested = ifelse(group_id == "10.67", "(directly harvested)",
+                             ifelse(group_id == "10.68", "(directly harvested)",
+                             ifelse(group_id == "10.69", "(directly harvested)",
+                             ifelse(group_id == "11.67", "(directly harvested)",
+                             ifelse(group_id == "11.68", "(directly harvested)",
+                             ifelse(group_id == "11.69", "(directly harvested)", 
+                                    " ")))))))
 
 species <- read.csv("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Outputs_from_indicator_code/Indicator_outputs/general/2021-09-22/model_species.csv")
 
@@ -1017,7 +1035,8 @@ for (i in seq_along(species_gam_data)) {
 
 
 temp <- species_gam_data[[i]] %>% 
-        merge(groups[c("group_id", "nutrition_source")], by.x = "indicator",
+        merge(groups[c("group_id", "nutrition_source", "harvested")], 
+              by.x = "indicator",
               by.y = "group_id") %>% 
         #Get only the species where significant trends are detected
         filter(first_significant == TRUE) %>% 
@@ -1030,16 +1049,16 @@ temp <- species_gam_data[[i]] %>%
                       predicted, first_derivative, nutrition_source) %>% 
         #Add a new variable that denotes whether we are looking at impact start or end event
         mutate(impact = ifelse(annual_time_step >= 95 &
-               annual_time_step <= 105, "START",
+               annual_time_step <= 105, "Impact start",
                ifelse(annual_time_step >= 195 &
-               annual_time_step <= 205, "STOP", NA)))  
+               annual_time_step <= 205, "Impact stop", NA)))  
   
 # Get start ----
 
 # Look at response to impact start
 
 temp2 <- temp %>% 
-         filter(impact == "START") %>% 
+         filter(impact == "Impact start") %>% 
          dplyr::select(-annual_time_step) %>% # Remove time steps
          mutate(absolute_fd = abs(first_derivative)) # convert 1st deriv to absolute value
        
@@ -1076,7 +1095,7 @@ rm(temp2, temp3)
 # Look at response to impact start
 
 temp2 <- temp %>% 
-         filter(impact == "STOP") %>% 
+         filter(impact == "Impact stop") %>% 
          dplyr::select(-annual_time_step) %>% # Remove time steps
          mutate(absolute_fd = abs(first_derivative)) # convert 1st deriv to absolute value
        
@@ -1095,6 +1114,8 @@ stop <- all_stop[1:n,] # Get n most influential spp
 influential_species_data[[i]] <- rbind(start, stop) 
 
 all_responses[[i]] <- rbind(all_start, all_stop)
+
+# Add the harvested groups if they're not already there
 
 if(scenarios_title[[i]] == "Carnivore harvesting") {
   
@@ -1131,7 +1152,8 @@ fg <- influential_species_data[[i]]$indicator
 data <- species_gam_data[[i]][species_gam_data[[i]]$indicator %in% fg,]
 
 temp <- data %>% 
-        merge(groups[c("group_id", "nutrition_source", "mass_lower")], 
+        merge(groups[c("group_id", "nutrition_source", "mass_lower", 
+                       "harvested")], 
               by.x = "indicator",
               by.y = "group_id") %>% 
         filter(annual_time_step < 293) %>% 
@@ -1186,13 +1208,13 @@ title <-  scenarios_title[[i]]
 if( title == "Baseline") {
   
 start_fgs <- influential_species_data[[i]] %>% 
-     filter(impact == "START") %>% 
+     filter(impact == "Impact start") %>% 
      dplyr::select(indicator) %>% 
      pull(.)
 start_fgs <- start_fgs[1:3]
 
 stop_fgs <- influential_species_data[[i]] %>% 
-     filter(impact == "STOP") %>% 
+     filter(impact == "Impact stop") %>% 
      dplyr::select(indicator) %>% 
      pull(.)
 
@@ -1218,7 +1240,8 @@ stop_fgs <- stop_fgs[1:3]
 data <- species_gam_data[[i]][species_gam_data[[i]]$indicator %in% start_fgs,]
 
 temp <- data %>% 
-        merge(groups[c("group_id", "nutrition_source", "mass_lower")], 
+        merge(groups[c("group_id", "nutrition_source", "mass_lower", 
+                       "harvested")], 
               by.x = "indicator",
               by.y = "group_id") %>% 
     # merge(example_species[c("group_id", "common_name")],
@@ -1227,11 +1250,11 @@ temp <- data %>%
         filter(annual_time_step < 293) %>% 
         merge(influential_species_data[[i]][c("indicator", "impact")], 
               by = "indicator") %>% 
-        filter(impact == "START") %>%
+        filter(impact == "Impact start") %>%
         mutate(lower_kg = mass_lower/1000,
                label = paste(lower_kg, "kg", nutrition_source, 
-                             "(", indicator, ")", sep = " "),
-               impact = "START") %>% 
+                             "(", indicator, ")", harvested, sep = " "),
+               impact = "Impact start") %>% 
         arrange(impact,lower_kg)
 
 
@@ -1239,13 +1262,13 @@ temp <- data %>%
 start_plot <- ggplot(temp) +
         geom_line(aes(annual_time_step, predicted)) +
         geom_line(aes(x = annual_time_step, y = positive_trend),
-                  col = pos_col, size = 1) +
+                  col = pos_col, size = 2) +
         geom_line(aes(x = annual_time_step, y = negative_trend,
                       col = nutrition_source),
-                  col = neg_col, size = 1) +
+                  col = neg_col, size = 2) +
         geom_point(aes(x = annual_time_step, y = observed, group = indicator),
                                         alpha = 0.1,
-                   size = 1) +
+                   size = 0.5) +
         scale_color_manual(values = c(pos_col, neg_col)) +
         scale_fill_manual(values = c(pos_col, neg_col)) +
         geom_ribbon(aes(x = annual_time_step, 
@@ -1277,7 +1300,8 @@ start_plot <- ggplot(temp) +
 data <- species_gam_data[[i]][species_gam_data[[i]]$indicator %in% stop_fgs,]
 
 temp <- data %>% 
-        merge(groups[c("group_id", "nutrition_source", "mass_lower")], 
+        merge(groups[c("group_id", "nutrition_source", "mass_lower", 
+                       "harvested")], 
               by.x = "indicator",
               by.y = "group_id") %>% 
   # merge(example_species[c("group_id", "common_name")],
@@ -1286,21 +1310,21 @@ temp <- data %>%
         filter(annual_time_step < 293) %>% 
         merge(influential_species_data[[i]][c("indicator", "impact")], 
               by = "indicator") %>% 
-        filter(impact == "STOP") %>% 
+        filter(impact == "Impact stop") %>% 
         mutate(lower_kg = mass_lower/1000,
                label = paste(lower_kg, "kg", nutrition_source, 
-                             "(", indicator, ")", sep = " ")) %>% 
+                             "(", indicator, ")",harvested, sep = " ")) %>% 
         arrange(impact,lower_kg)
 
 stop_plot <- ggplot(temp) +
         geom_line(aes(annual_time_step, predicted)) +
         geom_line(aes(x = annual_time_step, y = positive_trend),
-                  col = pos_col, size = 1) +
+                  col = pos_col, size = 2) +
         geom_line(aes(x = annual_time_step, y = negative_trend,
                       col = nutrition_source),
-                  col = neg_col, size = 1) +
+                  col = neg_col, size = 2) +
         geom_point(aes(x = annual_time_step, y = observed, group = indicator),
-                   alpha = 0.1, size = 1) +
+                   alpha = 0.1, size = 0.5) +
         scale_color_manual(values = c(pos_col, neg_col)) +
         scale_fill_manual(values = c(pos_col, neg_col)) +
         geom_ribbon(aes(x = annual_time_step, 
@@ -1363,7 +1387,7 @@ bxplot_data <- all_responses[[i]] %>%
 
 response_boxplots[[i]] <- ggplot(bxplot_data, aes(x = functional_group_name, 
                                     y = first_derivative)) +
-                            geom_violin(alpha = 0.1) +
+                            geom_violin(alpha = 0.1, aes(col = functional_group_name)) +
             geom_point(aes(x = functional_group_name,
                            y = first_derivative,
                            fill = functional_group_name,
@@ -1371,8 +1395,8 @@ response_boxplots[[i]] <- ggplot(bxplot_data, aes(x = functional_group_name,
                            size = mass_lower_kg), alpha = 0.4) +
             #geom_jitter(aes(alpha = mass_lower_kg)) +
             geom_hline(yintercept = 0, linetype = "dotted") +
-            labs(y = "Trend in abundance") +
-            theme(panel.background = element_blank(),
+            labs(y = "Functional species response") +
+            theme(panel.background = element_rect(fill = 'grey83'),
               panel.grid.major = element_blank(),
               panel.grid.minor = element_blank(),
               legend.position = "bottom",
@@ -1382,14 +1406,23 @@ response_boxplots[[i]] <- ggplot(bxplot_data, aes(x = functional_group_name,
               legend.text=element_text(size=6),
               axis.line = element_line(colour = "black"),
               axis.title.x = element_blank(),
-              axis.title.y = element_text(size=8),
-              axis.text.x = element_text(size=8, angle = 45, vjust = 1, hjust=1),
+              axis.title.y = element_blank(),
+              axis.text.x = element_text(size=8),
               axis.text.y = element_text(size=8),
               axis.ticks.x = element_blank(), 
               axis.ticks.y = element_blank()) +
              facet_wrap(~impact) +
-  scale_colour_hue(guide = "none") +
-  scale_fill_hue(guide = "none")
+  scale_fill_viridis_d(guide = "none", option = "mako") +
+  scale_color_viridis_d(guide = "none",option = "mako") +
+  #scale_colour_hue(guide = "none") +
+  scale_fill_hue(guide = "none")+ 
+  scale_y_continuous(breaks = c(-0.08, 0, 0.08),
+                     labels = c("Decreased \n in abundance",
+                                "No change",
+                                "Increased \n in abundance"),
+                     limits = c(-0.1,0.1)) +
+  labs(size = "Body size (kg)") +
+  coord_flip()
 
 ggsave(file.path(manuscript_plots_folder, paste(scenarios[[i]],
                                                 "functional_group_boxplots.png",
@@ -1771,20 +1804,20 @@ for (i in seq_along(all_mods_data)) {
               ifelse(positive_across_all_models == 3, "positive", NA))) %>% 
        dplyr::select(annual_time_step, robust, direction) %>% 
           mutate(impact = ifelse(annual_time_step >= 95 &
-               annual_time_step <= 105, "START",
+               annual_time_step <= 105, "Impact start",
                ifelse(annual_time_step >= 195 &
-               annual_time_step <= 205, "STOP", NA))) %>% 
+               annual_time_step <= 205, "Impact stop", NA))) %>% 
       filter(!is.na(impact)) %>% 
       dplyr::select(-impact)
   
   
   trend <- df %>% 
           mutate(impact = ifelse(annual_time_step >= 95 &
-               annual_time_step <= 105, "START",
+               annual_time_step <= 105, "Impact start",
                ifelse(annual_time_step >= 195 &
-               annual_time_step <= 205, "STOP", NA))) %>% 
-          filter(impact =="START"|
-                 impact == "STOP") %>%
+               annual_time_step <= 205, "Impact stop", NA))) %>% 
+          filter(impact =="Impact start"|
+                 impact == "Impact stop") %>%
           filter(kvalue == 10) %>% 
           dplyr::select(annual_time_step, indicator, scenario, predicted,
                         first_derivative, first_significant, impact) %>% 
