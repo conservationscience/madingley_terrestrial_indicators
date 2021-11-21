@@ -8,6 +8,7 @@ library(rnaturalearth)
 #install.packages("rnaturalearthdata")
 library(rnaturalearthdata)
 library(rgeos)
+library(taxizedb)
 
 # Inputs ----
 
@@ -41,10 +42,10 @@ get_species_in_domain <- function(range_map, domain, class_name = NA) {
                                                           class, family)) %>%
       mutate(source = "iucn_redlist",
              family = str_to_title(family),
-             Common.Name = NA) %>% 
-      rename(Scientific.Name = binomial,
-             Family = family,
+             Common.Name = NA,
              Taxonomic.Group = class_name) %>% 
+      rename(Scientific.Name = binomial,
+             Family = family) %>% 
       select(Scientific.Name, Common.Name, Family, Taxonomic.Group, source)
     
   }
@@ -53,14 +54,11 @@ get_species_in_domain <- function(range_map, domain, class_name = NA) {
   
 }
 
-# Make domain polygon ----
+# Load data ----
 
-## read in the coords
+serengeti <- st_read("N:\\Quantitative-Ecology\\Indicators-Project\\Serengeti\\Outputs_from_analysis_code\\Analysis_inputs\\Serengeti_Ecosystem\\v3_serengeti_ecosystem.shp")
 
-coords_df <- read.csv("N:\\Quantitative-Ecology\\Indicators-Project\\Serengeti\\Inputs_to_adaptor_code\\Madingley_simulation_outputs\\100_Land_use\\101_BuildModel\\landuse_1012019-12-12_8.47.41\\SpecificLocations.csv")
-
-coords_sf <- st_as_sf(x = coords_df, #update here
-                    coords = c("Longitude", "Latitude"))
+plot(st_geometry(serengeti))
 
 ## Get species crs info
 
@@ -70,43 +68,51 @@ amphibian_rangemap_dir <- file.path(species_inputs, "redlist_amphibian_range_map
 
 amphibian_ranges <- st_read(amphibian_rangemap_dir)
 
-# Check if the CRS is projected (will be FALSE or NA)
-st_is_longlat(coords_sf)
+## read in the coords
 
-# Set the CRS and check again (should be TRUE now)
-coords_sf <- st_set_crs(coords_sf, st_crs(amphibian_ranges)) # Set to native crs
+coords_df <- read.csv("N:\\Quantitative-Ecology\\Indicators-Project\\Serengeti\\Inputs_to_adaptor_code\\Madingley_simulation_outputs\\100_Land_use\\101_BuildModel\\landuse_1012019-12-12_8.47.41\\SpecificLocations.csv")
 
-st_is_longlat(coords_sf)
-st_crs(coords_sf)
-st_write(coords_sf, file.path(outputs, "coords.shp"))
+# Make domain polygons ----
 
-# Transform to a projected CRS for Tanzania UTM 35S
+coords_sf <- st_as_sf(x = coords_df, #update here
+                    coords = c("Longitude", "Latitude"))
 
-coords_sf_utm <- st_transform(coords_sf, 21035)
-st_crs(coords_sf)
+## Projected to match serengeti map
 
-# Conver to an sp object
-coords_sp <- as(coords_sf, Class = "Spatial")
-summary(coords_sp)
+lon = c(722208.2, 722208.2 + 110000)
+lat = c(9668249.5,9668249.5 + 110000 )
 
+Poly_Coord_df = data.frame(lon, lat)
 
-study_site_sp <- gBuffer(coords_sp, width = 110000/2, capStyle = "SQUARE")
+poly <- Poly_Coord_df %>% 
+  st_as_sf(coords = c("lon", "lat"), 
+           crs = 21036) %>% 
+  st_bbox() %>% 
+  st_as_sfc()
 
-study_site_sf_utm <- st_as_sf(study_site_sp)
+st_crs(serengeti) == st_crs(poly)
 
-study_site_sf <- st_transform(study_site_sf_utm, st_crs(amphibian_ranges))
+plot(poly)
+st_bbox(poly)
+st_write(poly, file.path(outputs, "study_site_utm.shp"))
 
-st_write(study_site_sf, file.path(outputs, "study_site.shp"))
+## Geographic to match rangemaps
 
-world <- ne_countries(scale = "medium", returnclass = "sf")
-st_write(world, file.path(outputs,"world.shp"))
+lon2 = c(35, 36)
+lat2 = c(-3,-2)
 
-countries <- world %>% 
-             filter(geounit == "Tanzania"|
-                      geounit == "Kenya")
+Poly_Coord_df2 = data.frame(lon2, lat2)
 
-st_write(countries ,file.path(outputs, "kenya_tanzania.shp"))
+poly_wgs <- Poly_Coord_df2 %>% 
+  st_as_sf(coords = c("lon2", "lat2"), 
+           crs = 4326) %>% 
+  st_bbox() %>% 
+  st_as_sfc()
 
+st_crs(amphibian_ranges) == st_crs(poly_wgs)
+
+st_bbox(poly_wgs)
+st_write(poly_wgs, file.path(outputs, "study_site_wgs.shp"))
 
 # Get species ---- 
 
@@ -115,7 +121,7 @@ st_write(countries ,file.path(outputs, "kenya_tanzania.shp"))
   # Remove unnecessary columns as well
   
   amphibians <- get_species_in_domain(amphibian_ranges, 
-                                      study_site_sf,
+                                      poly_wgs,
                                       "Amphibians")
   
   amphibians$Taxonomic.Group <- tolower(amphibians$Taxonomic.Group)
@@ -131,7 +137,7 @@ st_write(countries ,file.path(outputs, "kenya_tanzania.shp"))
   mammal_ranges <- st_read(mammal_rangemap_dir)
   
   mammals <- get_species_in_domain(mammal_ranges, 
-                        study_site_sf,
+                        poly_wgs,
                         "Mammals")
   
   rm(mammal_ranges)
@@ -154,12 +160,10 @@ st_write(countries ,file.path(outputs, "kenya_tanzania.shp"))
   
 
   reptiles <- get_species_in_domain(reptile_ranges, 
-                                    study_site_sf,
+                                    poly_wgs,
                                     "Reptiles")
   
   rm(reptile_ranges)
-  
-   st_write(reptiles, file.path(outputs, "serengeti_reptiles_spatial.shp"))
   
   reptiles_df <- reptiles %>% 
     dplyr::select(-geometry)
@@ -202,7 +206,7 @@ bird_ranges <- bird_ranges %>%
 ## WARNING  - SLOW CODE - takes like an hour, so annoying
   
 birds <- get_species_in_domain(bird_ranges, 
-                                 study_site_sf, "Birds")
+                               poly_wgs, "Birds")
   
 rm(bird_ranges)
   
@@ -218,10 +222,10 @@ write.csv(birds_df, file.path(outputs, "serengeti_birds_df.csv"))
 
 # Consolidate species list ----
   
-serengeti_iucn_species_list <- rbind(amphibians_df, 
-                                     mammals_df,
+serengeti_iucn_species_list <- rbind(amphibians, 
+                                     mammals,
                                      birds_df,
-                                     reptiles_df) 
+                                     reptiles) 
 
 # Get MoL species list
 
@@ -239,9 +243,70 @@ serengeti_species_list <- rbind(serengeti_iucn_species_list,
 
 ## How many species?
 
-length(unique(serengeti_species_list$binomial))
+length(unique(serengeti_species_list$Scientific.Name))
+
+serengeti_species_list <- serengeti_species_list %>% 
+                          distinct(.)
 
 ##Save list
 
-write.csv(serengeti_species_list, file.path("N:\Quantitative-Ecology\Indicators-Project\Serengeti\Inputs_to_adaptor_code\Species_lists", 
-                                            paste(today, "serengeti_species_list.csv")))
+write.csv(serengeti_species_list, 
+          file.path("N:/Quantitative-Ecology/Indicators-Project/Serengeti/Inputs_to_adaptor_code/Species_lists", 
+                    "serengeti_species_list_mol_iucn.csv"))
+
+# Get functional traits ----
+
+SourceToModels <- "C:/Users/ssteven/Desktop/git_repos"
+IndicatorsProject <- "N:/Quantitative-Ecology/Indicators-Project"
+
+# note- would like to turn species_to_model repository into a package so you can eventually just run install_github( "conservationscience/species_to_models" )
+source( file.path( SourceToModels, "species_to_models", "madingley_get_groups.R" ) )
+source( file.path( SourceToModels, "species_to_models", "madingley_get_species_and_groups_key.R" ) )
+source( file.path( SourceToModels, "species_to_models", "madingley_process_trait_data.R" ) )
+source( file.path( SourceToModels, "species_to_models", "madingley_get_biomass_of_groups.R" ) )
+source( file.path( SourceToModels, "species_to_models", "madingley_get_abundance_of_groups.R" ) )
+source( file.path( SourceToModels, "species_to_models", "madingley_get_age_structure_data.R" ) )
+source( file.path( SourceToModels, "species_to_models", "madingley_get_autotroph_biomass.R" ) )
+
+
+source( file.path( SourceToModels, "model_outputs_to_indicator_inputs", 
+                   "1_process_outputs", "process_species_list.R") )
+source( file.path( SourceToModels, "model_outputs_to_indicator_inputs", 
+                   "1_process_outputs", "process_buildmodel_folder.R") )
+source( file.path( SourceToModels, "model_outputs_to_indicator_inputs", 
+                   "1_process_outputs", "process_output_functions.R") )
+
+source( file.path( SourceToModels, "model_outputs_to_indicator_inputs", 
+                   "1_process_outputs", "plot_functional_groups.R") )
+
+databases <- functionaltraits::Databases$new( file.path( IndicatorsProject, 
+                                                         "functionaltraits_data" ) )
+
+if( !databases$ready() ) {
+  print( "Downloading databases to ")
+  databases$initialise()
+} else {
+  print( "Databases already downloaded, in ")
+}
+print( databases$dir )
+
+species_list <- read.table( 
+  file.path( IndicatorsProject, "Serengeti", "Inputs_to_adaptor_code", 
+             "Species_lists", "serengeti_species_list_mol_iucn.csv" ), 
+  sep = ",", header = TRUE, stringsAsFactors = FALSE, quote = ""
+)
+
+species_list <- species_list$Scientific.Name
+species_list <- unique( species_list )
+
+# run the code below for every new species list you add
+# or every time you update the list of species
+# need to change the example directory folders before you use it
+
+  process_species_list(
+    species_list,
+    databases,
+    "N:\\Quantitative-Ecology\\Indicators-Project\\Serengeti\\Outputs_from_analysis_code\\supporting_info_plots_folder"
+  )
+  
+        
