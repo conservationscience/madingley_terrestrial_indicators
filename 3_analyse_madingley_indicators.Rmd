@@ -764,12 +764,16 @@ Note, current bins are not based on much, there might be a more meaningful way t
 # CB friendly cols
 
 tb_pal <- c("#3F3994FF","#18DEC1FF","grey60", "#D6E635FF", "#E14209FF","#7A0403FF")
-tb_pal_rev <- c("#7A0403FF", "#E14209FF", "#D6E635FF","grey50","#18DEC1FF", "#3F3994FF")
+#tb_pal_rev <- c("#7A0403FF", "#E14209FF", "#D6E635FF","grey50","#18DEC1FF", "#3F3994FF")
+tb_pal_rev <- c("#7A0403FF", "#E14209FF", "grey50","#18DEC1FF", "#3F3994FF")
 
 # * Bin rates of change and plot them ----
 
-set_breaks <- c(-3,-0.0894307914, -0.0166148404, 0,
-                0.0147363530, 0.3069022173, 3)
+# set_breaks <- c(-3,-0.0894307914, -0.0166148404, 0,
+#                 0.0147363530, 0.3069022173, 3)
+
+set_breaks <- c(-3, -0.05, -0.008,
+                0.008, 0.05, 3)
 
 set_breaks <- round(set_breaks, 4)
 
