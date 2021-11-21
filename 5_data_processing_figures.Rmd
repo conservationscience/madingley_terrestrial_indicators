@@ -423,7 +423,7 @@ abundance_plot2 <- plot_grid(plots[[1]],
 
 abundance_plot2
 
-ggsave(file.path(supporting_info_plots_folder, "1_weird_groups_rm.png"),
+ggsave(file.path(supporting_info_plots_folder, "3_weird_groups_rm.png"),
        width = 14,
        height = 8,
        units = "cm",
@@ -501,7 +501,7 @@ decomposed_plot <- plot_grid(plots[[1]],
                             plots[[2]],
                             ncol = 2, align = "v")
 
-ggsave(file.path(supporting_info_plots_folder, "2_decomposed.png"),
+ggsave(file.path(supporting_info_plots_folder, "4_decomposed.png"),
        width = 14,
        height = 8,
        units = "cm",
@@ -546,7 +546,7 @@ averaged_plot <- ggplot() +
 
 averaged_plot
 
-ggsave(file.path(supporting_info_plots_folder, "3_averaged_abundance.png"),
+ggsave(file.path(supporting_info_plots_folder, "5_averaged_abundance.png"),
        width = 8,
        height = 8,
        units = "cm",
@@ -585,7 +585,7 @@ smoothed_plot <- ggplot() +
 
 smoothed_plot
 
-ggsave(file.path(supporting_info_plots_folder, "4_smoothed.png"),
+ggsave(file.path(supporting_info_plots_folder, "6_smoothed.png"),
        width = 8,
        height = 8,
        units = "cm",
