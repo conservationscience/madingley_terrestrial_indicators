@@ -657,7 +657,7 @@ new <- model_data %>%
 
 ```
 
-```{r plot bootstrapped model, eval = FALSE}
+```{r plot bootstrapped model}
 
 plot_bootstrapped_model <- function(data, ylimits){
   
@@ -757,7 +757,7 @@ input_date <- "2021-09-30"
 
 # Specify how many bootstraps you want to use
 
-boots <- 2
+boots <- 1000
 
 # Specify how many influential species you want to plot
 
@@ -814,6 +814,14 @@ if( !dir.exists( file.path(analysis_inputs_folder) ) ) {
   
 }
 
+analysis_outputs_folder <- file.path(indicators_project,  
+                           "/Serengeti/Outputs_from_analysis_code/Analysis_outputs",
+                           output_date)
+
+if( !dir.exists( file.path(analysis_outputs_folder) ) ) {
+  dir.create( file.path(analysis_outputs_folder), recursive = TRUE )
+  
+}
 
 manuscript_plots_folder <- file.path(indicators_project, 
                                      "/Serengeti/Outputs_from_analysis_code/manuscript_plots_folder",
@@ -1913,7 +1921,7 @@ heatmap <- ggplot(plot_data, aes(x = impact, y = indicator,
                                  fill = ave_trend)) +
   geom_tile(color = "white", height = 1.0, width = 1.0, alpha = 0.75) +
   coord_equal() +
-  geom_text(aes(label = round(ave_trend, 3)), size = 3) +
+  geom_text(aes(label = round(ave_trend, 3)), size = 4) +
   scale_fill_gradient2(
     low = neg_col, mid = 'white', high = pos_col,
     midpoint = 0, guide = 'colourbar', aesthetics = 'fill'
