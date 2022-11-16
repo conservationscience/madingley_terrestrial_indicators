@@ -1323,13 +1323,13 @@ start_plot <- ggplot(temp) +
               legend.title=element_text(size=6), 
               legend.text=element_text(size=5),
               axis.line = element_line(colour = "black"),
-              axis.title.x = element_text(size=8),
-              axis.title.y = element_text(size=8),
+              axis.title.x = element_text(size=10),
+              axis.title.y = element_text(size=10),
               axis.text.x = element_text(size=8),
               axis.text.y = element_text(size=8),
               axis.ticks.x = element_blank(), 
               axis.ticks.y = element_blank(),
-              strip.text.x = element_text(size = 6))
+              strip.text.x = element_text(size = 7))
 
 data <- species_gam_data[[i]][species_gam_data[[i]]$indicator %in% stop_fgs,]
 
@@ -1385,13 +1385,13 @@ stop_plot <- ggplot(temp) +
               legend.title=element_text(size=6), 
               legend.text=element_text(size=5),
               axis.line = element_line(colour = "black"),
-              axis.title.x = element_text(size=8),
-              axis.title.y = element_text(size=8),
+              axis.title.x = element_text(size=10),
+              axis.title.y = element_text(size=10),
               axis.text.x = element_text(size=8),
               axis.text.y = element_text(size=8),
               axis.ticks.x = element_blank(), 
               axis.ticks.y = element_blank(),
-              strip.text.x = element_text(size = 6))
+              strip.text.x = element_text(size = 7))
 
 spp_plots[[i]] <- plot_grid(start_plot, stop_plot, ncol = 2, align = "v")
 
@@ -1401,7 +1401,7 @@ ggsave(file.path(manuscript_plots_folder, paste(scenarios[[i]],
        width = 14,
        height = 8,
        units = "cm",
-       spp_plots[[i]])
+       spp_plots[[i]], dpi = 600)
 
 rm(data, temp, stop_fgs, start_plot, stop_plot)
 
@@ -1440,7 +1440,7 @@ response_boxplots[[i]] <- ggplot(bxplot_data, aes(x = functional_group_name,
                            size = mass_lower_kg), alpha = 0.4) +
             #geom_jitter(aes(alpha = mass_upper_kg)) +
             geom_hline(yintercept = 0, linetype = "dotted") +
-            labs(y = "Functional species response") +
+            labs(y = "Functional species population rate of change") +
             theme(panel.background = element_rect(fill = 'grey70'),
               panel.grid.major = element_blank(),
               panel.grid.minor = element_blank(),
@@ -1450,10 +1450,10 @@ response_boxplots[[i]] <- ggplot(bxplot_data, aes(x = functional_group_name,
               legend.title=element_text(size=7), 
               legend.text=element_text(size=6),
               axis.line = element_line(colour = "black"),
-              axis.title.x = element_blank(),
+              axis.title.x = element_text(size = 10),
               axis.title.y = element_blank(),
-              axis.text.x = element_text(size=7),
-              axis.text.y = element_text(size=7),
+              axis.text.x = element_text(size = 10),
+              axis.text.y = element_text(size=10),
               axis.ticks.x = element_blank(), 
               axis.ticks.y = element_blank()) +
              facet_wrap(~impact) +
@@ -1461,11 +1461,11 @@ response_boxplots[[i]] <- ggplot(bxplot_data, aes(x = functional_group_name,
   scale_color_viridis_d(guide = "none",option = "viridis") +
   #scale_colour_hue(guide = "none") +
   scale_fill_hue(guide = "none")+ 
-  scale_y_continuous(breaks = c(-0.08, 0, 0.08),
-                     labels = c("Decreased \n in abundance",
-                                "No change",
-                                "Increased \n in abundance"),
-                     limits = c(-0.1,0.1)) +
+  # scale_y_continuous(breaks = c(-0.08, 0, 0.08),
+  #                    labels = c("Decreased \n in abundance",
+  #                               "No change",
+  #                               "Increased \n in abundance"),
+  #                    limits = c(-0.1,0.1)) +
   labs(size = "Body size (kg)") +
   coord_flip()
 
@@ -1475,7 +1475,7 @@ ggsave(file.path(manuscript_plots_folder, paste(scenarios[[i]],
        width = 14,
        height = 8,
        units = "cm",
-       response_boxplots[[i]])
+       response_boxplots[[i]],dpi = 600)
 
 
 }
