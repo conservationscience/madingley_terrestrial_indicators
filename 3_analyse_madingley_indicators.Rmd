@@ -159,13 +159,13 @@ plot_theme <- theme(panel.grid.major = element_blank(),
           panel.background = element_rect(fill = "grey80"),
           legend.position = "bottom",
          legend.key.size = unit(0.25, 'cm'),
-         plot.title = element_text(size = 10, face = "bold"),
-         legend.title=element_text(size=6), 
-         legend.text=element_text(size=5),
-          axis.title.x = element_text(size=8),
-          axis.title.y = element_text(size=8),
-          axis.text.x = element_text(size=6),
-          axis.text.y = element_text(size=6),
+         plot.title = element_text(size = 9, face = "bold"),
+         legend.title=element_text(size=9), 
+         legend.text=element_text(size=10),
+          axis.title.x = element_text(size=10),
+          axis.title.y = element_text(size=10),
+          axis.text.x = element_text(size=10),
+          axis.text.y = element_text(size=10),
           axis.ticks.x = element_blank(), 
           axis.ticks.y = element_blank())
 
@@ -808,11 +808,10 @@ rate_of_change_plots[[i]] <- ggplot(plot_data,
   geom_area(position="stack", stat="identity", alpha = 0.7) +
    scale_fill_manual(values = tb_pal_rev) +
    scale_color_manual(values = tb_pal_rev) +
-   #scale_fill_viridis_d() +
    labs(x = "Time (years)",
         y = "Proportion of species in change category") +
    guides(fill = guide_legend(title = "Rate of change category",
-                              nrow = 1)) +
+                              nrow = 2)) +
     geom_vline(xintercept=c(100,200), linetype="dotted") +
    plot_theme +
   scale_y_reverse()
@@ -824,6 +823,7 @@ rate_of_change_plots[[i]] <- ggplot(plot_data,
        width = 14,
        height = 9,
        units = "cm",
+       dpi = 600,
        rate_of_change_plots[[i]])
    
   rm(plot_data)
@@ -839,41 +839,43 @@ rate_of_change_plots[[4]]
 
 ```{r most declining spp}
 
-library(directlabels)
+# Doesn't work
 
-declining_species_plots <- list()
-
-set.seed(354)
-
-for (i in seq_along(rate_of_change_data)) {
-  
-declining <- rate_of_change_data[[i]] %>% 
-             group_by(group_id) %>% 
-             filter(any(dt_bins == "[-3,-0.0894)")) %>% 
-             distinct(.)
-
-groups <- unique(declining$group_id)
-
-group_sample <- sample(groups, size = 12)
-group_sample <- as.data.frame(group_sample)
-
-declining <- declining[declining$group_id %in% group_sample$group_sample,] 
-
-
-declining_species_plots[[i]] <- ggplot(data = declining, aes(annual_time_step, 
-                                                             log(ave_abundance), 
-                             group = group_id, 
-                             col = dt_bins)) +
-  geom_line() +
-  theme(legend.position = "bottom") +
-  geom_dl(aes(label = group_id), method = "last.points", cex = 0.8) 
-
-}
-
-declining_species_plots[[1]]
-declining_species_plots[[2]]
-declining_species_plots[[3]]
-declining_species_plots[[4]]
+# library(directlabels)
+# 
+# declining_species_plots <- list()
+# 
+# set.seed(354)
+# 
+# for (i in seq_along(rate_of_change_data)) {
+#   
+# declining <- rate_of_change_data[[i]] %>% 
+#              group_by(group_id) %>% 
+#              filter(any(dt_bins == "[-3,-0.0894)")) %>% 
+#              distinct(.)
+# 
+# groups <- unique(declining$group_id)
+# 
+# group_sample <- sample(groups, size = 12)
+# group_sample <- as.data.frame(group_sample)
+# 
+# declining <- declining[declining$group_id %in% group_sample$group_sample,] 
+# 
+# 
+# declining_species_plots[[i]] <- ggplot(data = declining, aes(annual_time_step, 
+#                                                              log(ave_abundance), 
+#                              group = group_id, 
+#                              col = dt_bins)) +
+#   geom_line() +
+#   theme(legend.position = "bottom") +
+#   geom_dl(aes(label = group_id), method = "last.points", cex = 0.8) 
+# 
+# }
+# 
+# declining_species_plots[[1]]
+# declining_species_plots[[2]]
+# declining_species_plots[[3]]
+# declining_species_plots[[4]]
 
 ```
 
@@ -1135,7 +1137,7 @@ ggsave(file.path(supporting_info_plots_folder, "herbivore_spp_density.png"),
 
 # Plot red list status trajectory against abundance
 
-```{r rli trajectory plots}
+```{r red list v abundance plots}
 
 all_abundance <- do.call(rbind, scenario_important_abundance)
 
@@ -1164,13 +1166,14 @@ plot <- ggplot(data2, aes(annual_time_step,indicator_score,
           panel.background = element_rect(fill = "grey80"),
           legend.position = "bottom",
          legend.key.size = unit(1, 'cm'),
-         plot.title = element_text(size = 10, face = "bold"),
-         legend.title=element_text(size=6), 
-         legend.text=element_text(size=6),
-          axis.title.x = element_text(size=8),
-          axis.title.y = element_text(size=8),
-          axis.text.x = element_text(size=6),
-          axis.text.y = element_text(size=6),
+         plot.title = element_text(size = 18, face = "bold"),
+        strip.text.x = element_text(size = 18),
+         legend.title=element_text(size=16), 
+         legend.text=element_text(size=16),
+          axis.title.x = element_text(size=18),
+          axis.title.y = element_text(size=18),
+          axis.text.x = element_text(size=16),
+          axis.text.y = element_text(size=16),
           axis.ticks.x = element_blank(), 
           axis.ticks.y = element_blank()) +
    labs(x = "Time (years)",
@@ -1182,12 +1185,13 @@ plot <- ggplot(data2, aes(annual_time_step,indicator_score,
 plot
 
 ggsave(file.path(manuscript_plots_folder, "red_list_v_abundance.png"),
-       plot,  width = 10, height = 8, dpi = 300, 
+       plot,  width = 10, height = 8, dpi = 600, 
        units = "in",device = "png")
 
 
 ```
 
+# Everything below is set to eval = FALSE because it is old exploratory analysis. Delete for final MS.
 
 ```{r plot differenced, eval = FALSE}
 
